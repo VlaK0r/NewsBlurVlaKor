@@ -10,6 +10,9 @@ services:
     environment:
       - DOCKERBUILD=True
       - RUNWITHMAKEBUILD=${RUNWITHMAKEBUILD:-True}
+      - HTTP_PROXY=http://172.17.0.1:8881
+      - HTTPS_PROXY=http://172.17.0.1:8881
+      - NO_PROXY="127.0.0.1,localhost,::1,db_postgres,db_redis,db_elasticsearch,db_mongo,nginx,haproxy,dejavu,nb.vlakor.ru,172.17.0.1,172.17.0.0/16"
     stdin_open: true
     tty: true
     restart: unless-stopped
@@ -29,6 +32,12 @@ services:
     entrypoint: /bin/sh -c newsblur_web/entrypoint.sh
     volumes:
       - ${PWD}:/srv/newsblur
+    labels:
+      - glance.name=NewsBlur
+      - glance.icon=di:newsblur
+      - glance.url=https://nb.vlakor.ru
+      - glance.description=RSS Reader
+      - glance.id=newsblur
 
   newsblur_node:
     container_name: newsblur_node
@@ -37,6 +46,9 @@ services:
     environment:
       - NODE_ENV=docker
       - MONGODB_PORT=29019
+      - HTTP_PROXY=http://172.17.0.1:8881
+      - HTTPS_PROXY=http://172.17.0.1:8881
+      - NO_PROXY="127.0.0.1,localhost,::1,db_postgres,db_redis,db_elasticsearch,db_mongo,nginx,haproxy,dejavu,nb.vlakor.ru,172.17.0.1,172.17.0.0/16"
     command: node newsblur.js
     restart: unless-stopped
     stop_signal: HUP
@@ -49,6 +61,9 @@ services:
     volumes:
       - ${PWD}/node:/srv
       - ${PWD}/node/originals:/srv/originals
+    labels:
+      - glance.parent=newsblur
+      - glance.name=newsblur_node
 
   imageproxy:
     container_name: newsblur_imageproxy
@@ -60,7 +75,10 @@ services:
     ports:
       - 8088:8088
     volumes:
-      - /tmp:/tmp/imageproxy
+      - /mnt/usbssd1/data/NewsBlur/tmp:/tmp/imageproxy
+    labels:
+      - glance.parent=newsblur
+      - glance.name=newsblur_imageproxy
 
   nginx:
     container_name: newsblur_nginx
@@ -80,6 +98,9 @@ services:
     volumes:
       - ./docker/nginx/nginx.local.conf:/etc/nginx/conf.d/nginx.conf
       - ${PWD}:/srv/newsblur
+    labels:
+      - glance.parent=newsblur
+      - glance.name=newsblur_nginx
 
   newsblur_db_postgres:
     container_name: newsblur_db_postgres
@@ -96,7 +117,10 @@ services:
     ports:
       - 5434:5432
     volumes:
-      - ./docker/volumes/postgres:/var/lib/postgresql/data
+      - /mnt/usbssd1/data/NewsBlur/postgres:/var/lib/postgresql/data
+    labels:
+      - glance.parent=newsblur
+      - glance.name=newsblur_db_pg
 
   newsblur_db_redis:
     container_name: newsblur_db_redis
@@ -107,8 +131,11 @@ services:
     volumes:
       - ./docker/redis/redis.conf:/etc/redis/redis.conf
       - ./docker/redis/redis_server.conf:/usr/local/etc/redis/redis_replica.conf
-      - ./docker/volumes/redis:/data
+      - /mnt/usbssd1/data/NewsBlur/redis:/data
     command: redis-server /etc/redis/redis.conf --port 6579
+    labels:
+      - glance.parent=newsblur
+      - glance.name=newsblur_db_redis
 
   # Prod Redis
   # db_redis:
@@ -126,7 +153,7 @@ services:
   newsblur_db_elasticsearch:
     container_name: newsblur_db_elasticsearch
     image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
-    mem_limit: 1200m
+    mem_limit: 1073741824
     mem_reservation: 512m
     restart: unless-stopped
     environment:
@@ -141,8 +168,11 @@ services:
       - 9200:9200
       - 9300:9300
     volumes:
-      - ./docker/volumes/elasticsearch:/usr/share/elasticsearch/data
+      - /mnt/usbssd1/data/NewsBlur/elasticsearch:/usr/share/elasticsearch/data
       - ./config/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+    labels:
+      - glance.parent=newsblur
+      - glance.name=newsblur_elasticsearch
 
   # Dejavu is a web UI for Elasticsearch
   dejavu:
@@ -151,6 +181,9 @@ services:
     restart: unless-stopped
     ports:
       - 1358:1358
+    labels:
+      - glance.parent=newsblur
+      - glance.name=newsblur_dejavu
 
   newsblur_db_mongo:
     container_name: newsblur_db_mongo
@@ -160,9 +193,12 @@ services:
       - 29019:29019
     command: mongod --port 29019 --wiredTigerEngineConfigString="file_manager=(close_idle_time=0)"
     volumes:
-      - ./docker/volumes/db_mongo:/data/db:delegated
+      - /mnt/usbssd1/data/NewsBlur/db_mongo:/data/db:delegated
     # Ensure the MongoDB data directory has proper permissions
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
+    labels:
+      - glance.parent=newsblur
+      - glance.name=newsblur_mongo
 
   task_celery:
     container_name: newsblur_celery
@@ -174,6 +210,12 @@ services:
       - ${PWD}:/srv/newsblur
     environment:
       - DOCKERBUILD=True
+      - HTTP_PROXY=http://172.17.0.1:8881
+      - HTTPS_PROXY=http://172.17.0.1:8881
+      - NO_PROXY="127.0.0.1,localhost,::1,db_postgres,db_redis,db_elasticsearch,db_mongo,nginx,haproxy,dejavu,nb.vlakor.ru,172.17.0.1,172.17.0.0/16"
+    labels:
+      - glance.parent=newsblur
+      - glance.name=newsblur_task
 
   haproxy:
     container_name: newsblur_haproxy
@@ -189,9 +231,12 @@ services:
       - newsblur_db_elasticsearch
       - newsblur_db_mongo
     ports:
-      - 80:80
-      - 443:443
+      - 8001:80
+      - 4431:443
       - 1936:1936
     volumes:
       - ./docker/haproxy/haproxy.docker-compose.cfg:/usr/local/etc/haproxy/haproxy.cfg
       - ${PWD}:/srv/newsblur
+    labels:
+      - glance.parent=newsblur
+      - glance.name=newsblur_haproxy
