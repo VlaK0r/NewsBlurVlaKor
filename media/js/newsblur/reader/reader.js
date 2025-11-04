@@ -88,7 +88,7 @@
             this.layout = {};
             this.constants = {
                 FEED_REFRESH_INTERVAL: (1000 * 60) * 1, // 1 minute
-                FILL_OUT_PAGES: 100,
+                FILL_OUT_PAGES: 200,
                 FILL_OUT_PAGES_SEARCH_STORY_TITLE: 10,
                 FIND_NEXT_UNREAD_STORY_TRIES: 100,
                 RIVER_STORIES_FOR_STANDARD_ACCOUNT: 3,
