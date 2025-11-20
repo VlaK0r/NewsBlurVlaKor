@@ -1,9 +1,5 @@
 import logging
 import os
-from dotenv import load_dotenv
-
-# Загружаем переменные из .env файла
-load_dotenv()
 
 # ===================
 # = Server Settings =
@@ -13,9 +9,9 @@ ADMINS = (("Samuel Clay", "samuel@newsblur.com"),)
 
 SERVER_EMAIL = "server@newsblur.com"
 HELLO_EMAIL = "hello@newsblur.com"
-NEWSBLUR_URL = "https://nb.vlakor.ru"
+NEWSBLUR_URL = "https://localhost"
 PUSH_DOMAIN = "localhost"
-SESSION_COOKIE_DOMAIN = "nb.vlakor.ru"
+SESSION_COOKIE_DOMAIN = "localhost"
 
 # ===================
 # = Global Settings =
@@ -92,7 +88,7 @@ FACEBOOK_APP_ID = "111111111111111"
 FACEBOOK_SECRET = "99999999999999999999999999999999"
 TWITTER_CONSUMER_KEY = "ooooooooooooooooooooo"
 TWITTER_CONSUMER_SECRET = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY', '')
+YOUTUBE_API_KEY = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 
 # =============
 # = Databases =
@@ -144,7 +140,7 @@ BACKED_BY_AWS = {
     "icons_on_s3": False,
 }
 
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+OPENAI_API_KEY = "sk-svcacct-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 
 # ===========
 # = Logging =
@@ -169,10 +165,10 @@ DO_TOKEN_LOG = "0000000000000000000000000000000000000000000000000000000000000000
 DO_TOKEN_FABRIC = "0000000000000000000000000000000000000000000000000000000000000000"
 
 SERVER_NAME = "nblocalhost"
-NEWSBLUR_URL = os.getenv("NEWSBLUR_URL", "https://nb.vlakor.ru")
+NEWSBLUR_URL = os.getenv("NEWSBLUR_URL", "https://localhost")
 
-if NEWSBLUR_URL == "https://nb.vlakor.ru":
-    SESSION_COOKIE_DOMAIN = "nb.vlakor.ru"
+if NEWSBLUR_URL == "https://localhost":
+    SESSION_COOKIE_DOMAIN = "localhost"
 
 SESSION_ENGINE = "redis_sessions.session"
 
