@@ -32,7 +32,7 @@ Provide only the summary sentence, without any preamble or explanation.""",
         id="bullets",
         short_text="Summarize in bullet points",
         full_prompt="""Please summarize the key points of the following article as bullet points.
-Include the 3-5 most important facts or ideas.
+Include the 3-5 most important facts or ideas. Answer in Russian.
 
 Title: {story_title}
 
@@ -46,7 +46,7 @@ Provide only the bullet points, without any preamble or explanation.""",
         id="paragraph",
         short_text="Summarize in a paragraph",
         full_prompt="""Please provide a comprehensive paragraph summary of the following article.
-Include the main points and key details in 3-5 sentences.
+Include the main points and key details in 3-5 sentences. Answer in Russian.
 
 Title: {story_title}
 
@@ -60,7 +60,7 @@ Provide only the summary paragraph, without any preamble or explanation.""",
         id="context",
         short_text="What's the context and background?",
         full_prompt="""Please explain the context and background information for the following article.
-Help the reader understand the broader situation, relevant history, and why this story matters.
+Help the reader understand the broader situation, relevant history, and why this story matters. Answer in Russian.
 
 Title: {story_title}
 
@@ -74,7 +74,7 @@ Provide only the context and background explanation, without any preamble or int
         id="people",
         short_text="Identify key people and relationships",
         full_prompt="""Please identify the key people mentioned in the following article and explain their relationships and roles.
-Include relevant details about who they are and why they matter to this story.
+Include relevant details about who they are and why they matter to this story. Answer in Russian.
 
 Title: {story_title}
 
@@ -88,7 +88,7 @@ Provide only the analysis of key people and their relationships, without any pre
         id="arguments",
         short_text="What are the main arguments?",
         full_prompt="""Please identify and explain the main arguments or positions presented in the following article.
-Include different perspectives if multiple viewpoints are discussed.
+Include different perspectives if multiple viewpoints are discussed. Answer in Russian.
 
 Title: {story_title}
 
@@ -102,7 +102,7 @@ Provide only the analysis of the main arguments, without any preamble or introdu
         id="factcheck",
         short_text="Fact check this story",
         full_prompt="""Please analyze the factual claims made in the following article.
-Identify key claims and note any that may need verification or context.
+Identify key claims and note any that may need verification or context. Answer in Russian.
 Note: You should indicate if you cannot verify claims without additional sources.
 
 Title: {story_title}
