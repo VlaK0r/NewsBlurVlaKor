@@ -125,7 +125,7 @@ def AskAIQuestion(user_id, story_hash, question_id, custom_question=None, conver
         client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
         logging.user(user, f"~FBAsk AI: Starting streaming response for story {story_hash}, question {question_id}")
 
-        response = client.chat.completions.create(model="gpt-4.1", messages=messages, stream=True)
+        response = client.chat.completions.create(model="gpt-4o-mini", messages=messages, stream=True)
 
         full_response = []
         chunk_count = 0
@@ -162,7 +162,7 @@ def AskAIQuestion(user_id, story_hash, question_id, custom_question=None, conver
 
         if not conversation_history and not custom_question:
             metadata = {
-                "model": "gpt-4.1",
+                "model": "gpt-4o-mini",
                 "question_id": question_id,
                 "duration_seconds": time.time() - start_time,
                 "response_length": len(full_response_text),
