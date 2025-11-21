@@ -18,7 +18,7 @@ PROMPT_TEMPLATES: Dict[str, AskAIPrompt] = {
         id="sentence",
         short_text="Summarize in one sentence",
         full_prompt="""Please provide a concise one-sentence summary of the following article.
-Focus on the main point or most important information.
+Focus on the main point or most important information. Answer in Russian.
 
 Title: {story_title}
 
