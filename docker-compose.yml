@@ -67,15 +67,15 @@ services:
 
   imageproxy:
     container_name: newsblur_imageproxy
-    # image: ghcr.io/willnorris/imageproxy:latest # Enable if you don't need arm64 and want the original imageproxy
-    image: yusukeito/imageproxy:v0.11.2 # Enable if you want arm64
+    image: ghcr.io/willnorris/imageproxy:latest # Enable if you don't need arm64 and want the original imageproxy
+    # image: yusukeito/imageproxy:v0.11.2 # Enable if you want arm64
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     entrypoint: /app/imageproxy -addr 0.0.0.0:8088 -cache /tmp/imageproxy -verbose
     restart: unless-stopped
     ports:
       - 8088:8088
     volumes:
-      - /mnt/usbssd1/data/NewsBlur/tmp:/tmp/imageproxy
+      - ./data/tmp:/tmp/imageproxy
     labels:
       - glance.parent=newsblur
       - glance.name=newsblur_imageproxy
@@ -117,7 +117,7 @@ services:
     ports:
       - 5434:5432
     volumes:
-      - /mnt/usbssd1/data/NewsBlur/postgres:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
     labels:
       - glance.parent=newsblur
       - glance.name=newsblur_db_pg
@@ -131,7 +131,7 @@ services:
     volumes:
       - ./docker/redis/redis.conf:/etc/redis/redis.conf
       - ./docker/redis/redis_server.conf:/usr/local/etc/redis/redis_replica.conf
-      - /mnt/usbssd1/data/NewsBlur/redis:/data
+      - ./data/redis:/data
     command: redis-server /etc/redis/redis.conf --port 6579
     labels:
       - glance.parent=newsblur
@@ -168,7 +168,7 @@ services:
       - 9200:9200
       - 9300:9300
     volumes:
-      - /mnt/usbssd1/data/NewsBlur/elasticsearch:/usr/share/elasticsearch/data
+      - ./data/elasticsearch:/usr/share/elasticsearch/data
       - ./config/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
     labels:
       - glance.parent=newsblur
@@ -193,8 +193,7 @@ services:
       - 29019:29019
     command: mongod --port 29019 --nojournal --wiredTigerEngineConfigString="checkpoint=(wait=0),file_manager=(close_idle_time=0),verbose=(recovery_progress)"
     volumes:
-
-      - /mnt/usbssd1/data/NewsBlur/db_mongo:/data/db:delegated
+      - ./data/db_mongo:/data/db:delegated
     # Ensure the MongoDB data directory has proper permissions
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     labels:
