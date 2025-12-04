@@ -158,7 +158,7 @@ NEWSBLUR.Views.StoryAskAiView = Backbone.View.extend({
                             <div class="NB-model-option" data-model="haiku">Claude 4.5 Haiku</div>\
                             <div class="NB-model-option" data-model="sonnet">Claude 4.5 Sonnet</div>\
                             <div class="NB-model-option" data-model="opus">Claude 4.5 Opus</div>\
-                            <div class="NB-model-option" data-model="gpt-4.1">GPT 4.1</div>\
+                            <div class="NB-model-option" data-model="gpt-4o-mini">gpt-4o-mini</div>\
                             <div class="NB-model-option" data-model="gemini-3">Gemini 3 Pro</div>\
                         </div>\
                     </div>\
@@ -171,7 +171,7 @@ NEWSBLUR.Views.StoryAskAiView = Backbone.View.extend({
                             <div class="NB-model-option" data-model="haiku">Claude 4.5 Haiku</div>\
                             <div class="NB-model-option" data-model="sonnet">Claude 4.5 Sonnet</div>\
                             <div class="NB-model-option" data-model="opus">Claude 4.5 Opus</div>\
-                            <div class="NB-model-option" data-model="gpt-4.1">GPT 4.1</div>\
+                            <div class="NB-model-option" data-model="gpt-4o-mini">gpt-4o-mini</div>\
                             <div class="NB-model-option" data-model="gemini-3">Gemini 3 Pro</div>\
                         </div>\
                     </div>\
@@ -184,7 +184,7 @@ NEWSBLUR.Views.StoryAskAiView = Backbone.View.extend({
                             <div class="NB-model-option" data-model="haiku">Claude 4.5 Haiku</div>\
                             <div class="NB-model-option" data-model="sonnet">Claude 4.5 Sonnet</div>\
                             <div class="NB-model-option" data-model="opus">Claude 4.5 Opus</div>\
-                            <div class="NB-model-option" data-model="gpt-4.1">GPT 4.1</div>\
+                            <div class="NB-model-option" data-model="gpt-4o-mini">gpt-4o-mini</div>\
                             <div class="NB-model-option" data-model="gemini-3">Gemini 3 Pro</div>\
                         </div>\
                     </div>\
@@ -829,7 +829,7 @@ NEWSBLUR.Views.StoryAskAiView = Backbone.View.extend({
             'haiku': 'Claude 4.5 Haiku',
             'sonnet': 'Claude 4.5 Sonnet',
             'opus': 'Claude 4.5 Opus',
-            'gpt-4.1': 'GPT 4.1',
+            'gpt-4o-mini': 'gpt-4o-mini',
             'gemini-3': 'Gemini 3 Pro'
         };
         return names[model] || model;
@@ -840,7 +840,7 @@ NEWSBLUR.Views.StoryAskAiView = Backbone.View.extend({
             'haiku': 'anthropic',
             'sonnet': 'anthropic',
             'opus': 'anthropic',
-            'gpt-4.1': 'openai',
+            'gpt-4o-mini': 'openai',
             'gemini-3': 'google'
         };
         return providers[model] || 'unknown';
