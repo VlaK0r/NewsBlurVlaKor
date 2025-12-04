@@ -241,7 +241,11 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
             show_sideoption_save: NEWSBLUR.assets.preference("show_sideoption_save"),
             show_sideoption_share: NEWSBLUR.assets.preference("show_sideoption_share"),
             show_sideoption_related: NEWSBLUR.assets.preference("show_sideoption_related"),
-            show_sideoption_ask_ai: NEWSBLUR.assets.preference("show_sideoption_ask_ai") && NEWSBLUR.Globals.is_staff,
+            show_sideoption_ask_ai: NEWSBLUR.assets.preference("show_sideoption_ask_ai") && (
+                NEWSBLUR.Globals.is_staff ||
+                /* NEWSBLUR.Globals.is_archive || NEWSBLUR.Globals.is_pro || */
+                (NEWSBLUR.Globals.debug && NEWSBLUR.Globals.is_premium)
+            ),
         };
     },
 
@@ -1362,8 +1366,29 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
                         <% }) %>\
                     </ul>\
                     <div class="NB-menu-ask-ai-custom-input-wrapper">\
+                        <div class="NB-menu-ask-ai-voice-button" title="Record voice question">\
+                            <img src="/media/img/icons/nouns/microphone.svg" class="NB-menu-ask-ai-voice-icon" />\
+                            <div class="NB-menu-ask-ai-recording-indicator">\
+                                <div class="NB-recording-bar"></div>\
+                                <div class="NB-recording-bar"></div>\
+                                <div class="NB-recording-bar"></div>\
+                                <div class="NB-recording-bar"></div>\
+                            </div>\
+                        </div>\
                         <input type="text" class="NB-menu-ask-ai-custom-input" placeholder="Ask a question..." />\
-                        <div class="NB-button NB-modal-submit-green NB-menu-ask-ai-custom-submit NB-disabled">Ask</div>\
+                        <div class="NB-menu-ask-ai-submit-menu NB-disabled" data-model="opus">\
+                            <div class="NB-menu-ask-ai-custom-submit">Ask</div>\
+                            <div class="NB-menu-ask-ai-submit-dropdown-trigger" title="Choose model">\
+                                <span class="NB-dropdown-arrow">▾</span>\
+                            </div>\
+                            <div class="NB-menu-ask-ai-model-dropdown">\
+                                <div class="NB-model-option" data-model="haiku">Claude 4.5 Haiku</div>\
+                                <div class="NB-model-option" data-model="sonnet">Claude 4.5 Sonnet</div>\
+                                <div class="NB-model-option NB-selected" data-model="opus">Claude 4.5 Opus</div>\
+                                <div class="NB-model-option" data-model="gpt-4.1">GPT 4.1</div>\
+                                <div class="NB-model-option" data-model="gemini-3">Gemini 3 Pro</div>\
+                            </div>\
+                        </div>\
                     </div>\
                 </div>\
             </div>\
@@ -1377,6 +1402,14 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
 
         $menu.data('story_id', this.model.id);
         $menu.data('story_view', this);
+
+        // Set model from preference (default to opus)
+        var saved_model = NEWSBLUR.assets.preference('ask_ai_model') || 'opus';
+        var $submit_menu = $menu.find('.NB-menu-ask-ai-submit-menu');
+        $submit_menu.data('model', saved_model);
+        $menu.find('.NB-menu-ask-ai-model-dropdown .NB-model-option').removeClass('NB-selected');
+        $menu.find('.NB-menu-ask-ai-model-dropdown .NB-model-option[data-model="' + saved_model + '"]').addClass('NB-selected');
+
         $('body').append($menu);
 
         var button_offset = $button.offset();
@@ -1424,20 +1457,48 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
         // Enable/disable Ask button based on input content
         $menu.find('.NB-menu-ask-ai-custom-input').on('input', _.bind(function (ev) {
             var $input = $(ev.currentTarget);
-            var $submit_button = $menu.find('.NB-menu-ask-ai-custom-submit');
+            var $submit_menu = $menu.find('.NB-menu-ask-ai-submit-menu');
             var has_text = $input.val().trim().length > 0;
 
             if (has_text) {
-                $submit_button.removeClass('NB-disabled');
+                $submit_menu.removeClass('NB-disabled');
             } else {
-                $submit_button.addClass('NB-disabled');
+                $submit_menu.addClass('NB-disabled');
             }
         }, this));
 
         $menu.find('.NB-menu-ask-ai-option, .NB-menu-ask-ai-segment').on('click', _.bind(function (ev) {
             var question_id = $(ev.currentTarget).data('question-id');
-            this.handle_ask_ai_question(question_id);
+            var model = $menu.find('.NB-menu-ask-ai-submit-menu').data('model');
+            this.handle_ask_ai_question(question_id, model);
             this.hide_ask_ai_menu();
+        }, this));
+
+        // Model dropdown toggle
+        $menu.find('.NB-menu-ask-ai-submit-dropdown-trigger').on('click', _.bind(function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            $menu.find('.NB-menu-ask-ai-submit-menu').toggleClass('NB-dropdown-open');
+        }, this));
+
+        // Model selection in dropdown
+        $menu.find('.NB-menu-ask-ai-model-dropdown .NB-model-option').on('click', _.bind(function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            var $option = $(ev.currentTarget);
+            var model = $option.data('model');
+            var $submit_menu = $menu.find('.NB-menu-ask-ai-submit-menu');
+
+            // Update selected state
+            $menu.find('.NB-menu-ask-ai-model-dropdown .NB-model-option').removeClass('NB-selected');
+            $option.addClass('NB-selected');
+
+            // Store selected model and save preference
+            $submit_menu.data('model', model);
+            NEWSBLUR.assets.preference('ask_ai_model', model);
+
+            // Close dropdown
+            $submit_menu.removeClass('NB-dropdown-open');
         }, this));
 
         // Custom question input handlers
@@ -1460,6 +1521,12 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
             this.submit_custom_question_from_menu($menu);
         }, this));
 
+        // Voice recording button handler
+        $menu.find('.NB-menu-ask-ai-voice-button').on('click', _.bind(function (ev) {
+            ev.preventDefault();
+            this.start_voice_recording_for_menu($menu);
+        }, this));
+
         $(document).on('click.ask_ai_menu', _.bind(function (ev) {
             if (!$(ev.target).closest('.NB-menu-ask-ai-container, .NB-feed-story-ask-ai').length) {
                 this.hide_ask_ai_menu();
@@ -1470,8 +1537,15 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
     },
 
     hide_ask_ai_menu: function () {
+        // Stop any active voice recording before closing
+        var $menu = $('.NB-menu-ask-ai-container');
+        var recorder = $menu.data('voice_recorder');
+        if (recorder) {
+            recorder.cleanup();
+        }
+
         $('.NB-feed-story-ask-ai').removeClass('NB-active');
-        $('.NB-menu-ask-ai-container').fadeOut(100, function () {
+        $menu.fadeOut(100, function () {
             $(this).remove();
         });
         $(document).off('click.ask_ai_menu');
@@ -1479,16 +1553,95 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
 
     submit_custom_question_from_menu: function ($menu) {
         var custom_question = $menu.find('.NB-menu-ask-ai-custom-input').val();
-        if (!custom_question || !custom_question.trim()) {
+        var transcription_error = $menu.data('transcription_error');
+        var model = $menu.find('.NB-menu-ask-ai-submit-menu').data('model');
+
+        // Allow opening with empty question if there's a transcription error to display
+        if ((!custom_question || !custom_question.trim()) && !transcription_error) {
             return;
         }
 
-        NEWSBLUR.reader.open_ask_ai_pane(this.model, 'custom', custom_question);
+        NEWSBLUR.reader.open_ask_ai_pane(this.model, 'custom', custom_question, transcription_error, model);
         this.hide_ask_ai_menu();
+
+        // Clear the stored error
+        $menu.removeData('transcription_error');
     },
 
-    handle_ask_ai_question: function (question_id) {
-        NEWSBLUR.reader.open_ask_ai_pane(this.model, question_id);
+    handle_ask_ai_question: function (question_id, model) {
+        NEWSBLUR.reader.open_ask_ai_pane(this.model, question_id, null, null, model);
+    },
+
+    start_voice_recording_for_menu: function ($menu) {
+        var self = this;
+        var $voice_button = $menu.find('.NB-menu-ask-ai-voice-button');
+        var $input = $menu.find('.NB-menu-ask-ai-custom-input');
+        var $submit_button = $menu.find('.NB-menu-ask-ai-custom-submit');
+
+        // Get or create recorder instance for this menu
+        var recorder = $menu.data('voice_recorder');
+        if (!recorder) {
+            recorder = new NEWSBLUR.VoiceRecorder({
+                on_recording_start: function () {
+                    $voice_button.addClass('NB-recording');
+                    $input.attr('placeholder', 'Recording...');
+                    $voice_button.attr('title', 'Stop recording');
+                },
+                on_recording_stop: function () {
+                    $voice_button.removeClass('NB-recording');
+                    $voice_button.addClass('NB-transcribing');
+                    $input.attr('placeholder', 'Transcribing...');
+                    $voice_button.attr('title', 'Transcribing audio');
+                },
+                on_transcription_start: function () {
+                    // Already showing transcribing state
+                },
+                on_transcription_complete: function (text) {
+                    $voice_button.removeClass('NB-transcribing');
+                    $voice_button.attr('title', 'Record voice question');
+                    $input.attr('placeholder', 'Ask a question...');
+
+                    // Set the transcribed text and submit the question automatically
+                    $input.val(text);
+                    $submit_button.removeClass('NB-disabled');
+
+                    // Auto-submit the question
+                    _.delay(function () {
+                        self.submit_custom_question_from_menu($menu);
+                    }, 100);
+                },
+                on_transcription_error: function (error) {
+                    $voice_button.removeClass('NB-recording NB-transcribing');
+                    $voice_button.attr('title', 'Record voice question');
+
+                    // Check if this is a quota/limit error
+                    var is_quota_error = error && (error.includes('limit') || error.includes('used all') || error.includes('reached'));
+
+                    if (is_quota_error) {
+                        // Store the error and open Ask AI view to display it
+                        $menu.data('transcription_error', error);
+                        $input.attr('placeholder', 'Quota exceeded');
+                        // Auto-submit to open Ask AI view which will show the full error
+                        _.delay(function () {
+                            self.submit_custom_question_from_menu($menu);
+                        }, 100);
+                    } else {
+                        // For other errors, show in placeholder
+                        $input.attr('placeholder', error || 'Error - please try again');
+                    }
+
+                    console.error('Voice transcription error:', error);
+                }
+            });
+            $menu.data('voice_recorder', recorder);
+        }
+
+        // Toggle recording
+        if (recorder.is_recording) {
+            recorder.stop_recording();
+        } else {
+            recorder.start_recording();
+        }
     }
 
 
