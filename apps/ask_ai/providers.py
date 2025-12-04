@@ -145,12 +145,12 @@ MODELS = {
     "haiku": (AnthropicProvider, "claude-haiku-4-5-20251001"),
     "sonnet": (AnthropicProvider, "claude-sonnet-4-5-20250929"),
     "opus": (AnthropicProvider, "claude-opus-4-5-20251101"),
-    "gpt-4.1": (OpenAIProvider, "gpt-4.1"),
+    "gpt-4o-mini": (OpenAIProvider, "gpt-4o-mini"),
     "gemini-3": (GeminiProvider, "gemini-3-pro-preview"),
 }
 
 VALID_MODELS = list(MODELS.keys())
-DEFAULT_MODEL = "gpt-4.1"
+DEFAULT_MODEL = "gpt-4o-mini"
 
 
 def get_provider(model_name: str) -> tuple[LLMProvider, str]:
