@@ -191,12 +191,10 @@ NEWSBLUR.Views.StoryAskAiView = Backbone.View.extend({
                             <span class="NB-dropdown-arrow">▾</span>\
                         </div>\
                         <div class="NB-story-ask-ai-model-dropdown NB-reask-dropdown">\
-
                             <div class="NB-model-option" data-model="opus"><span class="NB-provider-pill NB-provider-anthropic">Anthropic</span> Claude Opus 4.5</div>\
                             <div class="NB-model-option" data-model="gpt-4o-mini"><span class="NB-provider-pill NB-provider-openai">OpenAI</span> gpt-4o-mini</div>\
                             <div class="NB-model-option" data-model="gemini-3"><span class="NB-provider-pill NB-provider-google">Google</span> Gemini 3 Pro</div>\
                             <div class="NB-model-option" data-model="grok-4.1"><span class="NB-provider-pill NB-provider-xai">xAI</span> Grok 4.1 Fast</div>\
-
                         </div>\
                     </div>\
                     <div class="NB-story-ask-ai-send-menu" style="display: none;">\
@@ -205,12 +203,10 @@ NEWSBLUR.Views.StoryAskAiView = Backbone.View.extend({
                             <span class="NB-dropdown-arrow">▾</span>\
                         </div>\
                         <div class="NB-story-ask-ai-model-dropdown NB-send-dropdown">\
-
                             <div class="NB-model-option" data-model="opus"><span class="NB-provider-pill NB-provider-anthropic">Anthropic</span> Claude Opus 4.5</div>\
                             <div class="NB-model-option" data-model="gpt-4o-mini"><span class="NB-provider-pill NB-provider-openai">OpenAI</span> gpt-4o-mini</div>\
                             <div class="NB-model-option" data-model="gemini-3"><span class="NB-provider-pill NB-provider-google">Google</span> Gemini 3 Pro</div>\
                             <div class="NB-model-option" data-model="grok-4.1"><span class="NB-provider-pill NB-provider-xai">xAI</span> Grok 4.1 Fast</div>\
-
                         </div>\
                     </div>\
                     <div class="NB-story-ask-ai-finish-recording-menu" style="display: none;">\
@@ -219,12 +215,10 @@ NEWSBLUR.Views.StoryAskAiView = Backbone.View.extend({
                             <span class="NB-dropdown-arrow">▾</span>\
                         </div>\
                         <div class="NB-story-ask-ai-model-dropdown NB-finish-recording-dropdown">\
-
                             <div class="NB-model-option" data-model="opus"><span class="NB-provider-pill NB-provider-anthropic">Anthropic</span> Claude Opus 4.5</div>\
                             <div class="NB-model-option" data-model="gpt-4o-mini"><span class="NB-provider-pill NB-provider-openai">OpenAI</span> gpt-4o-mini</div>\
                             <div class="NB-model-option" data-model="gemini-3"><span class="NB-provider-pill NB-provider-google">Google</span> Gemini 3 Pro</div>\
                             <div class="NB-model-option" data-model="grok-4.1"><span class="NB-provider-pill NB-provider-xai">xAI</span> Grok 4.1 Fast</div>\
-
                         </div>\
                     </div>\
                 </div>\
