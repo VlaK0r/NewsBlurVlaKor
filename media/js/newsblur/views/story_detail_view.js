@@ -16,8 +16,6 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
         "click .NB-feed-story-title": "click_link_in_story",
         "mouseenter .NB-feed-story-manage-icon": "mouseenter_manage_icon",
         "mouseleave .NB-feed-story-manage-icon": "mouseleave_manage_icon",
-        "mouseenter .NB-feed-story-email": "mouseenter_sideoption_email",
-        "mouseleave .NB-feed-story-email": "mouseleave_sideoption_email",
         "mouseenter .NB-feed-story-train": "mouseenter_sideoption_train",
         "mouseleave .NB-feed-story-train": "mouseleave_sideoption_train",
         "mouseenter .NB-feed-story-ask-ai": "mouseenter_sideoption_ask_ai",
@@ -30,7 +28,8 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
         "click .NB-feed-story-tag": "save_classifier",
         "click .NB-feed-story-author": "save_classifier",
         "click .NB-feed-story-train": "open_story_trainer",
-        "click .NB-feed-story-email": "maybe_open_email",
+        "click .NB-feed-story-email": "open_email",
+        "click .NB-sideoption-sharing": "click_sharing_service",
         "click .NB-feed-story-save": "toggle_starred",
         "click .NB-story-comments-label": "scroll_to_comments",
         "click .NB-story-content-expander": "expand_story",
@@ -243,9 +242,10 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
             show_sideoption_related: NEWSBLUR.assets.preference("show_sideoption_related"),
             show_sideoption_ask_ai: NEWSBLUR.assets.preference("show_sideoption_ask_ai") && (
                 NEWSBLUR.Globals.is_staff ||
-                /* NEWSBLUR.Globals.is_archive || NEWSBLUR.Globals.is_pro || */
+                NEWSBLUR.Globals.is_archive ||
                 (NEWSBLUR.Globals.debug && NEWSBLUR.Globals.is_premium)
             ),
+            sharing_services: NEWSBLUR.assets.third_party_sharing_services,
         };
     },
 
@@ -312,10 +312,12 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
         <div class="NB-feed-story-shares-container"></div>\
         <div class="NB-story-content-container">\
             <div class="NB-story-content-wrapper <% if (truncatable) { %>NB-story-content-truncatable<% } %>">\
-                <div class="NB-feed-story-content <% if (feed && feed.get("is_newsletter")) { %>NB-newsletter<% } %>">\
-                    <% if (!options.skip_content) { %>\
-                        <%= story.story_content() %>\
-                    <% } %>\
+                <div class="NB-story-content-positioning-wrapper">\
+                    <div class="NB-feed-story-content <% if (feed && feed.get("is_newsletter")) { %>NB-newsletter<% } %>">\
+                        <% if (!options.skip_content) { %>\
+                            <%= story.story_content() %>\
+                        <% } %>\
+                    </div>\
                 </div>\
                 <div class="NB-story-content-expander" role="button">\
                     <div class="NB-story-content-expander-inner">\
@@ -331,19 +333,17 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
                 <% if (show_sideoption_email) { %>\
                     <div class="NB-sideoption NB-feed-story-email" role="button">\
                         <div class="NB-sideoption-title">Email</div>\
-                        <div class="NB-sideoption-thirdparty NB-sideoption-icon NB-sideoption-icon-email">&nbsp;</div>\
-                        <div class="NB-sideoption-thirdparty-services">\
-                            <div class="NB-sideoption-icons">\
-                                <% _.each(NEWSBLUR.assets.third_party_sharing_services, function(label, key) { %>\
-                                    <% if (NEWSBLUR.Preferences["story_share_"+key]) { %>\
-                                        <div class="NB-sideoption-thirdparty NB-sideoption-thirdparty-<%= key %>" data-service-name="<%= key %>" data-service-label="<%= label %>" role="button">\
-                                        </div>\
-                                    <% } %>\
-                                <% }) %>\
-                            </div>\
-                        </div>\
+                        <div class="NB-sideoption-icon NB-sideoption-icon-email">&nbsp;</div>\
                     </div>\
                 <% } %>\
+                <% _.each(sharing_services, function(label, key) { %>\
+                    <% if (NEWSBLUR.Preferences["story_share_"+key]) { %>\
+                        <div class="NB-sideoption NB-sideoption-sharing NB-sideoption-sharing-<%= key %>" data-service-name="<%= key %>" role="button">\
+                            <div class="NB-sideoption-title"><%= label %></div>\
+                            <div class="NB-sideoption-icon NB-sideoption-icon-<%= key %>">&nbsp;</div>\
+                        </div>\
+                    <% } %>\
+                <% }) %>\
                 <% if (show_sideoption_train) { %>\
                     <div class="NB-sideoption NB-feed-story-train" role="button">\
                         <div class="NB-sideoption-title">Train</div>\
@@ -817,34 +817,6 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
 
     },
 
-    mouseenter_sideoption_email: function (event) {
-        var $sideoption = $(event.currentTarget);
-        $sideoption.on('mousemove.email', _.bind(function (e) {
-            var $target = $(e.target);
-            var $thirdparty = $target.closest('.NB-sideoption-thirdparty');
-
-            if ($thirdparty.length) {
-                var serviceName = $thirdparty.data("service-label");
-                $sideoption.find(".NB-sideoption-title").text(serviceName);
-                $sideoption.find('.NB-sideoption-thirdparty').removeClass("NB-hover");
-                $thirdparty.addClass("NB-hover");
-                $sideoption.find(".NB-sideoption-icon-email").addClass("NB-dimmed");
-            } else {
-                $sideoption.find(".NB-sideoption-title").text("Email");
-                $sideoption.find('.NB-sideoption-thirdparty').removeClass("NB-hover");
-                $sideoption.find(".NB-sideoption-icon-email").removeClass("NB-dimmed");
-            }
-        }, this));
-    },
-
-    mouseleave_sideoption_email: function (event) {
-        var $sideoption = $(event.currentTarget);
-        $sideoption.off('mousemove.email');
-        $sideoption.find(".NB-sideoption-title").text("Email");
-        $sideoption.find('.NB-sideoption-thirdparty').removeClass("NB-hover");
-        $sideoption.find(".NB-sideoption-icon-email").removeClass("NB-dimmed");
-    },
-
     mouseenter_sideoption_train: function (event) {
         var $sideoption = $(event.currentTarget);
         $sideoption.on('mousemove.train', _.bind(function (e) {
@@ -1232,20 +1204,17 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
         NEWSBLUR.reader.open_story_trainer(this.model.id, feed_id, options);
     },
 
-    maybe_open_email: function (e) {
-        // Check if target has .NB-sideoption-thirdparty class
-        if (!$(e.target).hasClass('NB-sideoption-thirdparty')) {
-            return this.open_email();
-        }
-
-        var service = $(e.target).data('service-name');
-        console.log(['maybe_open_email', e.target, service]);
+    click_sharing_service: function (e) {
+        var $sideoption = $(e.currentTarget);
+        var service = $sideoption.data('service-name');
         NEWSBLUR.reader.send_story_to_thirdparty(this.model.id, service);
 
-        if (service == 'copyurl') {
-            this.$(".NB-feed-story-email .NB-sideoption-title").text("Copied");
-        } else if (service == 'copytext') {
-            this.$(".NB-feed-story-email .NB-sideoption-title").text("Copied");
+        if (service == 'copyurl' || service == 'copytext') {
+            $sideoption.find(".NB-sideoption-title").text("Copied");
+            setTimeout(function () {
+                var label = NEWSBLUR.assets.third_party_sharing_services[service];
+                $sideoption.find(".NB-sideoption-title").text(label);
+            }, 1500);
         }
     },
 
@@ -1382,11 +1351,12 @@ NEWSBLUR.Views.StoryDetailView = Backbone.View.extend({
                                 <span class="NB-dropdown-arrow">▾</span>\
                             </div>\
                             <div class="NB-menu-ask-ai-model-dropdown">\
-                                <div class="NB-model-option" data-model="haiku">Claude 4.5 Haiku</div>\
-                                <div class="NB-model-option" data-model="sonnet">Claude 4.5 Sonnet</div>\
-                                <div class="NB-model-option NB-selected" data-model="opus">Claude 4.5 Opus</div>\
-                                <div class="NB-model-option" data-model="gpt-4o-mini">gpt-4o-mini</div>\
-                                <div class="NB-model-option" data-model="gemini-3">Gemini 3 Pro</div>\
+
+                                <div class="NB-model-option NB-selected" data-model="opus"><span class="NB-provider-pill NB-provider-anthropic">Anthropic</span> Claude Opus 4.5</div>\
+                                <div class="NB-model-option" data-model="gpt-4o-mini"><span class="NB-provider-pill NB-provider-openai">OpenAI</span> gpt-4o-mini</div>\
+                                <div class="NB-model-option" data-model="gemini-3"><span class="NB-provider-pill NB-provider-google">Google</span> Gemini 3 Pro</div>\
+                                <div class="NB-model-option" data-model="grok-4.1"><span class="NB-provider-pill NB-provider-xai">xAI</span> Grok 4.1 Fast</div>\
+
                             </div>\
                         </div>\
                     </div>\

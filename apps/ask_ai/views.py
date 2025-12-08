@@ -34,7 +34,9 @@ def ask_ai_question(request):
         question_id: ID of the question template (e.g., "sentence", "bullets", "custom")
         custom_question: Optional custom question text (required if question_id is "custom")
         conversation_history: Optional JSON string of conversation history for follow-ups
-        model: Optional model to use (haiku, sonnet, opus, gpt-4o-mini). Defaults to server setting.
+
+        model: Optional model to use (opus, gpt-4o-mini, gemini-3, grok-4.1). Defaults to server setting.
+
 
     Returns:
         JSON response with request_id and status
