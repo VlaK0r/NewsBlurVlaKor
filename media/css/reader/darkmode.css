@@ -1407,6 +1407,13 @@ background-color: #5d8392;
     cursor: pointer;
 }
 
+.NB-dark .NB-feed-story-content .NB-search-highlight {
+    background-color: #5E4A6E;
+    color: #f3f3f3;
+    padding: 2px 5px;
+    cursor: pointer;
+}
+
 /* Link color */
 .NB-dark .NB-feed-story a {
     color: #83b4e0;
@@ -2207,9 +2214,9 @@ a.mention, a.mention-group {
 
 /* Model Pills - Dark Mode */
 .NB-dark .NB-story-ask-ai-model-pill.NB-provider-anthropic {
-    background: linear-gradient(135deg, #8B6914 0%, #6B5210 100%);
-    color: #F5DEB3;
-    border: 1px solid #A67C00;
+    background: linear-gradient(135deg, #8B4D35 0%, #6B3A28 100%);
+    color: #F5C4B0;
+    border: 1px solid #A35845;
 }
 
 .NB-dark .NB-story-ask-ai-model-pill.NB-provider-openai {
@@ -2385,9 +2392,9 @@ a.mention, a.mention-group {
 }
 
 .NB-dark .NB-provider-pill.NB-provider-anthropic {
-    background: linear-gradient(135deg, #8B6914 0%, #705510 100%);
-    color: #F0D090;
-    border: 1px solid #A07820;
+    background: linear-gradient(135deg, #8B4D35 0%, #6B3A28 100%);
+    color: #F5C4B0;
+    border: 1px solid #A35845;
 }
 
 .NB-dark .NB-provider-pill.NB-provider-openai {
