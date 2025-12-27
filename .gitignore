@@ -84,10 +84,5 @@ apps/api/ip_addresses.txt
 .dev_session
 .conductor
 .worktree
-
-.env
-*.env
-local_settings.py
-
 docs
-
+plans
