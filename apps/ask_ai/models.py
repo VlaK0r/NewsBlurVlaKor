@@ -13,11 +13,7 @@ class MAskAIResponse(mongo.Document):
     story_hash = mongo.StringField(max_length=32)
     question_id = mongo.StringField(max_length=64)
     custom_question = mongo.StringField()
-
-
     model = mongo.StringField(max_length=32)  # AI model used (gamini-3, grok-4.1, opus, gpt-4o-mini)
-
-
     response_z = mongo.BinaryField()
     response_metadata = mongo.DictField()
     created_at = mongo.DateTimeField(default=datetime.datetime.now)
@@ -60,12 +56,7 @@ class MAskAIResponse(mongo.Document):
             story_hash: Story hash
             question_id: Question ID (e.g., "sentence", "bullets")
             custom_question: Optional custom question text
-
-
             model: Optional model name (opus, gpt-4o-mini, gemini-3, grok-4.1)
-
-
-
         Returns:
             MAskAIResponse instance or None
         """
@@ -99,13 +90,8 @@ class MAskAIResponse(mongo.Document):
             question_id: Question ID
             response_text: Full response text from AI
             custom_question: Optional custom question
-
-
             model: Optional model name (opus, gpt-4o-mini, gemini-3, grok-4.1)
-
-
             metadata: Optional metadata dict (tokens, model, etc.)
-
         Returns:
             MAskAIResponse instance
         """
