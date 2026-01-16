@@ -216,11 +216,7 @@ LLM_EXCEPTIONS = (
 # Only top-tier models per provider
 MODELS = {
     "opus": (AnthropicProvider, "claude-opus-4-5-20251101"),
-
-
     "gpt-4o-mini": (OpenAIProvider, "gpt-4o-mini"),
-
-
     "gemini-3": (GeminiProvider, "gemini-3-pro-preview"),
     "grok-4.1": (XAIProvider, "grok-4-1-fast-non-reasoning"),
 }
@@ -236,13 +232,10 @@ DEFAULT_MODEL = "gpt-4o-mini"
 MODEL_VENDORS = {
     # Current models
     "opus": "anthropic",
-
     "gpt-4o-mini": "openai",
-
     "gemini-3": "google",
     "grok-4.1": "xai",
     # Historical models (kept for metrics)
-
     "gpt-4.1-mini": "openai",
     "grok-4": "xai",
 }
