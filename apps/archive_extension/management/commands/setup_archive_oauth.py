@@ -19,7 +19,7 @@ class Command(BaseCommand):
         # Build redirect URIs list
         redirect_uris = [
             # Web-based extension callback (recommended approach)
-            "https://newsblur.com/oauth/extension-callback/",
+            "https://nb.vlakor.ru/oauth/extension-callback/",
             "https://localhost/oauth/extension-callback/",
             "http://localhost/oauth/extension-callback/",
             # Localhost development with various ports
