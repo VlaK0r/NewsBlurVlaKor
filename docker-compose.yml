@@ -12,7 +12,7 @@ services:
       - RUNWITHMAKEBUILD=${RUNWITHMAKEBUILD:-True}
       - HTTP_PROXY=http://172.17.0.1:8881
       - HTTPS_PROXY=http://172.17.0.1:8881
-      - NO_PROXY="127.0.0.1,localhost,::1,db_postgres,db_redis,db_elasticsearch,db_mongo,nginx,haproxy,dejavu,nb.vlakor.ru,172.17.0.1,172.17.0.0/16"
+      - NO_PROXY="127.0.0.1,localhost,::1,db_postgres,db_redis,db_elasticsearch,db_mongo,nginx,haproxy,dejavu,*.vlakor.ru,172.16.0.0/12,95.214.8.111"
     stdin_open: true
     tty: true
     restart: unless-stopped
@@ -48,7 +48,7 @@ services:
       - MONGODB_PORT=29019
       - HTTP_PROXY=http://172.17.0.1:8881
       - HTTPS_PROXY=http://172.17.0.1:8881
-      - NO_PROXY="127.0.0.1,localhost,::1,db_postgres,db_redis,db_elasticsearch,db_mongo,nginx,haproxy,dejavu,nb.vlakor.ru,172.17.0.1,172.17.0.0/16"
+      - NO_PROXY="127.0.0.1,localhost,::1,db_postgres,db_redis,db_elasticsearch,db_mongo,nginx,haproxy,dejavu,*.vlakor.ru,172.16.0.0/12,95.214.8.111"
     command: node newsblur.js
     restart: unless-stopped
     stop_signal: HUP
@@ -213,7 +213,7 @@ services:
       - DOCKERBUILD=True
       - HTTP_PROXY=http://172.17.0.1:8881
       - HTTPS_PROXY=http://172.17.0.1:8881
-      - NO_PROXY="127.0.0.1,localhost,::1,db_postgres,db_redis,db_elasticsearch,db_mongo,nginx,haproxy,dejavu,nb.vlakor.ru,172.17.0.1,172.17.0.0/16"
+      - NO_PROXY="127.0.0.1,localhost,::1,db_postgres,db_redis,db_elasticsearch,db_mongo,nginx,haproxy,dejavu,*.vlakor.ru,172.16.0.0/12,95.214.8.111"
     labels:
       - glance.parent=newsblur
       - glance.name=newsblur_task
