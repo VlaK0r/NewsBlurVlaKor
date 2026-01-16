@@ -8,6 +8,7 @@ from django.views.decorators.http import require_http_methods
 from apps.rss_feeds.models import MStory
 from utils import json_functions as json
 from utils import log as logging
+from utils.llm_costs import LLMCostTracker
 from utils.user_functions import ajax_login_required
 from utils.view_functions import required_params
 
@@ -35,7 +36,9 @@ def ask_ai_question(request):
         custom_question: Optional custom question text (required if question_id is "custom")
         conversation_history: Optional JSON string of conversation history for follow-ups
 
+
         model: Optional model to use (opus, gpt-4o-mini, gemini-3, grok-4.1). Defaults to server setting.
+
 
 
     Returns:
@@ -184,6 +187,14 @@ def transcribe_audio(request):
             duration_seconds=estimated_duration,
             story_hash=request.POST.get("story_hash", ""),
             request_id=request.POST.get("request_id", ""),
+        )
+
+        # Record LLM cost for transcription
+        LLMCostTracker.record_transcription(
+            duration_seconds=estimated_duration,
+            user_id=request.user.pk,
+            request_id=request.POST.get("request_id", ""),
+            metadata={"file_size": audio_file.size, "file_name": audio_file.name},
         )
 
         logging.user(

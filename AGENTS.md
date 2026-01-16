@@ -1,5 +1,17 @@
 # NewsBlur Development Guidelines
 
+## Planning & Clarification
+**IMPORTANT: Before starting any implementation or creating a plan, use the AskUserQuestion tool to interview me thoroughly.** Ask as many clarifying questions as needed to understand:
+- The specific goals and desired outcomes
+- Edge cases and error handling preferences
+- UI/UX preferences (if applicable)
+- Performance or scalability requirements
+- Integration points with existing code
+- Testing expectations
+- Any constraints or preferences I might have
+
+Don't assume - ask. Multiple rounds of questions are encouraged before writing code.
+
 ## Platform-Specific Guidelines
 - **iOS**: See `clients/ios/CLAUDE.md` for iOS simulator testing and development
 
@@ -115,7 +127,17 @@ sentry-cli --url https://sentry.newsblur.com issues list -o newsblur -p web --qu
 
 # List issues for other projects (task, node, monitor)
 sentry-cli --url https://sentry.newsblur.com issues list -o newsblur -p task --status unresolved
+
+# Resolve an issue after fixing (use issue ID from URL)
+sentry-cli --url https://sentry.newsblur.com issues resolve -o newsblur -p web -i 1037
 ```
+
+### Sentry Workflow
+1. Extract issue ID from URL (e.g., `.../issues/1037/` → `1037`)
+2. Get issue details with `--log-level debug` to find the file and function
+3. Fix the issue in code
+4. Commit the fix
+5. Resolve the issue with `sentry-cli issues resolve -i <issue_id>`
 
 ## Browser Testing with Chrome DevTools MCP
 - Local dev: `https://localhost` (when using containers directly)
