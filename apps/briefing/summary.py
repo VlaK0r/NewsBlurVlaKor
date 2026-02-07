@@ -1,7 +1,7 @@
 import re
 import zlib
 
-import anthropic
+import openai
 from django.conf import settings
 from django.utils.encoding import smart_str
 
@@ -247,7 +247,7 @@ def generate_briefing_summary(
         # summary.py: Scale max_tokens based on story/section count to avoid truncation
         num_sections = sum(1 for v in (sections or {}).values() if v)
         max_tokens = min(1024 + (len(scored_stories) * 80) + (num_sections * 100), 4096)
-        client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
         response = client.messages.create(
             model=BRIEFING_MODEL,
             max_tokens=max_tokens,
@@ -265,7 +265,7 @@ def generate_briefing_summary(
 
         if response.usage:
             LLMCostTracker.record_usage(
-                provider="anthropic",
+                provider="openai",
                 model=BRIEFING_MODEL,
                 feature="daily_briefing",
                 input_tokens=response.usage.input_tokens,
@@ -284,7 +284,7 @@ def generate_briefing_summary(
 
         return summary_html
 
-    except (anthropic.APIConnectionError, anthropic.APIStatusError) as e:
+    except (openai.APIConnectionError, openai.APIStatusError) as e:
         logging.error(" ---> Briefing summary failed for user %s: %s" % (user_id, str(e)))
         return None
 
