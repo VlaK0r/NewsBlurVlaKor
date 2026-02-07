@@ -63,7 +63,7 @@ LENGTH_INSTRUCTIONS = {
 }
 
 STYLE_INSTRUCTIONS = {
-    "editorial": "Write in a narrative editorial style with flowing prose that connects stories thematically.",
+    "editorial": "Write in Russian in a narrative editorial style with flowing prose that connects stories thematically.",
     "bullets": (
         "Use bullet points for each story. Group by the section headers below. "
         "Each bullet should be one sentence."
