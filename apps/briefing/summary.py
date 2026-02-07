@@ -9,7 +9,7 @@ from apps.rss_feeds.models import Feed, MStory
 from utils import log as logging
 from utils.llm_costs import LLMCostTracker
 
-BRIEFING_MODEL = "claude-haiku-4-5"
+BRIEFING_MODEL = "gpt-4o-mini"
 
 
 def normalize_section_key(key):
