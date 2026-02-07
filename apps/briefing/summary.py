@@ -18,6 +18,7 @@ def normalize_section_key(key):
     2. Replace hyphens with underscores
     3. Collapse multiple underscores to single
     4. Fuzzy match to closest valid key if no exact match
+    5. Output the answers in Russian
 
     Returns normalized key if valid, None if no match found.
     """
