@@ -37,6 +37,7 @@ def ask_ai_question(request):
         conversation_history: Optional JSON string of conversation history for follow-ups
         model: Optional model to use (opus, gpt-5.2, gemini-3, grok-4.1). Defaults to server setting.
         thinking: Optional "true"/"false" to enable reasoning/thinking mode.
+        
     Returns:
         JSON response with request_id and status
     """
