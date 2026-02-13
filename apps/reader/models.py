@@ -149,7 +149,7 @@ class UserSubscription(models.Model):
         across_all_feeds=True,
         store_stories_key=None,
         offset=0,
-        limit=1000,
+        limit=500,
     ):
         r = redis.Redis(connection_pool=settings.REDIS_STORY_HASH_POOL)
         pipeline = r.pipeline()
