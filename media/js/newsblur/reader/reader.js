@@ -95,7 +95,7 @@
                 FILL_OUT_PAGES_SEARCH_STORY_TITLE: 10,
                 FIND_NEXT_UNREAD_STORY_TRIES: 100,
                 RIVER_STORIES_FOR_STANDARD_ACCOUNT: 3,
-                MIN_FEED_LIST_SIZE: 500,
+                MIN_FEED_LIST_SIZE: 225,
                 MIN_STORY_LIST_SIZE: 68
             };
 
