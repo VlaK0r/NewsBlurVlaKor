@@ -93,7 +93,7 @@
                 FEED_REFRESH_INTERVAL: (1000 * 60) * 1, // 1 minute
                 FILL_OUT_PAGES: 300,
                 FILL_OUT_PAGES_SEARCH_STORY_TITLE: 10,
-                FIND_NEXT_UNREAD_STORY_TRIES: 100,
+                FIND_NEXT_UNREAD_STORY_TRIES: 300,
                 RIVER_STORIES_FOR_STANDARD_ACCOUNT: 3,
                 MIN_FEED_LIST_SIZE: 225,
                 MIN_STORY_LIST_SIZE: 68
