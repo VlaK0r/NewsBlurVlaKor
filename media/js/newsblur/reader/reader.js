@@ -90,7 +90,7 @@
             this.views = {};
             this.layout = {};
             this.constants = {
-                FEED_REFRESH_INTERVAL: (1000 * 60) * 1, // 1 minute
+                FEED_REFRESH_INTERVAL: (1000 * 60) * 2, // 1 minute
                 FILL_OUT_PAGES: 300,
                 FILL_OUT_PAGES_SEARCH_STORY_TITLE: 10,
                 FIND_NEXT_UNREAD_STORY_TRIES: 300,
