@@ -887,7 +887,7 @@ def load_single_feed(request, feed_id):
     start = time.time()
     user = get_user(request)
     # offset = int(request.GET.get('offset', 0))
-    limit = int(request.GET.get('limit', 40))
+    limit = int(request.GET.get('limit', 100))
     # limit = 6
     page = int(request.GET.get("page", 1))
     delay = int(request.GET.get("delay", 0))
