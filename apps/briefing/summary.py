@@ -69,19 +69,21 @@ LENGTH_INSTRUCTIONS = {
 
 STYLE_INSTRUCTIONS = {
     "editorial": (
-        "Write in Russia"
+        "Write in Russian language"
         "Within each section, briefly explain WHY these stories matter to the reader — not just what "
         "they are about. Focus on what makes each story worth reading. "
         "Write in a narrative editorial style with flowing prose that connects stories thematically. "
         "Wrap each story paragraph in a <p> tag. Do NOT use <ul> or <li> tags."
     ),
     "bullets": (
+        "Write in Russian language"
         "Within each section, briefly explain WHY these stories matter to the reader — not just what "
         "they are about. Focus on what makes each story worth reading. "
         "Write each story as a concise one-sentence summary. Group by the section headers below. "
         "Wrap each story in its own <p> tag. Do NOT use <ul> or <li> tags."
     ),
     "headlines": (
+        "Write in Russian language"
         "List each story as ONLY the headline — absolutely no commentary, no explanatory sentences, "
         "no dashes followed by descriptions, just the linked story title and nothing else. "
         "Group by the section headers below. "
