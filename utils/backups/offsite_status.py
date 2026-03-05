@@ -6,6 +6,7 @@ current mongodump progress. Runs on the HA box.
 """
 
 import glob
+import json
 import os
 import re
 import subprocess
@@ -14,21 +15,37 @@ import time
 
 BACKUP_DRIVE = "/media/newsblur-backup"
 SHOW_N = 3
+VERIFY_STATUS_FILE = os.path.join(BACKUP_DRIVE, "verify_status.json")
 
 SERVICES = [
     ("MongoDB", "mongo_full", "mongodump_full_*.gz", r"mongodump_full_(\d{4}-\d{2}-\d{2})\.gz"),
-    ("PostgreSQL", "postgres", "backup_postgresql_*.sql*", r"backup_postgresql_(\d{4}-\d{2}-\d{2}(?:-\d{2}-\d{2})?)"),
-    ("Redis Story", "redis/backup_hdb_redis_story_2", "*.rdb.gz", r"_(\d{4}-\d{2}-\d{2}-\d{2}-\d{2})\.rdb\.gz"),
-    ("Redis User", "redis/backup_hdb_redis_user_2", "*.rdb.gz", r"_(\d{4}-\d{2}-\d{2}-\d{2}-\d{2})\.rdb\.gz"),
-    ("Redis Session", "redis/backup_hdb_redis_session_2", "*.rdb.gz", r"_(\d{4}-\d{2}-\d{2}-\d{2}-\d{2})\.rdb\.gz"),
+    (
+        "PostgreSQL",
+        "postgres",
+        "backup_postgresql_*.sql*",
+        r"backup_postgresql_(\d{4}-\d{2}-\d{2}(?:-\d{2}-\d{2})?)",
+    ),
+    (
+        "Redis Story",
+        "redis/backup_hdb_redis_story_2",
+        "*.rdb*",
+        r"_(\d{4}-\d{2}-\d{2}-\d{2}-\d{2})\.rdb",
+    ),
+    ("Redis User", "redis/backup_hdb_redis_user_2", "*.rdb*", r"_(\d{4}-\d{2}-\d{2}-\d{2}-\d{2})\.rdb"),
+    (
+        "Redis Session",
+        "redis/backup_hdb_redis_session_2",
+        "*.rdb*",
+        r"_(\d{4}-\d{2}-\d{2}-\d{2}-\d{2})\.rdb",
+    ),
 ]
 
 
 def format_size(size_bytes):
-    if size_bytes >= 1024 ** 3:
-        return "%.1f GB" % (size_bytes / 1024 ** 3)
-    elif size_bytes >= 1024 ** 2:
-        return "%.1f MB" % (size_bytes / 1024 ** 2)
+    if size_bytes >= 1024**3:
+        return "%.1f GB" % (size_bytes / 1024**3)
+    elif size_bytes >= 1024**2:
+        return "%.1f MB" % (size_bytes / 1024**2)
     elif size_bytes >= 1024:
         return "%.1f KB" % (size_bytes / 1024)
     return "%d B" % size_bytes
@@ -36,8 +53,7 @@ def format_size(size_bytes):
 
 def format_date(date_str):
     # "2026-03-04" or "2026-03-04-09-00" → "Mar 04" or "Mar 04 09:00"
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     parts = date_str.split("-")
     month = months[int(parts[1]) - 1]
     day = parts[2]
@@ -85,8 +101,7 @@ def get_mongo_start_time():
         return None
     try:
         result = subprocess.run(
-            ["grep", "-n", "Streaming full mongodump", log_file],
-            capture_output=True, text=True
+            ["grep", "-n", "Streaming full mongodump", log_file], capture_output=True, text=True
         )
         lines = result.stdout.strip().split("\n")
         if lines and lines[-1]:
@@ -95,6 +110,7 @@ def get_mongo_start_time():
             if match:
                 ts_str = match.group(1).split(":", 1)[1]
                 from datetime import datetime
+
                 return datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
     except Exception:
         pass
@@ -112,6 +128,7 @@ def get_partial():
         size = os.path.getsize(f)
         # Elapsed time from mongodump start in backup.log
         from datetime import datetime
+
         start = get_mongo_start_time()
         elapsed = (datetime.now() - start).total_seconds() if start else 0
         return date_str, size, elapsed
@@ -125,9 +142,7 @@ def get_mongodump_progress():
         return None
     try:
         # Read last 20 lines looking for progress
-        result = subprocess.run(
-            ["tail", "-20", run_log], capture_output=True, text=True
-        )
+        result = subprocess.run(["tail", "-20", run_log], capture_output=True, text=True)
         lines = result.stdout.strip().split("\n")
         for line in reversed(lines):
             if "newsblur.stories" in line and "%" in line:
@@ -145,9 +160,7 @@ def get_mongodump_progress():
 
 def get_disk_usage():
     try:
-        result = subprocess.run(
-            ["df", "-h", BACKUP_DRIVE], capture_output=True, text=True
-        )
+        result = subprocess.run(["df", "-h", BACKUP_DRIVE], capture_output=True, text=True)
         lines = result.stdout.strip().split("\n")
         if len(lines) >= 2:
             parts = lines[1].split()
@@ -157,11 +170,47 @@ def get_disk_usage():
     return None
 
 
+def load_verify_status():
+    """Load verification results from JSON status file."""
+    if not os.path.exists(VERIFY_STATUS_FILE):
+        return None
+    try:
+        with open(VERIFY_STATUS_FILE) as f:
+            return json.load(f)
+    except (IOError, json.JSONDecodeError):
+        return None
+
+
+def format_verify_status(verify_data, service_name):
+    """Return colored status string for a service's verification result."""
+    if not verify_data:
+        return "\033[2mnot verified\033[0m"
+
+    results = verify_data.get("results", {})
+    if service_name not in results:
+        return "\033[2mnot verified\033[0m"
+
+    result = results[service_name]
+    if result.get("ok"):
+        return "\033[32m✓ verified\033[0m"
+    else:
+        # Show first failing check
+        checks = result.get("checks", [])
+        fail = next((c for c in checks if c.startswith("FAIL")), "unknown failure")
+        fail_msg = fail.replace("FAIL ", "", 1)[:40]
+        return "\033[31m✗ %s\033[0m" % fail_msg
+
+
 def print_table():
     # Header
     print()
     print("  \033[1mNewsBlur Off-site Backup Status\033[0m")
     print("  \033[2m%s\033[0m" % ("─" * 52))
+
+    verify_data = load_verify_status()
+    if verify_data:
+        ts = verify_data.get("timestamp", "")
+        print("  \033[2mLast verified: %s\033[0m" % ts)
 
     for service_name, directory, pattern, date_regex in SERVICES:
         backups = get_backups(directory, pattern, date_regex)
@@ -208,8 +257,7 @@ def print_table():
         print("  ├──────────────┼──────────┤")
 
         if partial_row:
-            print("  │ %-12s │ %8s │%s" % (
-                format_date(partial_row[0]), partial_row[1], partial_row[2]))
+            print("  │ %-12s │ %8s │%s" % (format_date(partial_row[0]), partial_row[1], partial_row[2]))
 
         for date_str, size, filename in backups:
             date_display = format_date(date_str)
@@ -217,13 +265,16 @@ def print_table():
             print("  │ %-12s │ %8s │" % (date_display, size_display))
 
         print("  └──────────────┴──────────┘")
+        print("  %s" % format_verify_status(verify_data, service_name))
 
     # Disk usage
     disk = get_disk_usage()
     if disk:
         print()
-        print("  \033[2mDisk: %s used / %s total (%s free)\033[0m" % (
-            disk["used"], disk["total"], disk["avail"]))
+        print(
+            "  \033[2mDisk: %s used / %s total (%s free)\033[0m"
+            % (disk["used"], disk["total"], disk["avail"])
+        )
 
     print()
 

@@ -9,6 +9,8 @@ from utils import log as logging
 from utils.user_functions import ajax_login_required
 from utils.view_functions import required_params
 
+from apps.statistics.rtrending_webfeeds import RTrendingWebFeed
+
 from .models import MWebFeedConfig
 from .tasks import AnalyzeWebFeedPage
 
@@ -39,6 +41,8 @@ def analyze(request):
         request.user,
         f"~BB~FWWeb Feed: Analyzing ~SB{url}~SN" + (f" (hint: {story_hint})" if story_hint else ""),
     )
+
+    RTrendingWebFeed.record_analysis(request.user.pk, url, has_hint=bool(story_hint))
 
     AnalyzeWebFeedPage.apply_async(
         kwargs={
@@ -137,8 +141,8 @@ def subscribe(request):
             user_title=feed.feed_title,
         )
         from apps.reader.models import UserSubscriptionFolders
-        from utils.feed_functions import add_object_to_folder
         from utils import json_functions as json_util
+        from utils.feed_functions import add_object_to_folder
 
         usf, created = UserSubscriptionFolders.objects.get_or_create(
             user=request.user, defaults={"folders": "[]"}
@@ -156,6 +160,8 @@ def subscribe(request):
         icon_importer.save()
     except Exception as e:
         logging.user(request.user, f"~BB~FWWeb Feed: ~FR~SBFavicon import failed~SN~FW - {e}")
+
+    RTrendingWebFeed.record_subscription(request.user.pk, url, variant_index)
 
     logging.user(request.user, f"~BB~FWWeb Feed: Subscribed to ~SB{url}~SN (feed {feed.pk})")
 
@@ -201,7 +207,9 @@ def reanalyze(request):
     if not feed.feed_address.startswith("webfeed:"):
         return {"code": -1, "message": "Not a web feed"}
 
-    url = feed.feed_address[len("webfeed:"):]
+    url = feed.feed_address[len("webfeed:") :]
+
+    RTrendingWebFeed.record_reanalysis(request.user.pk)
 
     logging.user(request.user, f"~BB~FWWeb Feed: Re-analyzing ~SB{url}~SN (feed {feed_id})")
 

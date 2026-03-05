@@ -27,6 +27,7 @@ from apps.monitor.views import (
     Updates,
     Users,
     UserSearches,
+    WebFeedUsage,
 )
 
 urlpatterns = [
@@ -55,4 +56,5 @@ urlpatterns = [
     url(r"^user-searches?$", UserSearches.as_view(), name="user_searches"),
     url(r"^trending-feeds?$", TrendingFeeds.as_view(), name="trending_feeds"),
     url(r"^trending-subscriptions?$", TrendingSubscriptions.as_view(), name="trending_subscriptions"),
+    url(r"^webfeed-usage?$", WebFeedUsage.as_view(), name="webfeed_usage"),
 ]

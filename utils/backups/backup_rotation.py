@@ -153,12 +153,12 @@ def rotate_s3_backups(bucket_name, key_prefix, key_ext, dry_run=False, daily=7, 
         if key in yearly_keys:
             obj = bucket.Object(key)
             obj.load()
-            if obj.storage_class not in ('DEEP_ARCHIVE', 'GLACIER'):
+            if obj.storage_class not in ("DEEP_ARCHIVE", "GLACIER"):
                 if dry_run:
                     print("  [DRY RUN] Would archive to Glacier: %s" % key)
                 else:
-                    copy_source = {'Bucket': bucket_name, 'Key': key}
-                    obj.copy(copy_source, ExtraArgs={'StorageClass': 'DEEP_ARCHIVE'})
+                    copy_source = {"Bucket": bucket_name, "Key": key}
+                    obj.copy(copy_source, ExtraArgs={"StorageClass": "DEEP_ARCHIVE"})
                     print("  Archived to Glacier Deep Archive: %s" % key)
                 archived += 1
 
@@ -249,7 +249,10 @@ if __name__ == "__main__":
         print("\n=== PostgreSQL backups (.sql.sql - old format) ===")
         rotate_s3_backups(bucket, "backup_%s/backup_postgresql" % hostname, ".sql.sql", dry_run=dry)
 
-        print("\n=== Redis backups ===")
+        print("\n=== Redis backups (.rdb) ===")
+        rotate_s3_backups(bucket, "backup_%s/backup_%s" % (hostname, hostname), ".rdb", dry_run=dry)
+
+        print("\n=== Redis backups (.rdb.gz - old extension) ===")
         rotate_s3_backups(bucket, "backup_%s/backup_%s" % (hostname, hostname), ".rdb.gz", dry_run=dry)
 
         print("\nDone. %s" % ("[DRY RUN - no files deleted]" if dry else "Files deleted."))
