@@ -59,6 +59,7 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
         "keypress .NB-add-site-google-news-folder-name": "handle_google_news_folder_keypress",
         // Trending tab events
         "change .NB-add-site-trending-days": "handle_trending_days_change",
+        "click .NB-add-site-trending-pill": "handle_trending_category_change",
         // Categories tab events
         "click .NB-add-site-category-card": "handle_category_click",
         "click .NB-add-site-category-back": "go_back_to_categories",
@@ -335,6 +336,7 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
             trending_loaded: false,
             trending_page: 1,
             trending_days: 7,
+            trending_category: 'popular',
             trending_has_more: true,
             trending_is_loading: false,
         });
@@ -711,6 +713,24 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
         var $container = $.make('div', { className: 'NB-add-site-discover-container' });
 
         // Trending Sites Section
+        var trending_categories = [
+            { id: 'popular', label: 'Popular', description: 'Most subscribed-to feeds this week' },
+            { id: 'rising', label: 'Rising', description: 'Small feeds with the fastest-growing subscriber base' },
+            { id: 'hidden_gems', label: 'Hidden Gems', description: 'Feeds with deeply engaged readers, not yet widely known' },
+            { id: 'new_arrivals', label: 'New Arrivals', description: 'Recently added feeds that are gaining subscribers' }
+        ];
+        var $trending_pills = $.make('div', { className: 'NB-add-site-trending-pills' },
+            _.map(trending_categories, function (cat) {
+                var active = (cat.id === state.trending_category) ? ' NB-active' : '';
+                return $.make('div', {
+                    className: 'NB-add-site-trending-pill' + active,
+                    'data-category': cat.id
+                }, cat.label);
+            })
+        );
+        var active_cat = _.find(trending_categories, function (c) { return c.id === state.trending_category; });
+        var $trending_description = $.make('div', { className: 'NB-add-site-trending-description' }, active_cat.description);
+
         var $trending_section = $.make('div', { className: 'NB-add-site-section NB-add-site-trending-section' }, [
             $.make('div', { className: 'NB-add-site-section-header' }, [
                 $.make('div', { className: 'NB-add-site-section-title' }, [
@@ -723,6 +743,8 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
                     $.make('option', { value: '30', selected: state.trending_days === 30 }, 'This Month')
                 ])
             ]),
+            $trending_pills,
+            $trending_description,
             $.make('div', { className: 'NB-add-site-section-content NB-add-site-trending-content' })
         ]);
 
@@ -770,7 +792,7 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
         state.trending_is_loading = true;
 
         state.trending_feeds_collection.fetch({
-            data: { page: state.trending_page, days: state.trending_days },
+            data: { page: state.trending_page, days: state.trending_days, category: state.trending_category },
             remove: !append,  // Don't remove existing models when appending
             success: function () {
                 state.trending_loaded = true;
@@ -3136,6 +3158,35 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
             state.trending_loaded = false;
             this.fetch_search_trending_feeds();
         }
+    },
+
+    handle_trending_category_change: function (e) {
+        var $pill = $(e.currentTarget);
+        var category = $pill.data('category');
+        var state = this.search_state;
+
+        if (category === state.trending_category) return;
+
+        state.trending_category = category;
+        state.trending_page = 1;
+        state.trending_has_more = true;
+        state.trending_feeds_collection.reset();
+        state.trending_loaded = false;
+
+        $pill.siblings().removeClass('NB-active');
+        $pill.addClass('NB-active');
+
+        var descriptions = {
+            'popular': 'Most subscribed-to feeds this week',
+            'rising': 'Small feeds with the fastest-growing subscriber base',
+            'hidden_gems': 'Feeds with deeply engaged readers, not yet widely known',
+            'new_arrivals': 'Recently added feeds that are gaining subscribers'
+        };
+        var $section = $pill.closest('.NB-add-site-trending-section');
+        $section.find('.NB-add-site-trending-description').text(descriptions[category]);
+        $section.find('.NB-add-site-trending-content').html(this.make_loading_indicator());
+
+        this.fetch_search_trending_feeds();
     },
 
     // ==================
