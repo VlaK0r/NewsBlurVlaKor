@@ -28,7 +28,7 @@ from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import condition
 
 from apps.analyzer.models import get_classifiers_for_user
-from apps.discover.views import TRENDING_CATEGORIES
+from apps.discover.views import IGNORE_AUTOCOMPLETE, TRENDING_CATEGORIES
 from apps.push.models import PushSubscription
 from apps.reader.models import UserSubscription
 from apps.rss_feeds.models import Feed, MFeedIcon, MFetchHistory, MStory, merge_feeds
@@ -706,17 +706,6 @@ def discover_stories(request, story_hash):
     feeds = {feed.pk: feed.canonical(include_favicon=False) for feed in feeds}
 
     return {"discover_stories": stories, "feeds": feeds}
-
-
-@ajax_login_required
-@json.json_view
-def discover_index(request):
-    from apps.search.models import MUserSearch
-
-    user_search = MUserSearch.get_user(request.user.pk)
-    user_search.touch_discover_date()
-
-    return {"code": 1, "indexing": True}
 
 
 @json.json_view
