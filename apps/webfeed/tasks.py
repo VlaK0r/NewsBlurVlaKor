@@ -341,7 +341,7 @@ def AnalyzeWebFeedPage(user_id, url, request_id=None, story_hint=None):
         from apps.ask_ai.providers import LLM_EXCEPTIONS, get_briefing_provider
 
         messages = get_analysis_messages(url, cleaned_html, story_hint=story_hint)
-        provider, model_id = get_briefing_provider("gpt-5-mini")
+        provider, model_id = get_briefing_provider("gpt")
 
         if not provider.is_configured():
             error_msg = "Anthropic API key not configured"
