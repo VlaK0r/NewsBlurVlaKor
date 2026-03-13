@@ -533,8 +533,8 @@ _DEFAULT_BRIEFING_MODELS = {
     },
     "gpt-5-mini": {
         "provider_class": OpenAIProvider,
-        "model_id": "gpt-5-mini",
-        "display_name": "GPT 5 Mini",
+        "model_id": "gpt-4o-mini",
+        "display_name": "gpt-4o-mini",
         "vendor": "openai",
         "vendor_display": "OpenAI",
         "order": 2,
