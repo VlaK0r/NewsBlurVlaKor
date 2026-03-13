@@ -28463,6 +28463,28 @@ h5.NB-classifier-section-header {
     border-color: #C8E6C9;
 }
 
+/* Reddit API results section */
+.NB-add-site-reddit-api-section {
+    margin-top: 16px;
+}
+
+.NB-add-site-reddit-api-header {
+    font-size: 13px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0 4px 8px;
+}
+
+/* Reddit direct-add card */
+.NB-add-site-reddit-direct-card {
+    border-style: dashed;
+    border-color: #CCC;
+    background: #FAFAFA;
+    margin-bottom: 12px;
+}
+
 /* Empty State */
 .NB-add-site-empty-state {
     display: flex;
@@ -30909,6 +30931,15 @@ h5.NB-classifier-section-header {
 
 .NB-dark .NB-add-site-card-subscribed {
     border-color: #2E5930;
+}
+
+.NB-dark .NB-add-site-reddit-api-header {
+    color: #777;
+}
+
+.NB-dark .NB-add-site-reddit-direct-card {
+    border-color: #555;
+    background: #1E1E1E;
 }
 
 .NB-dark .NB-add-site-subscribed-indicator {
@@ -37205,12 +37236,46 @@ span.NB-briefing-inline-favicon {
     padding: 6px 8px;
     border-radius: 4px;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: transform 0.15s ease, background 0.15s;
     flex-wrap: wrap;
 }
 
 .NB-briefing-section-item:hover {
     background: rgba(0, 0, 0, 0.04);
+}
+
+/* reader.css: Briefing section drag handle */
+.NB-briefing-drag-handle {
+    width: 18px;
+    height: 24px;
+    flex-shrink: 0;
+    cursor: grab;
+    opacity: 0.4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.NB-briefing-drag-handle:hover {
+    opacity: 0.6;
+}
+
+.NB-briefing-drag-handle:active {
+    cursor: grabbing;
+}
+
+.NB-briefing-drag-handle svg {
+    width: 14px;
+    height: 14px;
+    fill: #888;
+}
+
+.NB-briefing-section-item.NB-briefing-section-dragging {
+    background: #e8eae6;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 10;
+    opacity: 0.9;
+    position: relative;
 }
 
 .NB-briefing-section-checkbox {
@@ -37449,6 +37514,14 @@ span.NB-briefing-inline-favicon {
 
 .NB-dark .NB-briefing-section-item:hover {
     background: rgba(255, 255, 255, 0.05);
+}
+
+.NB-dark .NB-briefing-drag-handle svg {
+    fill: #999;
+}
+
+.NB-dark .NB-briefing-section-item.NB-briefing-section-dragging {
+    background: #3a3a3e;
 }
 
 .NB-dark .NB-briefing-section-checkbox {
