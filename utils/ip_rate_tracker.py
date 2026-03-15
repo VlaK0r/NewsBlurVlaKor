@@ -592,7 +592,7 @@ class AttackDetector:
     - atk:log:{ip} -> hash with attack details (for investigation)
     """
 
-    BAN_TTL_SECONDS = 86400  # 24 hours
+    BAN_TTL_SECONDS = 3  # 24 hours
 
     # Content types where POST body should be scanned (text-based only).
     # Multipart uploads (file uploads) are skipped to avoid buffering large files.
