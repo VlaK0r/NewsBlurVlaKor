@@ -8,6 +8,7 @@ from django.conf import settings
 from django.db import connection
 from django.http import HttpResponse
 from django.template import Context, Template
+from utils.ip_rate_tracker import _get_client_ip
 
 from apps.statistics.rstats import round_time
 from utils import json_functions as json
@@ -665,6 +666,11 @@ class AttackBanMiddleware:
             return self.get_response(request)
         if getattr(settings, "TEST_DEBUG", False):
             return self.get_response(request)
+            
+        real_ip = _get_client_ip(request)
+        trusted_ips = getattr(settings, 'TRUSTED_IPS', [])
+        if real_ip in trusted_ips:
+            return self.get_response(request)    
 
         try:
             ip = self.detector.get_ip(request)
