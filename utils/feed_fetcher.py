@@ -251,6 +251,11 @@ class FetchFeed:
             )
             return FEED_OK, self.fpf
 
+        try:
+            clean_address = qurl(address, remove=["_"])
+        except ValueError:
+            clean_address = address
+
         if "youtube.com" in address:
             youtube_feed = self.fetch_youtube()
             if not youtube_feed:
@@ -266,7 +271,7 @@ class FetchFeed:
                     % (self.feed.log_title[:30])
                 )
             self.fpf = feedparser.parse(processed_youtube_feed, sanitize_html=False)
-        elif re.match(r"(https?)?://twitter.com/\w+/?", qurl(address, remove=["_"])):
+        elif re.match(r"(https?)?://twitter.com/\w+/?", clean_address):
             twitter_feed = self.fetch_twitter(address)
             if not twitter_feed:
                 logging.debug(
@@ -281,7 +286,7 @@ class FetchFeed:
                     % (self.feed.log_title[:30])
                 )
             self.fpf = feedparser.parse(processed_twitter_feed)
-        elif re.match(r"(.*?)facebook.com/\w+/?$", qurl(address, remove=["_"])):
+        elif re.match(r"(.*?)facebook.com/\w+/?$", clean_address):
             facebook_feed = self.fetch_facebook()
             if not facebook_feed:
                 logging.debug(
@@ -1193,10 +1198,12 @@ class ProcessFeed:
         hub_url = None
         self_url = self.feed.feed_address
         for link in self.fpf.feed.links:
-            if link["rel"] == "hub" and not hub_url:
-                hub_url = link["href"]
-            elif link["rel"] == "self":
-                self_url = link["href"]
+            if not isinstance(link, dict):
+                continue
+            if link.get("rel") == "hub" and not hub_url:
+                hub_url = link.get("href")
+            elif link.get("rel") == "self":
+                self_url = link.get("href")
         if not hub_url and "youtube.com" in self_url:
             hub_url = "https://pubsubhubbub.appspot.com/subscribe"
             channel_id = self_url.split("channel_id=")
