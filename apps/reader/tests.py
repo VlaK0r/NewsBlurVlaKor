@@ -1,4 +1,5 @@
 import datetime
+import re
 import time
 from unittest.mock import MagicMock, call, patch
 
@@ -8,9 +9,33 @@ from django.test import TestCase
 from django.test.client import Client
 from django.urls import reverse
 
+from apps.briefing.models import MBriefingPreferences
 from apps.reader.models import UserSubscription
 from apps.rss_feeds.models import Feed, MStarredStory, MStarredStoryCounts, MStory
 from utils import json_functions as json
+
+
+class Test_ReaderPreferencesBootstrap(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(
+            username="prefstest", password="testpass", email="prefs@test.com"
+        )
+        self.client.login(username="prefstest", password="testpass")
+
+    def test_daily_briefing_preference_defaults_true_in_reader_bootstrap(self):
+        response = self.client.get(reverse("index"))
+        content = response.content.decode("utf-8")
+
+        self.assertRegex(content, re.compile(r"['\"]briefing_enabled['\"]\s*:\s*true"))
+
+    def test_briefing_generation_preference_is_bootstrapped_on_reload(self):
+        MBriefingPreferences(user_id=self.user.pk, enabled=True).save()
+
+        response = self.client.get(reverse("index"))
+        content = response.content.decode("utf-8")
+
+        self.assertRegex(content, re.compile(r'"briefing_enabled"\s*:\s*true'))
 
 
 class Test_RenameStarredTag(TestCase):
@@ -501,15 +526,16 @@ class Test_FinishArchiveFeedsSyncRedis(TestCase):
         start_time = time.time()
         UserSubscription.finish_fetch_archive_feeds(self.user.pk, start_time, 0)
 
-        # sleep(0.5) should be called between feeds (n-1 times for n feeds)
+        # sleep(0.5) should be called between feeds (n-1 times for n feeds).
+        # Filter to only our 0.5s calls since the mock patches time.sleep globally
+        # and other code (Django internals, DB ops) may also call time.sleep.
         expected_sleeps = len(self.feeds) - 1
+        sleep_half_calls = [c for c in mock_sleep.call_args_list if c == call(0.5)]
         self.assertEqual(
-            mock_sleep.call_count,
+            len(sleep_half_calls),
             expected_sleeps,
-            f"time.sleep should be called {expected_sleeps} times (between feeds), got {mock_sleep.call_count}",
+            f"time.sleep(0.5) should be called {expected_sleeps} times (between feeds), got {len(sleep_half_calls)}",
         )
-        for c in mock_sleep.call_args_list:
-            self.assertEqual(c, call(0.5), "Each sleep should be 0.5 seconds")
 
     @patch("apps.reader.models.MStory.objects")
     @patch("apps.reader.models.time.sleep")

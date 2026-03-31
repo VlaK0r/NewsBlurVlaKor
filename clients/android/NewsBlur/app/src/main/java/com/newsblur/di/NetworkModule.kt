@@ -10,6 +10,10 @@ import com.google.gson.GsonBuilder
 import com.newsblur.domain.Story
 import com.newsblur.network.AuthApi
 import com.newsblur.network.AuthApiImpl
+import com.newsblur.network.AskAiApi
+import com.newsblur.network.AskAiApiImpl
+import com.newsblur.network.BriefingApi
+import com.newsblur.network.BriefingApiImpl
 import com.newsblur.network.FeedApi
 import com.newsblur.network.FeedApiImpl
 import com.newsblur.network.FolderApi
@@ -113,6 +117,20 @@ object NetworkModule {
         networkClient: NetworkClient,
         prefsRepo: PrefsRepo,
     ): AuthApi = AuthApiImpl(gson, networkClient, prefsRepo)
+
+    @Singleton
+    @Provides
+    fun provideAskAiApi(
+        gson: Gson,
+        networkClient: NetworkClient,
+    ): AskAiApi = AskAiApiImpl(gson, networkClient)
+
+    @Singleton
+    @Provides
+    fun provideBriefingApi(
+        gson: Gson,
+        networkClient: NetworkClient,
+    ): BriefingApi = BriefingApiImpl(gson, networkClient)
 
     @Singleton
     @Provides

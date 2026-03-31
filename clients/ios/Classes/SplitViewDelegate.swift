@@ -45,10 +45,23 @@ class SplitViewDelegate: NSObject, UISplitViewControllerDelegate {
                 NSLog("split will change to one over secondary")
             case .twoBesideSecondary:
                 NSLog("split will change to two beside secondary")
+            case .twoOverSecondary:
+                NSLog("split will change to two over secondary")
+            case .twoDisplaceSecondary:
+                NSLog("split will change to two displace secondary")
             default:
                 NSLog("split will change to an unexpected mode")
         }
 
+        // If display mode changed away from secondaryOnly while temporary fullscreen is active,
+        // something external (e.g. Mac sidebar toggle) changed the mode, so exit temporary fullscreen.
+        if let detail = NewsBlurAppDelegate.shared?.detailViewController,
+           detail.isTemporaryFullScreen,
+           displayMode != .secondaryOnly {
+            detail.resetTemporaryFullScreenIfNeeded()
+        }
+
+        NewsBlurAppDelegate.shared?.detailViewController.syncFullscreenSidebarPresentation(for: displayMode)
         NewsBlurAppDelegate.shared?.feedsViewController.updateSidebarButton(for: displayMode)
         NewsBlurAppDelegate.shared?.feedDetailViewController.updateSidebarButton(for: displayMode)
     }

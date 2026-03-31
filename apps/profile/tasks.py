@@ -7,7 +7,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.db.models import Count
 from django.template.loader import render_to_string
 
-from apps.profile.models import MSentEmail, Profile, RNewUserQueue
+from apps.profile.models import MGiftCode, MSentEmail, Profile, RNewUserQueue
 from apps.reader.models import UserSubscription, UserSubscriptionFolders
 from apps.social.models import MActivity, MInteraction, MSocialServices
 from newsblur_web.celeryapp import app
@@ -169,6 +169,32 @@ def ReimportStripeHistory():
     Profile.reimport_stripe_history(limit=10, days=1)
 
 
+@app.task(name="email-premium-renewal-notice")
+def EmailPremiumRenewalNotice():
+    """Daily task to email users who opted in to renewal notifications 3 days before charge."""
+    logging.debug(" ---> Checking for premium renewal notice emails...")
+    now = datetime.datetime.now()
+    three_days = now + datetime.timedelta(days=3)
+    four_days = now + datetime.timedelta(days=4)
+
+    profiles = (
+        Profile.objects.filter(
+            is_premium=True,
+            premium_renewal=True,
+            premium_expire__gte=three_days,
+            premium_expire__lt=four_days,
+        )
+        .exclude(is_premium_trial=True)
+        .select_related("user")
+    )
+
+    logging.debug(" ---> %s users renewing in ~3 days, checking preferences..." % profiles.count())
+    for profile in profiles:
+        if not profile.preference_value("notify_before_renewal", default=False):
+            continue
+        profile.send_premium_renewal_notice_email()
+
+
 @app.task(name="email-feed-limit-notifications")
 def EmailFeedLimitNotifications():
     """
@@ -249,3 +275,125 @@ def EmailFeedLimitNotifications():
         logging.user(
             user, f"~BB~FM~SBSent feed limit notification: {feed_count:,} feeds, deadline: {deadline_date}"
         )
+
+
+@app.task(name="refund-unredeemed-gifts")
+def RefundUnredeemedGifts():
+    import stripe
+    from django.conf import settings
+
+    stripe.api_key = settings.STRIPE_SECRET
+    now = datetime.datetime.now()
+
+    expired_gifts = MGiftCode.objects.filter(
+        expires_date__lte=now,
+        redeemed_date=None,
+        stripe_payment_intent_id__ne=None,
+        stripe_refund_id=None,
+        is_staff_gift=False,
+    )
+
+    logging.debug(" ---> Checking %s expired unredeemed gifts for auto-refund..." % expired_gifts.count())
+
+    for gift in expired_gifts:
+        try:
+            refund = stripe.Refund.create(payment_intent=gift.stripe_payment_intent_id)
+            gift.stripe_refund_id = refund.id
+            gift.save()
+            logging.debug(
+                " ---> Auto-refunded gift %s (payment_intent: %s, refund: %s)"
+                % (gift.gift_code, gift.stripe_payment_intent_id, refund.id)
+            )
+        except Exception as e:
+            logging.debug(" ---> Failed to auto-refund gift %s: %s" % (gift.gift_code, e))
+
+
+@app.task(name="email-referral-credit")
+def EmailReferralCredit(referrer_user_id, referred_username, credit_days, referrer_tier):
+    try:
+        profile = Profile.objects.get(user__pk=referrer_user_id)
+    except Profile.DoesNotExist:
+        return
+
+    tier_names = {"premium": "Premium", "archive": "Premium Archive", "pro": "Premium Pro"}
+    tier_name = tier_names.get(referrer_tier, "Premium")
+
+    if credit_days >= 365:
+        credit_text = "%s year%s" % (credit_days // 365, "s" if credit_days >= 730 else "")
+    elif credit_days >= 30:
+        credit_text = "%s month%s" % (credit_days // 30, "s" if credit_days >= 60 else "")
+    else:
+        credit_text = "%s day%s" % (credit_days, "s" if credit_days != 1 else "")
+
+    params = {
+        "username": profile.user.username,
+        "referred_username": referred_username,
+        "credit_text": credit_text,
+        "tier_name": tier_name,
+    }
+    text = render_to_string("mail/email_referral_credit.txt", params)
+    html = render_to_string("mail/email_referral_credit.xhtml", params)
+    subject = "You earned free %s from a referral!" % tier_name
+    msg = EmailMultiAlternatives(
+        subject,
+        text,
+        from_email="NewsBlur <%s>" % settings.HELLO_EMAIL,
+        to=["%s <%s>" % (profile.user.username, profile.user.email)],
+    )
+    msg.attach_alternative(html, "text/html")
+    msg.send()
+
+    MSentEmail.record(receiver_user_id=referrer_user_id, email_type="referral_credit")
+    logging.user(
+        profile.user,
+        "~BB~FM~SBSent referral credit email: %s earned %s of %s"
+        % (profile.user.username, credit_text, tier_name),
+    )
+
+    # Notify staff
+    EmailStaffNotification.delay(
+        event_type="referral_converted",
+        subject="Referral converted: %s referred %s" % (profile.user.username, referred_username),
+        body="%s earned %s of %s because %s subscribed to %s."
+        % (profile.user.username, credit_text, tier_name, referred_username, tier_name),
+    )
+
+
+@app.task(name="email-gift-created")
+def EmailGiftCreated(gifter_user_id, gift_url, gift_tier):
+    try:
+        profile = Profile.objects.get(user__pk=gifter_user_id)
+    except Profile.DoesNotExist:
+        return
+
+    tier_names = {"premium": "Premium", "archive": "Premium Archive", "pro": "Premium Pro"}
+    tier_name = tier_names.get(gift_tier, "Premium")
+
+    subject = "Your NewsBlur %s gift is ready to share!" % tier_name
+    text = (
+        "Hi %s,\n\n"
+        "Your %s gift subscription is ready. Share this link with the lucky recipient:\n\n"
+        "%s\n\n"
+        "They'll be able to sign up or log in and activate their subscription instantly.\n\n"
+        "If the gift isn't redeemed within 90 days, you'll receive a full refund automatically.\n\n"
+        "Sam\n"
+    ) % (profile.user.username, tier_name, gift_url)
+
+    msg = EmailMultiAlternatives(
+        subject,
+        text,
+        from_email="NewsBlur <%s>" % settings.HELLO_EMAIL,
+        to=["%s <%s>" % (profile.user.username, profile.user.email)],
+    )
+    msg.send()
+    logging.user(profile.user, "~BB~FM~SBSent gift created email: %s for %s" % (gift_url, tier_name))
+
+
+@app.task(name="email-staff-notification")
+def EmailStaffNotification(event_type, subject, body):
+    from django.core.mail import mail_admins
+
+    mail_admins(
+        subject="[NewsBlur] %s" % subject,
+        message=body,
+    )

@@ -54,6 +54,8 @@ Use the arguments to determine:
    - Start with the problem or motivation, then introduce the solution
    - Be direct and practical, not marketing-speak
    - Include real examples of how to use the feature
+   - No em dashes or hyphens as punctuation. Restructure sentences instead.
+   - Avoid AI slop: no overly polished language, no filler phrases like "excited to announce"
 
    **Screenshots:**
    - Use placeholder comments where screenshots should go:
@@ -81,10 +83,10 @@ Use the arguments to determine:
 
 5. **Start the Jekyll server** to preview:
    ```bash
-   make jekyll
+   cd blog && bundle install && bundle exec jekyll serve
    ```
 
-   Report that Jekyll is running and the user can preview at http://localhost:4000
+   Run `bundle install` first to ensure gems are up to date. Report that Jekyll is running and the user can preview at http://localhost:4000
 
 6. **Report what was created:**
    - The filename and path

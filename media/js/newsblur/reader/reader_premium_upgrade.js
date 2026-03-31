@@ -131,55 +131,71 @@ _.extend(NEWSBLUR.ReaderPremiumUpgrade.prototype, {
                         ]),
                         $.make('li', { className: 'NB-2' }, [
                             $.make('div', { className: 'NB-premium-bullet-image' }),
-                            'Choose when stories are marked as read'
+                            'Web Feeds from any website, even without RSS'
                         ]),
                         $.make('li', { className: 'NB-3' }, [
                             $.make('div', { className: 'NB-premium-bullet-image' }),
-                            'Customize auto-read by site or folder'
+                            'Cluster duplicate stories across all your feeds'
                         ]),
                         $.make('li', { className: 'NB-4' }, [
                             $.make('div', { className: 'NB-premium-bullet-image' }),
-                            'Every story archived and searchable forever'
+                            'Daily briefing with your top stories and keywords'
                         ]),
                         $.make('li', { className: 'NB-5' }, [
                             $.make('div', { className: 'NB-premium-bullet-image' }),
-                            'Feeds back-filled for complete archive'
+                            'Choose when stories are marked as read'
                         ]),
                         $.make('li', { className: 'NB-6' }, [
                             $.make('div', { className: 'NB-premium-bullet-image' }),
-                            'Train stories on full text content'
+                            'Customize auto-read by site or folder'
                         ]),
                         $.make('li', { className: 'NB-7' }, [
                             $.make('div', { className: 'NB-premium-bullet-image' }),
-                            'Discover related stories across your archive'
+                            'Every story archived and searchable forever'
                         ]),
                         $.make('li', { className: 'NB-8' }, [
                             $.make('div', { className: 'NB-premium-bullet-image' }),
-                            'Export trained stories from folders'
+                            'Feeds back-filled for complete archive'
                         ]),
                         $.make('li', { className: 'NB-9' }, [
                             $.make('div', { className: 'NB-premium-bullet-image' }),
-                            'Stories can stay unread forever'
+                            'Train stories on full text content'
                         ]),
                         $.make('li', { className: 'NB-10' }, [
                             $.make('div', { className: 'NB-premium-bullet-image' }),
-                            'Ask AI questions about stories'
+                            'Notifications on trained intelligence classifiers'
                         ]),
                         $.make('li', { className: 'NB-11' }, [
                             $.make('div', { className: 'NB-premium-bullet-image' }),
-                            'Filter stories by date range'
+                            'Discover related stories across your archive'
                         ]),
                         $.make('li', { className: 'NB-12' }, [
                             $.make('div', { className: 'NB-premium-bullet-image' }),
-                            'Apply training across a folder'
+                            'Export trained stories from folders'
                         ]),
                         $.make('li', { className: 'NB-13' }, [
                             $.make('div', { className: 'NB-premium-bullet-image' }),
-                            'Apply training globally'
+                            'Stories can stay unread forever'
                         ]),
                         $.make('li', { className: 'NB-14' }, [
                             $.make('div', { className: 'NB-premium-bullet-image' }),
-                            'Web Feeds from any website, even without RSS'
+                            'Ask AI questions about stories'
+                        ]),
+                        $.make('li', { className: 'NB-15' }, [
+                            $.make('div', { className: 'NB-premium-bullet-image' }),
+                            'Filter stories by date range'
+                        ]),
+                        $.make('li', { className: 'NB-16' }, [
+                            $.make('div', { className: 'NB-premium-bullet-image' }),
+                            'Apply training across a folder'
+                        ]),
+                        $.make('li', { className: 'NB-17' }, [
+                            $.make('div', { className: 'NB-premium-bullet-image' }),
+                            'Apply training globally'
+                        ]),
+                        $.make('li', { className: 'NB-18' }, [
+                            $.make('div', { className: 'NB-premium-bullet-image' }),
+                            'Connect AI agents with MCP server and CLI'
                         ])
                     ]),
                     $.make('div', { className: 'NB-premium-tier-actions' }, [

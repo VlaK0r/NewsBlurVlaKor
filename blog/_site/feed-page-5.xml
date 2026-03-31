@@ -9,8 +9,10 @@
   <link href="/feed-page-4.xml" rel="prev-archive" type="application/atom+xml" />
   
   
+  <link href="/feed-page-6.xml" rel="next" type="application/atom+xml" />
+  
 
-  <updated>2026-03-16T00:16:29-04:00</updated>
+  <updated>2026-03-30T23:39:26-04:00</updated>
   <id>https://blog.newsblur.com/feed.xml</id>
   <title type="html">The NewsBlur Blog</title>
   
@@ -20,6 +22,287 @@ A new sound of an old instrument.
   
   
 
+  
+  <entry>
+    <title type="html">Mark as read by number of days and other improvements</title>
+    <link href="https://blog.newsblur.com/2013/09/13/mark-as-read-by-number-of-days-and-other/" rel="alternate" type="text/html" title="Mark as read by number of days and other improvements" />
+    <published>2013-09-13T17:05:55-04:00</published>
+    <updated>2013-09-13T17:05:55-04:00</updated>
+    <id>https://blog.newsblur.com/2013/09/13/mark-as-read-by-number-of-days-and-other</id>
+    <content type="html" xml:base="https://blog.newsblur.com/2013/09/13/mark-as-read-by-number-of-days-and-other/">
+      <![CDATA[<p>Here’s a few big improvements for the NewsBlur website.</p>
+
+<ul>
+  <li>The site title bar is now mounted to the bottom of the screen. This will allow you to mark a site/folder as read at any time.</li>
+  <li>
+    <p>Marking as read can go back a configurable amount: 1, 3, 7, and 14 days back.</p>
+  </li>
+  <li>If you’re reading in newest-first order, when you mark a site as read, any newer stories that have come in since you’ve loaded the site will no longer be marked as read.</li>
+  <li>When you add, move, or delete a site or folder, all of your open web browsers will reload to correctly show the change. This allows you to have NewsBlur open at home and at work, knowing they will be synced when you change or add sites.</li>
+</ul>
+
+<p>You may be thinking to yourself, 1, 3, and 7 days back makes sense, but why 14 if the unread limit is at 14 days? Why, having 14 days as an option would only make sense if the full limit was… (stay tuned).</p>
+
+]]>
+    </content>
+    
+    
+    
+    <category term="web" />
+    
+    
+    <summary type="html">
+      <![CDATA[Here’s a few big improvements for the NewsBlur website.
+]]>
+    </summary>
+    
+  </entry>
+  
+  <entry>
+    <title type="html">Simple Search for Feeds, Saved Stories, and Blurblogs</title>
+    <link href="https://blog.newsblur.com/2013/07/30/simple-search-for-feeds-saved-stories-and-blurblogs/" rel="alternate" type="text/html" title="Simple Search for Feeds, Saved Stories, and Blurblogs" />
+    <published>2013-07-30T12:38:23-04:00</published>
+    <updated>2013-07-30T12:38:23-04:00</updated>
+    <id>https://blog.newsblur.com/2013/07/30/simple-search-for-feeds-saved-stories-and-blurblogs</id>
+    <content type="html" xml:base="https://blog.newsblur.com/2013/07/30/simple-search-for-feeds-saved-stories-and-blurblogs/">
+      <![CDATA[<p>Search, which can easily be considered one of the most important features of a world-class news reader, is also one of the most difficult features to build.</p>
+
+<p><img src="https://s3.amazonaws.com/static.newsblur.com/blog/search2.png" alt="" /></p>
+
+<p>While working on the feature, I came across a great method that allows searching through story titles, authors, and tags on a per-feed basis. It’s not perfect and it’s not the full feature, but this will get us 80% of the way there.</p>
+
+<p><img src="https://s3.amazonaws.com/static.newsblur.com/blog/search.png" alt="" /></p>
+
+<p>Also comes with a handy keyboard shortcut (and a refactored keyboard shortcut dialog).</p>
+
+<p><img src="https://s3.amazonaws.com/static.newsblur.com/blog/keyboard.png" alt="" /></p>
+
+<p>You can also search your saved stories and shared stories. This feature will soon find it’s way to both Android and iOS, and is available today to all premium users.</p>
+
+]]>
+    </content>
+    
+    
+    
+    <category term="web" />
+    
+    
+    <summary type="html">
+      <![CDATA[Search, which can easily be considered one of the most important features of a world-class news reader, is also one of the most difficult features to build.
+]]>
+    </summary>
+    
+  </entry>
+  
+  <entry>
+    <title type="html">NewsBlur Puzzle T-shirt 2013</title>
+    <link href="https://blog.newsblur.com/2013/07/24/newsblur-puzzle-t-shirt-2013/" rel="alternate" type="text/html" title="NewsBlur Puzzle T-shirt 2013" />
+    <published>2013-07-24T15:49:00-04:00</published>
+    <updated>2013-07-24T15:49:00-04:00</updated>
+    <id>https://blog.newsblur.com/2013/07/24/newsblur-puzzle-t-shirt-2013</id>
+    <content type="html" xml:base="https://blog.newsblur.com/2013/07/24/newsblur-puzzle-t-shirt-2013/">
+      <![CDATA[<p>Last year I was proud to be able to send a free t-shirt and handwritten note to every single user who requested one. It took a few days of writing, stuffing, and mailing to send out a couple hundred t-shirts.</p>
+
+<p><img src="https://s3.amazonaws.com/static.newsblur.com/blog/tshirt%202012.JPG" alt="" /></p>
+
+<p>I’m pleased to announce that <a href="http://teespring.com/newsblur">this year’s t-shirt</a> is a puzzle with every single letter being part of a 4+ letter word. I’m using Teespring for fulfillment and order processing. While it’s not free, I am making absolutely zilch profit, so I can keep the t-shirt price to the absolute minimum.</p>
+
+<p><a href="http://teespring.com/newsblur"><img src="http://images.teespring.com/shirt_pic/82496/front.jpg?v=2013-07-24-18-29" alt="" /></a></p>
+
+<p>Impress your friends with your esoteric yet exquisite taste in t-shirts. But you’d better move quickly, you only have until July 31st, one week from now, to order the t-shirt. <a href="http://teespring.com/newsblur">Order the 2013 NewsBlur t-shirt on Teespring</a>.</p>
+
+]]>
+    </content>
+    
+    
+    
+    
+    <summary type="html">
+      <![CDATA[Last year I was proud to be able to send a free t-shirt and handwritten note to every single user who requested one. It took a few days of writing, stuffing, and mailing to send out a couple hundred t-shirts.
+]]>
+    </summary>
+    
+  </entry>
+  
+  <entry>
+    <title type="html">Text view comes to the NewsBlur iOS app</title>
+    <link href="https://blog.newsblur.com/2013/06/04/text-view-comes-to-the-newsblur-ios-app/" rel="alternate" type="text/html" title="Text view comes to the NewsBlur iOS app" />
+    <published>2013-06-04T08:31:18-04:00</published>
+    <updated>2013-06-04T08:31:18-04:00</updated>
+    <id>https://blog.newsblur.com/2013/06/04/text-view-comes-to-the-newsblur-ios-app</id>
+    <content type="html" xml:base="https://blog.newsblur.com/2013/06/04/text-view-comes-to-the-newsblur-ios-app/">
+      <![CDATA[<p>The iOS apps are finding themselves host to a whole slew of additions and enhancements. Today I get to tell you about the iOS app’s newest feature: the Text view.</p>
+
+<p>You can already use the Text view on the web. It’s great for extracting the story’s content on demand and helps you stay on a single tab to do all of your reading.</p>
+
+<p>If you have an iPad or iPhone, you can now use the Text view by hitting the Text/Story button on the bottom left of the story detail pane.</p>
+
+<p><img src="https://s3.amazonaws.com/static.newsblur.com/blog/ios_text_view.jpg" alt="" /></p>
+
+<p>On Android? Don’t you worry, major updates are finishing up as we speak, and soon the Android app will reach full feature parity with the iOS app. It’s just a matter of time.</p>
+
+]]>
+    </content>
+    
+    
+    
+    <category term="ios" />
+    
+    
+    <summary type="html">
+      <![CDATA[The iOS apps are finding themselves host to a whole slew of additions and enhancements. Today I get to tell you about the iOS app’s newest feature: the Text view.
+]]>
+    </summary>
+    
+  </entry>
+  
+  <entry>
+    <title type="html">Read NewsBlur on your Mac with the new ReadKit</title>
+    <link href="https://blog.newsblur.com/2013/05/30/read-newsblur-on-your-mac-with-the-new-readkit/" rel="alternate" type="text/html" title="Read NewsBlur on your Mac with the new ReadKit" />
+    <published>2013-05-30T12:12:16-04:00</published>
+    <updated>2013-05-30T12:12:16-04:00</updated>
+    <id>https://blog.newsblur.com/2013/05/30/read-newsblur-on-your-mac-with-the-new-readkit</id>
+    <content type="html" xml:base="https://blog.newsblur.com/2013/05/30/read-newsblur-on-your-mac-with-the-new-readkit/">
+      <![CDATA[<p><a href="http://readkitapp.com">ReadKit</a>, a native Mac app for reading Instapaper, Pocket, and NewsBlur on your desktop, completes the RSS reading trifecta. NewsBlur has a web app, native iOS app, and now a native Mac app.</p>
+
+<p><a href="http://readkitapp.com"><img src="https://s3.amazonaws.com/static.newsblur.com/blog/readkit.jpg" alt="" /></a></p>
+
+<p>While this is not an official app, it’s certainly the best desktop app for NewsBlur. In time more NewsBlur-specific features will be added, such as shared stories (blurblogs), training and separate unread counts in focus mode, and saved stories.</p>
+
+<p>If you’re a developer and want to make your own NewsBlur app, use the free <a href="http://www.newsblur.com/api">NewsBlur API</a>. You can charge for your app and enjoy all of the benefits of the NewsBlur backend.</p>
+
+<p><a href="http://readkitapp.com">Download ReadKit</a> to enjoy offline reading on your Mac.</p>
+
+]]>
+    </content>
+    
+    
+    
+    
+    <summary type="html">
+      <![CDATA[ReadKit, a native Mac app for reading Instapaper, Pocket, and NewsBlur on your desktop, completes the RSS reading trifecta. NewsBlur has a web app, native iOS app, and now a native Mac app.
+]]>
+    </summary>
+    
+  </entry>
+  
+  <entry>
+    <title type="html">Keyboard Shortcuts Manager</title>
+    <link href="https://blog.newsblur.com/2013/05/23/keyboard-shortcuts-manager/" rel="alternate" type="text/html" title="Keyboard Shortcuts Manager" />
+    <published>2013-05-23T09:01:00-04:00</published>
+    <updated>2013-05-23T09:01:00-04:00</updated>
+    <id>https://blog.newsblur.com/2013/05/23/keyboard-shortcuts-manager</id>
+    <content type="html" xml:base="https://blog.newsblur.com/2013/05/23/keyboard-shortcuts-manager/">
+      <![CDATA[<p>Hot on the heels of the redesign launch, I’m already putting out new features. There are a number of post-redesign priorities on my list, but one of the most requested features is to customize the keyboard shortcuts.</p>
+
+<p>After looking into the common refrain of customizable keyboard shortcuts, I identified the five keys that folks are talking about 99% of the time: the four arrow keys and the space bar. These keys can now be configured well beyond what you would expect.</p>
+
+<p><img src="https://s3.amazonaws.com/static.newsblur.com/blog/preferences_keyboard.png" alt="image" /></p>
+
+<ul>
+  <li>By default, the horizontal arrow keys control the view in which you are reading a site or folder. But there are a few keyboard shortcuts that allow you to temporarily read a story in the Text view (shift+enter) or the Story view (enter). So having other dedicated keys may not be necessary. And navigating between sites requires a two-key combination (shift+up and shift+down or shift+j and shift+k). You can now choose to make the left and right arrow keys navigate between sites.</li>
+  <li>The vertical arrow keys navigates between stories, but some users want them to scroll up and down by a small amount. You can customize exactly how much of a scroll distance you want to use.</li>
+  <li>The space bar, like the new up and down arrow keys, scrolls the page, but it does so by screen-load. So instead of scrolling by a set amount like the arrow keys, it works on a percentage of the screen. It’s a subtle difference that will allow you to more easily navigate the longer stories and the shorter stories with ease.</li>
+</ul>
+
+<p>These features are only available to premium subscribers and I hope you like them. If you have additional customization suggestions, hop on <a href="http://getsatisfaction.com/newsblur">the support forum</a> and let me know.</p>
+
+]]>
+    </content>
+    
+    
+    
+    <category term="web" />
+    
+    
+    <summary type="html">
+      <![CDATA[Hot on the heels of the redesign launch, I’m already putting out new features. There are a number of post-redesign priorities on my list, but one of the most requested features is to customize the keyboard shortcuts.
+]]>
+    </summary>
+    
+  </entry>
+  
+  <entry>
+    <title type="html">The NewsBlur Redesign</title>
+    <link href="https://blog.newsblur.com/2013/05/20/the-newsblur-redesign/" rel="alternate" type="text/html" title="The NewsBlur Redesign" />
+    <published>2013-05-20T22:47:00-04:00</published>
+    <updated>2013-05-20T22:47:00-04:00</updated>
+    <id>https://blog.newsblur.com/2013/05/20/the-newsblur-redesign</id>
+    <content type="html" xml:base="https://blog.newsblur.com/2013/05/20/the-newsblur-redesign/">
+      <![CDATA[<p>Not to say that NewsBlur was <em>ugly</em> before today, but it certainly didn’t have the loving embrace of a talented designer. So without waiting another moment (or month) I proudly present the NewsBlur redesign.</p>
+
+<p><img src="http://dev.newsblur.com/media/img/welcome/header-web.png" alt="image" /></p>
+
+<p>It’s a full scale redesign, too. And not just one of those redesigns where the icons get glossier and fonts, bolder. Every moving piece of machinery got more than a coat of paint. A number of new crucial reading features have been added. Some features were merged, some were repaired, and some were scrapped.</p>
+
+<p>Dashboard before &amp; after:</p>
+
+<p><img src="https://s3.amazonaws.com/static.newsblur.com/blog/before_dashboard.png" alt="image" /> <img src="https://s3.amazonaws.com/static.newsblur.com/blog/after_dashboard.png" alt="image" /></p>
+
+<p>Reading before &amp; after:</p>
+
+<p><img src="https://s3.amazonaws.com/static.newsblur.com/blog/before_feed.png" alt="image" /> <img src="https://s3.amazonaws.com/static.newsblur.com/blog/after_feed.png" alt="image" /></p>
+
+<p>In no particular order, here’s what’s new:</p>
+
+<ul>
+  <li>Unified interactions/activities popover. Gets out of your way and gives the dashboard more room to breath.</li>
+  <li>Rewritten feed loader, offering incredible performance, even at the 20x scale of today vs 2 months ago before the Google Reader announcement.</li>
+  <li>Custom vector graphics, retina-fying the entire site.</li>
+  <li>Increased transparency of sites by showing more detail in feed fetching/statistics.</li>
+  <li>A new List view to complement the Split view for stories.</li>
+</ul>
+
+<p>And that’s just for the website. The iOS app, Android app, and blurblogs all got the update goodness that has graced the web app.</p>
+
+<p><img src="http://dev.newsblur.com/media/img/welcome/header-ios.png" alt="image" /></p>
+
+<p>As for what’s happening these days, post-Reader:</p>
+
+<ul>
+  <li>Took some extra time to scale out my backend, now completed.</li>
+  <li>Running on 48 servers, serving 20x traffic</li>
+  <li>Because I had the foresight to charge users for premium service, I’m now confident that NewsBlur will be standing tall a few years from now.</li>
+  <li>Working on the next few big ticket features: saved story search and tagging, batch editing organizer, keyboard shortcut manager, and more.</li>
+</ul>
+
+<blockquote>
+  <p>Biggest unanticipated consequence of the Reader shutdown – I no longer have to wear a jacket in SF because my core temperature has risen.</p>
+
+  <p>— Samuel Clay (@samuelclay)</p>
+
+  <p><a href="https://twitter.com/samuelclay/status/317111582817660929">March 28, 2013</a></p>
+</blockquote>
+
+<script src="//platform.twitter.com/widgets.js" charset="utf-8" type="text/javascript"></script>
+
+<p>And if you’re new to NewsBlur, here’s the six core benefits to using the one with the Sun:</p>
+
+<ol>
+  <li><strong>Training</strong> - hide the stories you don’t like and highlight the stories you do. Make mincemeat out of heavy feeds and make sure to never miss stories from the feeds you love.</li>
+  <li><strong>Original site</strong> - read a publisher’s stories the way they wanted you to read it - on the original website. NewsBlur embeds the publisher’s site in an iframe, and marks what you read as read as you scroll.</li>
+  <li><strong>Text view</strong> - conveniently extracts the story text from articles, necessary for reading truncated rss feeds.</li>
+  <li><strong>Blurblogs / sharing</strong> - a social community where you can share and discuss stories with friends.</li>
+  <li><strong>Speed</strong> - A dedication to fast load times, graphed on your dashboard.</li>
+  <li><strong>Mobile</strong> - native, first-class iOS and Android apps, with all of the functionality of the website.</li>
+</ol>
+
+<p>Now that the redesign has launched, I plan to blog about how to best use the intelligence trainer efficiently, all new [future] features, and how I was able to successfully scale out the four databases (count ‘em: postgresql, mongodb, redis, elasticsearch) to handle more than 10,000 users and 4 million site updates a day. It’s no Tumblr, but it’s still way more traffic than you can fit on a single machine.</p>
+
+<p>Thanks for using NewsBlur and turning my passion project (four years running) into a full-time dream.</p>
+
+]]>
+    </content>
+    
+    
+    
+    
+    <summary type="html">
+      <![CDATA[Not to say that NewsBlur was ugly before today, but it certainly didn’t have the loving embrace of a talented designer. So without waiting another moment (or month) I proudly present the NewsBlur redesign.
+]]>
+    </summary>
+    
+  </entry>
   
   <entry>
     <title type="html">Three Months to Scale NewsBlur</title>
@@ -1068,331 +1351,6 @@ margin-right: 24px;
     <summary type="html">
       <![CDATA[This Summer is shaping up to be the season for mobile apps. Blar, a new Android client for NewsBlur, has just been released. It’s available on the Android Market here: https://market.android.com/details?id=bitwrit.Blar. It is created by Harris Munir, who you can contact through his site.
 ]]>
-    </summary>
-    
-  </entry>
-  
-  <entry>
-    <title type="html">Make your own feed reader with NewsBlur&apos;s new API</title>
-    <link href="https://blog.newsblur.com/2011/04/26/make-your-own-feed-reader-with-newsblurs-new-api/" rel="alternate" type="text/html" title="Make your own feed reader with NewsBlur&apos;s new API" />
-    <published>2011-04-26T06:41:00-04:00</published>
-    <updated>2011-04-26T06:41:00-04:00</updated>
-    <id>https://blog.newsblur.com/2011/04/26/make-your-own-feed-reader-with-newsblurs-new-api</id>
-    <content type="html" xml:base="https://blog.newsblur.com/2011/04/26/make-your-own-feed-reader-with-newsblurs-new-api/">
-      <![CDATA[<p><em>Please vote for this blog post on Hacker News: <a href="http://news.ycombinator.com/item?id=2485377">http://news.ycombinator.com/item?id=2485377</a>.</em></p>
-
-<p>It’s a big news day here at NewsBlur HQ. For those of you who don’t know, NewsBlur HQ is a comfy seat on the A train, part of the NYC subway system, since that’s where most of the code gets written anyhow.</p>
-
-<p>I’m happy to announce <a href="http://www.newsblur.com/api">NewsBlur’s brand-spanking-new API</a>. It’s free, it comes with tons of juicy data, and it can be used to create your own feed reader. Let’s look at what this all means.</p>
-
-<p><a href="http://www.newsblur.com">NewsBlur</a> is a visual feed reader with intelligence. This API gives you access to all the moving parts that make up the flagship newsblur.com site. This includes the original site, stories, intelligence classifiers, statistics, and a really neat River of News view that aggregates multiple feeds into a single view.</p>
-
-<h2 id="juicy-data-from-the-api">Juicy Data from the API</h2>
-
-<p>Let’s take a quick look at a visualization of the data you can get out of the API. This is a screenshot from the Statistics dialog from a single feed:</p>
-
-<p><img src="http://cl.ly/6FN3/statistics.png" alt="" /></p>
-
-<p>To get this data, you would need to make two calls:</p>
-
-<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ curl http://www.newsblur.com/rss_feeds/search_feed?address=techcrunch
-
-{
-    "feed_address": "http://feeds.feedburner.com/TechCrunch",
-    "updated": "4 minutes",
-    "subs": 2514,
-    "feed_link": "http://techcrunch.com",
-    "favicon_fetching": false,
-    "feed_title": "TechCrunch",
-    "favicon": "[BASE64 FAVICON GOODNESS DATA]",
-    "favicon_color": "90b490",
-    "id": 12,
-    "result": "ok"
-}
-
-$ curl http://www.newsblur.com/rss_feeds/statistics/12
-
-{
-    "premium_subscribers": 66,
-    "average_stories_per_month": 490.33333333333331,
-    "subscriber_count": 2514,
-    "last_load_time": 40,
-    "update_interval_minutes": 4,
-    "last_update": "5 minutes",
-    "feed_fetch_history": [...],
-    "result": "ok",
-    "stories_last_month": 501,
-    "active_subscribers": 43,
-    "story_count_history": [["2010-11", 455.0], ["2010-12", 500.0], 
-                            ["2011-1", 500.0], ["2011-2", 500.0], 
-                            ["2011-3", 487.0], ["2011-4", 500.0]],
-    "next_update": "3 minutes",
-    "classifier_counts": {
-        "feed": [{
-            "neg": 5,
-            "feed_id": 12,
-            "pos": 40
-        }],
-        "title": [
-        {
-            "neg": 4,
-            "tag": "techcrunch tv",
-            "pos": 14
-        },
-        {
-            "neg": 3,
-            "tag": "iphone 4",
-            "pos": 11
-        }
-        ...
-        ],
-        "author": [{
-            "neg": 2,
-            "pos": 24,
-            "author": "MG Siegler"
-        },
-        {
-            "neg": 3,
-            "pos": 25,
-            "author": "Michael Arrington"
-        },
-        {
-            "neg": 4,
-            "pos": 13,
-            "author": "Paul Carr"
-        }
-        ...
-        ]
-    }
-}
-</code></pre></div></div>
-
-<p>How about the intelligence classifiers for a site?</p>
-
-<p><img src="http://f.cl.ly/items/1o3V3D2K1u1Q1P2N2B42/Screen%20shot%202011-04-26%20at%2010.09.33%20AM.png" alt="" /></p>
-
-<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ curl http://www.newsblur.com/rss_feeds/search_feed?address=louisgray
-
-{
-    "feed_address": "http://blog.louisgray.com/feeds/posts/default?alt=rss",
-    "updated": "2 minutes",
-    "subs": 130,
-    "feed_link": "http://blog.louisgray.com/",
-    "favicon_fetching": false,
-    "feed_title": "louisgray.com",
-    "favicon": "[FAVICON GOES HERE]",
-    "favicon_color": "f96402",
-    "id": 172,
-    "result": "ok"
-}
-
-$ curl http://www.newsblur.com/reader/feeds_trainer?feed_id=172
-
-[{
-    "stories_last_month": 24,
-    "feed_id": 172,
-    "feed_tags": [["android", 13.0], ["google", 12.0], ["apple", 12.0], 
-                  ["iphone", 9.0], ["twitter", 7.0], ["facebook", 5.0], 
-                  ["sxsw", 5.0], ["media", 5.0], ["spotify", 4.0], 
-                  ["itunes", 4.0], ["ipad", 4.0], ["silicon valley", 4.0], 
-                  ["personal", 3.0], ["apple tv", 3.0], ["quora", 3.0], 
-                  ["social networking", 3.0], ["yobongo", 3.0], 
-                  ["entertainment", 3.0], ["seesmic", 3.0], ["search", 3.0], 
-                  ["music", 3.0], ["beluga", 3.0], ["work", 3.0], 
-                  ["chat", 3.0], ["samsung", 3.0]],
-    "classifiers": {
-        "authors": {},
-        "feeds": {},
-        "titles": {},
-        "tags": {
-            "personal": 1,
-            "android": -1,
-            "facebook": -1,
-            "twitter": 1,
-            "rss": 1
-        }
-    },
-    "feed_authors": [["louisgray@gmail.com (Louis Gray)", 62]]
-}]
-</code></pre></div></div>
-
-<p>Without going too deep into explaining various parts of the API, you can dive right into it by viewing the various API endpoints at <a href="http://www.newsblur.com/api">http://www.newsblur.com/api</a>. The API is meant to be used with an authenticated account, which can be created directly from the API. I spent a lot of time polishing the look and readability of the API, so I hope you like it, since if you’re going to be developing on top of it, you will probably spend a looong time working with the 30 endpoints.</p>
-
-<p>I’d like to briefly note that I work on NewsBlur in my free time, and it’s entirely open-source on GitHub: <a href="http://github.com/samuelclay">http://github.com/samuelclay</a>. This API is the result of 22 months of work and thought. But it’s not corporate, not funded, and certainly not battle-tested. Go easy on it for the time being. And <a href="http://twitter.com/samuelclay">offer feedback on Twitter</a>.</p>
-
-<h2 id="is-making-a-newsblur-client-cannibalism">Is making a NewsBlur client cannibalism?</h2>
-
-<p>Woah! How does that even work? There’s no endpoint for <em>cannibalism</em>. (OK, there is, it’s <code class="language-plaintext highlighter-rouge">/reader/delete_feed</code>.) But what does this API mean for you?</p>
-
-<p>Twitter has a web client, but the real iceberg is the ecosystem built on their API. Google Reader has a website, but more than a handful of enormous venture-engorged companies make their living by using the Reader API.</p>
-
-<p>If you choose to use the NewsBlur API, you are building complements to the website. You can mix-and-mash data as you please. But more importantly, you can use NewsBlur data in ways that are not even possible on the website today.</p>
-
-<p>Want to mix up a social layer with the subscriptions in your NewsBlur account? Just use <code class="language-plaintext highlighter-rouge">/reader/feeds</code>, <code class="language-plaintext highlighter-rouge">/reader/feed/:id</code>, and <code class="language-plaintext highlighter-rouge">/rss_feeds/statistics</code>. Got an Android device and want to make a mobile client that you can <em>charge money</em> for and make a profit? The NewsBlur API supports that.</p>
-
-<p>What you can’t do is wrap advertisements around NewsBlur data. Why? Because NewsBlur preserves the original site, so there are already ads on the page if the publisher chooses to have them. Additionally, ads degrade the NewsBlur experience. NewsBlur is not some fly-by-night air-ride-equipped service out to make a buck. NewsBlur is built to make life better, a small net-enabled reading experience at a time. Profit is great, but not at the cost of ads.</p>
-
-<h2 id="if-you-build-it-they-will-come-and-theres-no-hard-scaling-part">If you build it, they will come, and there’s no hard scaling part</h2>
-
-<p>You’re building on an API, not a service end-to-end. If you want to handle the scaling part, use the raw NewsBlur code on GitHub: <a href="http://github.com/samuelclay">http://github.com/samuelclay</a>. NewsBlur.com will take care of the scaling and infrastructure, and you can take care of building a new layer that might make you famous/well-off/existentially-happy.</p>
-
-<p>The API is ready for you at <a href="http://www.newsblur.com/api">http://www.newsblur.com/api</a>.</p>
-
-<p>Questions? Feedback? Want to stay up to date when I drive cross country and take photos of the beautiful countryside between New York and California? Follow <a href="http://twitter.com/samuelclay">@samuelclay on Twitter</a>.</p>
-
-<ul>
-  <li>Samuel Clay, innocent Founder of NewsBlur</li>
-</ul>
-
-]]>
-    </content>
-    
-    
-    
-    
-    <summary type="html">
-      <![CDATA[Please vote for this blog post on Hacker News: http://news.ycombinator.com/item?id=2485377.
-]]>
-    </summary>
-    
-  </entry>
-  
-  <entry>
-    <title type="html">Where We Are in April</title>
-    <link href="https://blog.newsblur.com/2011/04/23/where-we-are-in-april/" rel="alternate" type="text/html" title="Where We Are in April" />
-    <published>2011-04-23T14:57:02-04:00</published>
-    <updated>2011-04-23T14:57:02-04:00</updated>
-    <id>https://blog.newsblur.com/2011/04/23/where-we-are-in-april</id>
-    <content type="html" xml:base="https://blog.newsblur.com/2011/04/23/where-we-are-in-april/">
-      <![CDATA[<p>Hi readers, I want to take a moment to share what I’m working on for the month of April:</p>
-
-<ul>
-  <li>The API: This is the biggest and baddest update since the River of News and premium accounts. The API includes some lightweight rewrites of how NewsBlur communicates to the back-end server. It’s going smoothly, and you can watch the progress on the less-than-aptly named branch <a href="https://github.com/samuelclay/NewsBlur/commits/dashboard_tweaks">dashboard_tweaks on GitHub</a>.</li>
-</ul>
-
-<p>The goal for the API is to have users build Android and iPhone apps on top of NewsBlur. Heck, even web apps which use NewsBlur data sound just fine. Whatever it is, I want to support it. </p>
-<ul>
-  <li>Graphs on the Dashboard: I want to add some transparency to how the NewsBlur service is doing, both in terms of user growth and server status. I am adding a few graphs and numbers to the dashboard to show off how many premium and standard users have logged in during the past day, as well as how many feeds have been loaded, the response time for those feeds, and if there is a backlog for feed fetching.</li>
-  <li>Bug fixes: If you watch how often I’m committing to NewsBlur on GitHub, you may notice that a handful of bugs are fixed every single day. If you see a bug and it hasn’t been fixed, let me know on Twitter at <a href="http://twitter.com/samuelclay">@samuelclay</a>, or email me at <a href="mailto:samuel@ofbrooklyn.com">samuel@ofbrooklyn.com</a>.</li>
-  <li>Press page: Along with the API there will be a press page to showcase the nearly 40 articles and reviews written about NewsBlur. This page will also have a press kit, since one of the easiest ways to get reviewed is to have a number of materials at the ready.</li>
-  <li>Publisher information: If you’re a publisher and you want to make sure the NewsBlur experience is tip-top for your readers, this new page will highlight how to make the Original view work best.</li>
-</ul>
-
-<p>The work is progressing and it won’t be long now until everything above is ready for you to use and enjoy. There are a few other features that may make it out if I find myself working through everything else quickly enough.</p>
-
-<p>I recently launched a feature to show an aggregation of the intelligence classifiers that users are using on their sites. Soon, this data may come back to implicitly recommend stories for you. But in order for there to be enough data to make recommendations useful, more users needs to classify stories they like and dislike.</p>
-
-<p>The chart below shows the growth of different intelligence classifiers. The trend is up for tags, authors, feeds, and titles. That’s very good news.</p>
-
-<p><img src="http://cl.ly/6D0o/classifiers.png" alt="" /></p>
-
-<p>I’m also happy to say that as NewsBlur continues to grow, and with a few hundred premium users, it is becoming quite a big network of readers.</p>
-
-]]>
-    </content>
-    
-    
-    
-    
-    <summary type="html">
-      <![CDATA[Hi readers, I want to take a moment to share what I’m working on for the month of April:
-]]>
-    </summary>
-    
-  </entry>
-  
-  <entry>
-    <title type="html">Explaining Intelligence</title>
-    <link href="https://blog.newsblur.com/2011/04/01/explaining-intelligence/" rel="alternate" type="text/html" title="Explaining Intelligence" />
-    <published>2011-04-01T11:11:33-04:00</published>
-    <updated>2011-04-01T11:11:33-04:00</updated>
-    <id>https://blog.newsblur.com/2011/04/01/explaining-intelligence</id>
-    <content type="html" xml:base="https://blog.newsblur.com/2011/04/01/explaining-intelligence/">
-      <![CDATA[<p>If you’re not using intelligence classifiers, you’re only getting half the value out of NewsBlur. </p>
-
-<p>Intelligence classifiers are the phrases, tags, and authors that you like and dislike. Training your sites by choosing classifiers for each feed will automatically highlight the stories you want to read and hide the stories you don’t want to see.</p>
-
-<figure class="tmblr-full" data-orig-height="298" data-orig-width="600" data-orig-src="http://f.cl.ly/items/1J1N2e2Q0E133N3R0r3m/slider_states.png"><img data-orig-height="298" data-orig-width="600" src="http://f.cl.ly/items/1J1N2e2Q0E133N3R0r3m/slider_states.png" /></figure>
-
-<h2 id="how-to-train-intelligence">How to train intelligence</h2>
-
-<p>To train your feeds, you have four options:</p>
-
-<p>1) Train everything at once using the intelligence trainer, linked to from the Dashboard:</p>
-
-<figure class="tmblr-full" data-orig-height="95" data-orig-width="471"><img src="https://64.media.tumblr.com/cd8ffc2728c10f595c7fac06ce4f42b4/1a17e4479e9a96eb-0d/s540x810/d068b09f480a0052176b5a146e87761b13e08489.png" data-orig-height="95" data-orig-width="471" /></figure>
-
-<p>2) Train a feed individually:</p>
-
-<figure data-orig-height="272" data-orig-width="266"><img src="https://64.media.tumblr.com/32a74af0de7004dbfceee0632e014f35/1a17e4479e9a96eb-62/s540x810/c27823f31bb1d19c39d9a1a05fdffa8a54958ca1.png" align="middle" data-orig-height="272" data-orig-width="266" /></figure>
-<p>  <figure data-orig-height="71" data-orig-width="264"><img src="https://64.media.tumblr.com/6cdfff509662b28d905a2b9d59c07b43/1a17e4479e9a96eb-f6/s540x810/878ded95af12fc01e5c699422bb64bdc04aae1e3.png" align="middle" data-orig-height="71" data-orig-width="264" /></figure></p>
-
-<p>3) Train a story:</p>
-
-<p><img src="http://f.cl.ly/items/3G1w0X3P2i0T2J1L2D2K/story_trainer.png" alt="" /></p>
-
-<p>4) Choose tags and authors in the Feed view:</p>
-
-<p><img src="http://f.cl.ly/items/2o2x0b1E3I0F2Z273i0F/story_tags.png" alt="" /></p>
-
-<h2 id="whats-happening-under-the-hood">What’s happening under the hood</h2>
-
-<p>To get a better picture of how stories are being classified into the red, yellow, and green states, we need to take a look at how NewsBlur is using your intelligence classifiers and applying them to stories.</p>
-
-<p>When you select a tag, author, or phrase, NewsBlur looks for an exact match in all other stories in the same feed. It’s a very simple match, and nothing mysterious is happening without you being explicit about what you want to see.</p>
-
-<p>Green always wins. If you have 2 green classifiers and 3 red classifiers on a single story, the story will show up green, since it’s clear there is at least *something* you like about the story.</p>
-
-<p>However, classifying the publisher (i.e. the feed itself) works slightly differently. If you specify that you like or dislike the feed, all stories are automatically classified according to this preference, unless there is a tag, author, or title phrase that is classified, in which case it wins over the feed’s classification.</p>
-
-<p>This offers a neat trick to hide most stories from a feed, even in the yellow intelligence state, except for the few stories that you want to watch. Simply train the feed to dislike the feed itself, but give a thumbs up to the tags/authors/phrases in the stories you want to read. This will result in all stories being either red or green, which keeps the site out of your yellow intelligence setting.</p>
-
-<h2 id="whats-in-store-for-the-future">What’s in store for the future</h2>
-
-<p>Right now the intelligence classifiers are pretty naive. But the impetus for building NewsBlur was to passively train your feeds, just based on your implicit preferences. There’s a lot of work to be done to make this happen, and you can follow NewsBlur’s progress over on GitHub at <a href="http://github.com/samuelclay">http://github.com/samuelclay</a>.</p>
-
-]]>
-    </content>
-    
-    
-    
-    
-    <summary type="html">
-      <![CDATA[If you’re not using intelligence classifiers, you’re only getting half the value out of NewsBlur. 
-]]>
-    </summary>
-    
-  </entry>
-  
-  <entry>
-    <title type="html">A New Logo for a New Blog</title>
-    <link href="https://blog.newsblur.com/2011/03/15/a-new-logo-for-a-new-blog/" rel="alternate" type="text/html" title="A New Logo for a New Blog" />
-    <published>2011-03-15T08:39:00-04:00</published>
-    <updated>2011-03-15T08:39:00-04:00</updated>
-    <id>https://blog.newsblur.com/2011/03/15/a-new-logo-for-a-new-blog</id>
-    <content type="html" xml:base="https://blog.newsblur.com/2011/03/15/a-new-logo-for-a-new-blog/">
-      <![CDATA[<p>We’ve come a long way, readers. What started as a fun project to scratch an itch has become a fun project that pays for its ever-increasing self. This week I’m going to show how motivated I am about turning NewsBlur into a serious blog reader. And it starts with a collection of a circles:</p>
-
-<figure class="tmblr-full" data-orig-height="500" data-orig-width="500"><img src="https://64.media.tumblr.com/7bc39090e65c93d25c183d34feef0697/9acad7bd3a38ca12-aa/s540x810/af26a4e5fc93ac78867704956f89508c2bfc3a3d.png" data-orig-height="500" data-orig-width="500" /></figure>
-
-<p>What may take you, somebody who has done more than only crop images in an image editor, only a few minutes took me on the order of 1-2 hours a day over 5 days. It’s always like this. Slow as sin until you start to pick up how the editor wants you to work. Then it’s gravy. I could, in fact, completely redo the logo in 10 minutes on a blank canvas. That’s how it goes.</p>
-
-<p>The biggest difference is not the new logo, which sits comfortably underneath your sites when reading, but the new favicon.</p>
-
-<figure data-orig-height="16" data-orig-width="16"><img src="https://64.media.tumblr.com/d1157d27999b31a8e085ac6ad7180523/9acad7bd3a38ca12-51/s540x810/7a0ffd42b679efab43f012e6323092835c2e9ff2.png" data-orig-height="16" data-orig-width="16" /></figure>
-
-<p>This little guy sits there, staring at you the whole time, and reminding you where you are. He had to be created separately, but once you know what the hell a mask is, resizing and showing exaggerated pixels is child’s play.</p>
-
-]]>
-    </content>
-    
-    
-    
-    <category term="design" />
-    
-    
-    <summary type="html">
-      <![CDATA[We’ve come a long way, readers. What started as a fun project to scratch an itch has become a fun project that pays for its ever-increasing self. This week I’m going to show how motivated I am about turning NewsBlur into a serious blog reader. And it starts with a...]]>
     </summary>
     
   </entry>

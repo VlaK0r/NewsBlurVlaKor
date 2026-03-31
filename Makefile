@@ -2,6 +2,10 @@ SHELL := /bin/bash
 # Use timeout on Linux and gtimeout on macOS
 TIMEOUT_CMD := $(shell command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || echo timeout)
 newsblur := $(shell $(TIMEOUT_CMD) 2s docker ps -qf "name=newsblur_web" 2>/dev/null || docker ps -qf "name=newsblur_web")
+ANDROID_SDK_ROOT ?= $(if $(ANDROID_HOME),$(ANDROID_HOME),$(HOME)/Library/Android/sdk)
+ANDROID_EMULATOR := $(ANDROID_SDK_ROOT)/emulator/emulator
+ANDROID_AVD ?= NewsBlur_API_36
+ANDROID_APP_PACKAGE ?= com.newsblur
 
 # Color function matching NewsBlur's logging system (utils/log.py)
 # Usage: @$(call log, "~FBBlue text ~FRRed text~ST")
@@ -32,7 +36,7 @@ define log
 		-e "s/~ST/$${ESC}[0m/g"
 endef
 
-.PHONY: node api
+.PHONY: node api android-emulator
 
 # Default target - smart setup that checks if first-time install or update
 .DEFAULT_GOAL := default
@@ -61,6 +65,46 @@ default:
 	echo ""; \
 	$(call log,~SB~FG✓ NewsBlur is ready! Visit ~FC~SB$$URL~ST); \
 	$(call log,~FCNote: You may need to type '~SB~FWthisisunsafe~SN~FC' to bypass the self-signed certificate warning.~ST)
+
+android-emulator:
+	@if [ ! -x "$(ANDROID_EMULATOR)" ]; then \
+		echo "Android emulator binary not found at $(ANDROID_EMULATOR)"; \
+		exit 1; \
+	fi; \
+	if adb devices | grep -q '^emulator-[0-9][0-9]*[[:space:]]'; then \
+		echo "Android emulator already running."; \
+		SERIAL=$$(adb devices | awk '/^emulator-[0-9]+\tdevice$$/ {print $$1; exit}'); \
+	else \
+		echo "Starting Android emulator for AVD $(ANDROID_AVD)..."; \
+		nohup "$(ANDROID_EMULATOR)" -avd "$(ANDROID_AVD)" >/tmp/newsblur-android-emulator.log 2>&1 & \
+		echo $$! > /tmp/newsblur-android-emulator.pid; \
+		echo "Emulator booting in background. Log: /tmp/newsblur-android-emulator.log"; \
+		SERIAL=""; \
+		for _ in $$(seq 1 120); do \
+			SERIAL=$$(adb devices | awk '/^emulator-[0-9]+\tdevice$$/ {print $$1; exit}'); \
+			[ -n "$$SERIAL" ] && break; \
+			sleep 1; \
+		done; \
+	fi; \
+	if [ -z "$$SERIAL" ]; then \
+		echo "No running Android emulator found."; \
+		exit 1; \
+	fi; \
+	echo "Using emulator $$SERIAL"; \
+	adb -s "$$SERIAL" wait-for-device >/dev/null; \
+	for _ in $$(seq 1 120); do \
+		BOOTED=$$(adb -s "$$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r'); \
+		[ "$$BOOTED" = "1" ] && break; \
+		sleep 1; \
+	done; \
+	if [ "$$BOOTED" != "1" ]; then \
+		echo "Android emulator $$SERIAL did not finish booting."; \
+		exit 1; \
+	fi; \
+	echo "Restarting $(ANDROID_APP_PACKAGE) on $$SERIAL..."; \
+	adb -s "$$SERIAL" shell am force-stop "$(ANDROID_APP_PACKAGE)"; \
+	adb -s "$$SERIAL" shell monkey -p "$(ANDROID_APP_PACKAGE)" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1; \
+	echo "Launched $(ANDROID_APP_PACKAGE) on $$SERIAL."
 
 rebuild: pull bounce migrate bootstrap collectstatic
 nb-fast: pull bounce-fast migrate bootstrap collectstatic
@@ -98,7 +142,7 @@ worktree:
 worktree-log:
 	@WORKSPACE_NAME=$$(basename "$$(pwd)"); \
 	if [ -f ".worktree/docker-compose.$${WORKSPACE_NAME}.yml" ]; then \
-		COMPOSE_PROJECT_NAME="$$WORKSPACE_NAME" docker compose -f ".worktree/docker-compose.$${WORKSPACE_NAME}.yml" logs -f --tail 20 newsblur_web newsblur_node task_celery; \
+		COMPOSE_PROJECT_NAME="$$WORKSPACE_NAME" docker compose -f ".worktree/docker-compose.$${WORKSPACE_NAME}.yml" logs -f --tail 20 newsblur_web newsblur_node task_celery newsblur_mcp; \
 	else \
 		echo "No worktree configuration found. Run 'make worktree' first."; \
 	fi
@@ -227,19 +271,25 @@ bash:
 debug:
 	docker attach ${newsblur}
 log:
-	docker compose logs -f --tail 20 newsblur_web newsblur_node
+	docker compose logs -f --tail 20 newsblur_web newsblur_node newsblur_mcp
 logweb:
 	docker compose logs -f --tail 20 newsblur_web newsblur_node newsblur_celery
 logcelery:
 	docker compose logs -f --tail 20 newsblur_celery
+logmcp:
+	docker compose logs -f --tail 20 newsblur_mcp
 logtask: logcelery
 logmongo:
 	docker compose logs -f newsblur_db_mongo
 alllogs: 
 	docker compose logs -f --tail 20
 logall: alllogs
+tlnb-slow:
+	/srv/newsblur/utils/tlnb.py app | awk '{line=$$0; gsub(/\033\[[0-9;]*m/,""); if (match($$0, /\[[0-9]+\.[0-9]*s/)) {t=substr($$0, RSTART+1, RLENGTH-2); if (t+0 >= 1.0) print line}}'
 tlnb-samuel:
-	/srv/newsblur/utils/tlnb.py | awk '{line=$$0; gsub(/\033\[[0-9;]*m/,""); if (/\[samuel\^]/) print line}'
+	$(MAKE) tlnb-user USER=samuel
+tlnb-user:
+	/srv/newsblur/utils/tlnb.py --command "{ cat /srv/newsblur/logs/newsblur.log.1 /srv/newsblur/logs/newsblur.log 2>/dev/null | awk '{orig=\$$0; gsub(/\033\[[0-9;]*m/,\"\"); if (/\[$(USER)\^]/) print orig}' | tail -100; echo '--- Now tailing live logs ---'; tail -f /srv/newsblur/logs/newsblur.log; }" --path "" | awk -v user="$(USER)" '{line=$$0; gsub(/\033\[[0-9;]*m/,""); if ($$0 ~ "\\[" user "\\^]" || /--- Now tailing live logs ---/) print line}'
 mongo:
 	docker exec -it newsblur_db_mongo mongo --port 29019
 mongo-repair:
@@ -355,6 +405,7 @@ pull:
 	docker pull newsblur/newsblur_python3
 	docker pull newsblur/newsblur_node
 	docker pull newsblur/newsblur_monitor
+	docker pull newsblur/newsblur_mcp
 
 local_build_web:
 	# docker buildx build --load . --file=docker/newsblur_base_image.Dockerfile --tag=newsblur/newsblur_python3
@@ -383,7 +434,9 @@ build_monitor: buildx_setup
 	docker buildx build . --platform linux/amd64,linux/arm64 --file=docker/monitor/Dockerfile --tag=newsblur/newsblur_monitor
 build_deploy: buildx_setup
 	docker buildx build . --platform linux/amd64,linux/arm64 --file=docker/newsblur_deploy.Dockerfile --tag=newsblur/newsblur_deploy
-build: build_web build_node build_monitor build_deploy
+build_mcp: buildx_setup
+	docker buildx build ./newsblur_mcp --platform linux/amd64,linux/arm64 --file=newsblur_mcp/Dockerfile --tag=newsblur/newsblur_mcp
+build: build_web build_node build_monitor build_deploy build_mcp
 push_web: buildx_setup
 	docker buildx build . --push --platform linux/amd64,linux/arm64 --file=docker/newsblur_base_image.Dockerfile --tag=newsblur/newsblur_python3
 push_node: buildx_setup
@@ -392,7 +445,9 @@ push_monitor: buildx_setup
 	docker buildx build . --push --platform linux/amd64,linux/arm64 --file=docker/monitor/Dockerfile --tag=newsblur/newsblur_monitor
 push_deploy: buildx_setup
 	docker buildx build . --push --platform linux/amd64,linux/arm64 --file=docker/newsblur_deploy.Dockerfile --tag=newsblur/newsblur_deploy
-push_images: push_web push_node push_monitor push_deploy
+push_mcp: buildx_setup
+	docker buildx build ./newsblur_mcp --push --platform linux/amd64,linux/arm64 --file=newsblur_mcp/Dockerfile --tag=newsblur/newsblur_mcp
+push_images: push_web push_node push_monitor push_deploy push_mcp
 push: push_images
 
 # Tasks
@@ -449,6 +504,8 @@ celery_stop:
 	ansible-playbook ansible/deploy.yml -l task --tags stop
 deploy_sentry:
 	ansible-playbook ansible/setup.yml -l sentry -t sentry
+enable:
+	ansible-playbook ansible/playbooks/enable_app.yml
 maintenance_on:
 	ansible-playbook ansible/deploy.yml -l web --tags maintenance_on
 maintenance_off:

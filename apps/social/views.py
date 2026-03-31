@@ -1072,7 +1072,17 @@ def mark_story_as_unshared(request):
 @ajax_login_required
 def save_comment_reply(request):
     code = 1
-    feed_id = int(request.POST["story_feed_id"])
+    story_feed_id = request.POST.get("story_feed_id")
+    try:
+        feed_id = int(story_feed_id)
+    except (ValueError, TypeError):
+        return json.json_response(
+            request,
+            {
+                "code": -1,
+                "message": "Invalid story feed id (%s)." % story_feed_id,
+            },
+        )
     story_id = request.POST["story_id"]
     comment_user_id = request.POST["comment_user_id"]
     reply_comments = request.POST.get("reply_comments")
@@ -1773,7 +1783,7 @@ def get_subdomain(request):
 
 
 def shared_stories_rss_feed_noid(request):
-    index = HttpResponseRedirect("http://%s%s" % (Site.objects.get_current().domain, reverse("index")))
+    index = HttpResponseRedirect("https://%s%s" % (Site.objects.get_current().domain, reverse("index")))
     if get_subdomain(request):
         username = get_subdomain(request)
         try:

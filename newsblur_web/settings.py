@@ -126,7 +126,9 @@ SHELL_PLUS_IMPORTS = [
 # SHELL_PLUS_PRINT_SQL = True
 
 MIDDLEWARE = (
+    "apps.profile.middleware.ServerTimingMiddleware",
     "utils.prometheus_middleware.PrometheusBeforeMiddlewareWrapper",
+    "apps.profile.middleware.UserAgentBanMiddleware",
     "django.middleware.gzip.GZipMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "subdomains.middleware.SubdomainMiddleware",
@@ -136,7 +138,6 @@ MIDDLEWARE = (
     "apps.profile.middleware.AttackBanMiddleware",
     "apps.profile.middleware.TimingMiddleware",
     "apps.profile.middleware.LastSeenMiddleware",
-    "apps.profile.middleware.UserAgentBanMiddleware",
     "apps.profile.middleware.ScannerTrackingMiddleware",
     "apps.profile.middleware.IPRateTrackingMiddleware",
     "corsheaders.middleware.CorsMiddleware",
@@ -167,12 +168,17 @@ OAUTH2_PROVIDER = {
         "ifttt": "Pair your NewsBlur account with other services.",
         "email": "Access your email address for account identification.",
         "archive": "Archive your browsing history and query it with AI.",
+        "mcp": "Connect AI agents to read and write your NewsBlur data",
     },
     "CLIENT_ID_GENERATOR_CLASS": "oauth2_provider.generators.ClientIdGenerator",
+    "OAUTH2_VALIDATOR_CLASS": "apps.mcp.validators.RFC8252OAuth2Validator",
     "ACCESS_TOKEN_EXPIRE_SECONDS": 60 * 60 * 24 * 365 * 10,  # 10 years
     "AUTHORIZATION_CODE_EXPIRE_SECONDS": 60 * 60,  # 1 hour
     "PKCE_REQUIRED": False,  # Allow legacy OAuth clients that don't support PKCE (e.g., Unread, other third-party apps)
 }
+
+# MCP OAuth - secret for the MCP server's upstream OAuth application
+MCP_OAUTH_CLIENT_SECRET = "newsblur-mcp-dev-secret"
 
 # ===========
 # = Logging =
@@ -369,6 +375,7 @@ INSTALLED_APPS = (
     "apps.ask_ai",
     "apps.webfeed",
     "apps.archive_extension",
+    "apps.mcp",
     "apps.archive_assistant",
     "apps.monitor",
     "utils",  # missing models so no migrations
@@ -579,9 +586,19 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": datetime.timedelta(hours=24),
         "options": {"queue": "cron_queue"},
     },
+    "email-premium-renewal-notice": {
+        "task": "email-premium-renewal-notice",
+        "schedule": datetime.timedelta(hours=24),
+        "options": {"queue": "cron_queue"},
+    },
     "generate-briefings": {
         "task": "generate-briefings",
         "schedule": datetime.timedelta(minutes=1),
+        "options": {"queue": "cron_queue"},
+    },
+    "refund-unredeemed-gifts": {
+        "task": "refund-unredeemed-gifts",
+        "schedule": datetime.timedelta(hours=24),
         "options": {"queue": "cron_queue"},
     },
 }

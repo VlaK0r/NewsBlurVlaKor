@@ -182,6 +182,19 @@ _.extend(NEWSBLUR.ReaderAccount.prototype, {
                     ])
                 ]),
                 $.make('div', { className: 'NB-tab NB-tab-premium' }, [
+                    (this.options.gift_redeemed && $.make('div', { className: 'NB-gift-redeemed-banner' }, [
+                        $.make('div', { className: 'NB-gift-redeemed-banner-icon' }),
+                        $.make('div', { className: 'NB-gift-redeemed-banner-text' }, [
+                            $.make('div', { className: 'NB-gift-redeemed-banner-headline' },
+                                'You\'ve been gifted ' + this.options.gift_duration + ' of ' + this.options.gift_redeemed + '!'
+                            ),
+                            $.make('div', { className: 'NB-gift-redeemed-banner-subtext' },
+                                this.options.gift_from
+                                    ? 'A gift from ' + this.options.gift_from + ' has been applied to your account.'
+                                    : 'The gift has been applied to your account.'
+                            )
+                        ])
+                    ])),
                     $.make('div', { className: 'NB-preference NB-preference-premium' }, [
                         $.make('div', { className: 'NB-preference-options' }, [
                             (!NEWSBLUR.Globals.is_premium && $.make('div', [
@@ -213,7 +226,12 @@ _.extend(NEWSBLUR.ReaderAccount.prototype, {
                         $.make('div', { className: 'NB-preference-options' }, [
                             $.make('div', { className: "NB-premium-renewal-details-container" }, this.make_premium_renewal_details()),
                             $.make('div', { className: 'NB-block NB-premium-expire-container' }, this.make_premium_expire()),
-                            $.make('a', { href: '#', className: 'NB-block NB-account-premium-renew NB-modal-submit-button NB-modal-submit-green' }, 'Change your credit card')
+                            $.make('a', { href: '#', className: 'NB-block NB-account-premium-renew NB-modal-submit-button NB-modal-submit-green' }, 'Change your credit card'),
+                            (NEWSBLUR.Globals.premium_renewal && $.make('div', { className: 'NB-block NB-renewal-notify-container' }, [
+                                $.make('input', { id: 'NB-preference-renewal-notify', type: 'checkbox', name: 'notify_before_renewal' }),
+                                $.make('label', { 'for': 'NB-preference-renewal-notify', className: 'NB-renewal-notify-label' },
+                                    'Email me 3 days before my subscription renews')
+                            ]))
                         ]),
                         $.make('div', { className: 'NB-preference-label' }, [
                             'Premium details'
@@ -240,14 +258,16 @@ _.extend(NEWSBLUR.ReaderAccount.prototype, {
                             $.make('div', { className: 'NB-usage-billing-status' },
                                 NEWSBLUR.Globals.is_usage_billing
                                     ? 'Usage-based billing is enabled for AI classifiers.'
-                                    : 'Set up usage-based billing to use AI content and image filters.'
+                                    : (NEWSBLUR.Globals.is_self_hosted_ai
+                                        ? 'AI classifiers are using your instance\'s API keys.'
+                                        : 'Set up usage-based billing to use AI content and image filters.')
                             ),
-                            (NEWSBLUR.Globals.is_usage_billing && $.make('div', { className: 'NB-usage-billing-current-spend-section' })),
+                            (NEWSBLUR.Globals.can_use_ai_classifiers && $.make('div', { className: 'NB-usage-billing-current-spend-section' })),
                             (NEWSBLUR.Globals.is_usage_billing
                                 ? $.make('a', { href: '#', className: 'NB-block NB-account-usage-billing-manage NB-modal-submit-button NB-modal-submit-green' }, 'Manage billing on Stripe')
-                                : $.make('a', { href: '#', className: 'NB-block NB-account-usage-billing-setup NB-modal-submit-button NB-modal-submit-green' }, 'Set up billing')
+                                : (!NEWSBLUR.Globals.is_self_hosted_ai && $.make('a', { href: '#', className: 'NB-block NB-account-usage-billing-setup NB-modal-submit-button NB-modal-submit-green' }, 'Set up billing'))
                             ),
-                            (NEWSBLUR.Globals.is_usage_billing && $.make('div', { className: 'NB-usage-billing-limit-section' }, [
+                            (NEWSBLUR.Globals.can_use_ai_classifiers && $.make('div', { className: 'NB-usage-billing-limit-section' }, [
                                 $.make('div', { className: 'NB-usage-billing-limit-label' }, 'Monthly spending limit'),
                                 $.make('div', { className: 'NB-usage-billing-limit-input-row' }, [
                                     $.make('span', { className: 'NB-usage-billing-limit-dollar' }, '$'),
@@ -711,6 +731,7 @@ _.extend(NEWSBLUR.ReaderAccount.prototype, {
                 return false;
             }
         });
+        $('#NB-preference-renewal-notify', this.$modal).prop('checked', !!pref('notify_before_renewal'));
     },
 
     serialize_preferences: function () {
@@ -737,9 +758,10 @@ _.extend(NEWSBLUR.ReaderAccount.prototype, {
 
         NEWSBLUR.log(["form['send_emails']", form['send_emails']]);
         this.model.preference('send_emails', form['send_emails']);
+        this.model.preference('notify_before_renewal', form['notify_before_renewal']);
 
         // Save usage billing limit if changed
-        if (NEWSBLUR.Globals.is_usage_billing) {
+        if (NEWSBLUR.Globals.can_use_ai_classifiers) {
             var limit = $('.NB-usage-billing-limit-input', this.$modal).val();
             this.model.save_usage_billing_limit(limit, function (data) {
                 if (data.code === 1) {
@@ -851,7 +873,7 @@ _.extend(NEWSBLUR.ReaderAccount.prototype, {
     },
 
     fetch_usage_billing_history: function () {
-        if (!NEWSBLUR.Globals.is_usage_billing) {
+        if (!NEWSBLUR.Globals.can_use_ai_classifiers) {
             var $history = $('.NB-account-usage-payments', this.$modal).empty();
             $history.append($.make('li', { className: 'NB-account-payment' }, [
                 $.make('i', 'No usage billing set up.')
@@ -1020,6 +1042,7 @@ _.extend(NEWSBLUR.ReaderAccount.prototype, {
         });
         $.targetIs(e, { tagSelector: '.NB-account-usage-billing-setup' }, function ($t, $p) {
             e.preventDefault();
+            if (NEWSBLUR.Globals.is_self_hosted_ai) return;
             var $form = $('<form method="POST" action="/profile/setup_usage_billing/"></form>');
             $form.append($('<input type="hidden" name="csrfmiddlewaretoken">').val($.cookie('csrftoken')));
             $('body').append($form);

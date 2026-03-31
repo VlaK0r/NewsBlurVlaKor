@@ -6,6 +6,7 @@ from django.contrib.auth.views import LogoutView
 from django.contrib.sitemaps.views import sitemap
 from django.views.generic import RedirectView
 
+from apps.mcp import views as mcp_views
 from apps.profile import views as profile_views
 from apps.reader import views as reader_views
 from apps.social import views as social_views
@@ -83,6 +84,14 @@ urlpatterns = [
     url(r"^features/archive/?$", static_views.feature_archive, name="feature-archive"),
     url(r"^features/saved-stories/?$", static_views.feature_saved_stories, name="feature-saved-stories"),
     url(r"^features/native-apps/?$", static_views.feature_native_apps, name="feature-native-apps"),
+    url(r"^features/mcp/?$", static_views.feature_mcp, name="feature-mcp"),
+    url(r"^features/cli/?$", static_views.feature_cli, name="feature-cli"),
+    url(r"^features/mcp-cli/?$", static_views.feature_mcp_cli_redirect, name="feature-mcp-cli"),
+    url(
+        r"^features/story-clustering/?$",
+        static_views.feature_story_clustering,
+        name="feature-story-clustering",
+    ),
     url(r"^compare/feedly/?", static_views.compare_feedly, name="compare-feedly"),
     url(r"^compare/inoreader/?", static_views.compare_inoreader, name="compare-inoreader"),
     url(r"^compare/readwise-reader/?", static_views.compare_readwise, name="compare-readwise"),
@@ -107,6 +116,17 @@ urlpatterns = [
     url(r"^privacy/?", static_views.privacy, name="privacy"),
     url(r"^tos/?", static_views.tos, name="tos"),
     url(r"^manifest.webmanifest", static_views.webmanifest, name="webmanifest"),
+    # MCP OAuth discovery (RFC 8414 / RFC 9728)
+    url(
+        r"^\.well-known/oauth-authorization-server/mcp/?$",
+        mcp_views.oauth_authorization_server_metadata,
+        name="mcp-oauth-metadata",
+    ),
+    url(
+        r"^\.well-known/oauth-protected-resource/mcp/?$",
+        mcp_views.oauth_protected_resource_metadata,
+        name="mcp-oauth-protected-resource",
+    ),
     url(
         r"^.well-known/apple-app-site-association",
         static_views.apple_app_site_assoc,
@@ -134,6 +154,12 @@ urlpatterns = [
     url(r"^login/?$", RedirectView.as_view(pattern_name="login", permanent=True)),
     url(r"^signup/?$", RedirectView.as_view(pattern_name="signup", permanent=True)),
     url(r"^forgot-password/?$", RedirectView.as_view(pattern_name="profile-forgot-password", permanent=True)),
+    url(r"^refer/(?P<username>[\w.]+)/?$", profile_views.referral_landing, name="referral-landing"),
+    url(
+        r"^gift/(?P<gift_tier>premium|archive|pro)/(?P<username>[\w.]+)/(?P<gift_code>[a-zA-Z0-9]+)/?$",
+        profile_views.gift_redeem,
+        name="gift-redeem",
+    ),
     url(r"^account/redeem_code/?$", profile_views.redeem_code, name="redeem-code"),
     url(r"^account/login/?$", profile_views.login, name="login"),
     url(r"^account/signup/?$", profile_views.signup, name="signup"),

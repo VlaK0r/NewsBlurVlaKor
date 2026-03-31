@@ -1,22 +1,28 @@
 package com.newsblur.fragment;
 
+import android.content.res.ColorStateList;
+import android.content.res.Configuration;
+import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Parcelable;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver.OnGlobalLayoutListener;
+import android.view.VelocityTracker;
+import android.view.ViewConfiguration;
 import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.newsblur.R;
 import com.newsblur.activity.ItemsList;
 import com.newsblur.activity.NbActivity;
@@ -32,11 +38,14 @@ import com.newsblur.service.SyncServiceState;
 import com.newsblur.util.CursorFilters;
 import com.newsblur.util.FeedSet;
 import com.newsblur.util.FeedUtils;
+import com.newsblur.util.GestureAction;
 import com.newsblur.util.ImageLoader;
+import com.newsblur.util.PrefConstants;
 import com.newsblur.util.ReadFilter;
 import com.newsblur.util.SpacingStyle;
 import com.newsblur.util.StoryListStyle;
 import com.newsblur.util.ThumbnailStyle;
+import com.newsblur.util.NetworkUtils;
 import com.newsblur.util.UIUtils;
 import com.newsblur.util.ViewUtils;
 import com.newsblur.viewModel.StoriesViewModel;
@@ -52,6 +61,8 @@ import dagger.hilt.android.AndroidEntryPoint;
 
 @AndroidEntryPoint
 public class ItemSetFragment extends NbFragment {
+    private static final float STORY_LIST_BACK_GESTURE_TRIGGER_RATIO = 0.33f;
+    private static final float STORY_LIST_BACK_GESTURE_DIRECTION_RATIO = 1.2f;
 
     @Inject
     FeedUtils feedUtils;
@@ -98,9 +109,6 @@ public class ItemSetFragment extends NbFragment {
 
     // loading indicator for when stories are absent or stale (at top of list)
     // R.id.top_loading_throb
-
-    // loading indicator for when stories are present and fresh (at bottom of list)
-    protected LinearProgressIndicator bottomProgressView;
 
     // the fleuron has padding that can't be calculated until after layout, but only changes
     // rarely thereafter
@@ -168,12 +176,10 @@ public class ItemSetFragment extends NbFragment {
 
         binding.topLoadingIndicator.setEnabled(!isDisableAnimations);
 
-        View footerView = inflater.inflate(R.layout.row_loading_indicator, null);
-        bottomProgressView = footerView.findViewById(R.id.itemlist_loading);
-        bottomProgressView.setEnabled(!isDisableAnimations);
-
         fleuronBinding.getRoot().setVisibility(View.INVISIBLE);
         fleuronBinding.containerSubscribe.setOnClickListener(view -> UIUtils.startSubscriptionActivity(requireContext()));
+        fleuronBinding.buttonUpgrade.setOnClickListener(view -> UIUtils.startSubscriptionActivity(requireContext()));
+        styleUpgradeBanner();
 
         binding.itemgridfragmentGrid.getViewTreeObserver().addOnGlobalLayoutListener(new OnGlobalLayoutListener() {
             @Override
@@ -200,7 +206,6 @@ public class ItemSetFragment extends NbFragment {
         });
 
         adapter = new StoryViewAdapter(((NbActivity) getActivity()), getFeedSet(), listStyle, iconLoader, thumbnailLoader, feedUtils, prefsRepo, getOnStoryClickListener());
-        adapter.addFooterView(footerView);
         adapter.addFooterView(fleuronBinding.getRoot());
         binding.itemgridfragmentGrid.setAdapter(adapter);
 
@@ -223,6 +228,7 @@ public class ItemSetFragment extends NbFragment {
                 ItemSetFragment.this.onScrolled(dy);
             }
         });
+        binding.itemgridfragmentGrid.addOnItemTouchListener(new StoryListBackTouchListener());
 
         return v;
     }
@@ -258,6 +264,10 @@ public class ItemSetFragment extends NbFragment {
             storyThawCompleted(storyBatch.getIndexOfLastUnread());
         }
         updateLoadingIndicators();
+        ItemsList activity = (ItemsList) getActivity();
+        if (activity != null) {
+            activity.refreshStoryStatusIndicators();
+        }
     }
 
     protected void triggerRefresh(int desiredStoryCount, Integer totalSeen) {
@@ -276,6 +286,7 @@ public class ItemSetFragment extends NbFragment {
     public void resetEmptyState() {
         updateAdapter(Collections.emptyList(), -1L);
         dataSeenYet = false;
+        updateLoadingIndicators();
     }
 
     /**
@@ -311,6 +322,15 @@ public class ItemSetFragment extends NbFragment {
         }
     }
 
+    public void refreshLoadingIndicators() {
+        if (!isAdded() || binding == null) return;
+        updateLoadingIndicators();
+    }
+
+    public boolean hasStories() {
+        return (adapter != null) && (adapter.getRawStoryCount() > 0);
+    }
+
     private void updateAdapter(@NonNull List<Story> stories, Long loadId) {
         adapter.submitStories(stories, loadId, binding.itemgridfragmentGrid, gridState, skipBackFillingStories);
         gridState = null;
@@ -327,27 +347,29 @@ public class ItemSetFragment extends NbFragment {
 
     private void updateLoadingIndicators() {
         calcFleuronPadding();
+        boolean hasStories = hasStories();
+        boolean isOffline = !NetworkUtils.isOnline(requireContext());
+        boolean waitingForApiResult = !hasStories && !syncServiceState.isFeedSetExhausted(getFeedSet());
 
         if (dataSeenYet && adapter.getRawStoryCount() > 0 && UIUtils.needsSubscriptionAccess(getFeedSet(), prefsRepo)) {
             fleuronBinding.getRoot().setVisibility(View.VISIBLE);
             fleuronBinding.containerSubscribe.setVisibility(View.VISIBLE);
+            updateUpgradeBannerText();
             binding.topLoadingIndicator.setVisibility(View.INVISIBLE);
-            bottomProgressView.setVisibility(View.INVISIBLE);
             fleuronResized = false;
             return;
         }
 
-        if ((!dataSeenYet) || syncServiceState.isFeedSetSyncing(getFeedSet())) {
+        if ((!dataSeenYet) || syncServiceState.isFeedSetSyncing(getFeedSet()) || waitingForApiResult) {
             binding.emptyViewText.setText(R.string.empty_list_view_loading);
-            binding.emptyViewText.setTypeface(binding.emptyViewText.getTypeface(), Typeface.ITALIC);
+            binding.emptyViewText.setTypeface(binding.emptyViewText.getTypeface(), Typeface.NORMAL);
+            binding.emptyViewText.setAlpha(0.4f);
             binding.emptyViewImage.setVisibility(View.INVISIBLE);
 
-            if (syncServiceState.isFeedSetStoriesFresh(getFeedSet())) {
+            if (isOffline || hasStories || syncServiceState.isFeedSetStoriesFresh(getFeedSet())) {
                 binding.topLoadingIndicator.setVisibility(View.INVISIBLE);
-                bottomProgressView.setVisibility(View.VISIBLE);
             } else {
                 binding.topLoadingIndicator.setVisibility(View.VISIBLE);
-                bottomProgressView.setVisibility(View.GONE);
             }
             fleuronBinding.getRoot().setVisibility(View.INVISIBLE);
         } else {
@@ -358,15 +380,60 @@ public class ItemSetFragment extends NbFragment {
                 binding.emptyViewText.setText(R.string.empty_list_view_no_stories);
             }
             binding.emptyViewText.setTypeface(binding.emptyViewText.getTypeface(), Typeface.NORMAL);
+            binding.emptyViewText.setAlpha(1.0f);
             binding.emptyViewImage.setVisibility(View.VISIBLE);
 
             binding.topLoadingIndicator.setVisibility(View.INVISIBLE);
-            bottomProgressView.setVisibility(View.INVISIBLE);
             if (dataSeenYet && syncServiceState.isFeedSetExhausted(getFeedSet()) && (adapter.getRawStoryCount() > 0)) {
                 fleuronBinding.containerSubscribe.setVisibility(View.GONE);
                 fleuronBinding.getRoot().setVisibility(View.VISIBLE);
             }
         }
+    }
+
+    private void styleUpgradeBanner() {
+        int cardBg, strokeColor, textColor, buttonBg;
+        int goldColor = ContextCompat.getColor(requireContext(), R.color.premium_gold);
+
+        PrefConstants.ThemeValue theme = prefsRepo.getSelectedTheme();
+        boolean isDarkSystem = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        boolean isDark = theme == PrefConstants.ThemeValue.DARK || theme == PrefConstants.ThemeValue.BLACK || (theme == PrefConstants.ThemeValue.AUTO && isDarkSystem);
+
+        if (theme == PrefConstants.ThemeValue.SEPIA) {
+            cardBg = ContextCompat.getColor(requireContext(), R.color.item_background_sepia);
+            strokeColor = ContextCompat.getColor(requireContext(), R.color.row_border_sepia);
+            textColor = ContextCompat.getColor(requireContext(), R.color.text_sepia);
+            buttonBg = goldColor;
+        } else if (isDark) {
+            cardBg = Color.parseColor("#2C2C2E");
+            strokeColor = Color.parseColor("#48484A");
+            textColor = ContextCompat.getColor(requireContext(), R.color.gray85);
+            buttonBg = goldColor;
+        } else {
+            cardBg = ContextCompat.getColor(requireContext(), R.color.white);
+            strokeColor = ContextCompat.getColor(requireContext(), R.color.gray85);
+            textColor = Color.parseColor("#1C1C1E");
+            buttonBg = goldColor;
+        }
+
+        fleuronBinding.containerSubscribe.setCardBackgroundColor(cardBg);
+        fleuronBinding.containerSubscribe.setStrokeColor(strokeColor);
+        fleuronBinding.textSubscription.setTextColor(textColor);
+        fleuronBinding.imgPremiumIcon.setImageTintList(ColorStateList.valueOf(goldColor));
+        fleuronBinding.buttonUpgrade.setBackgroundTintList(ColorStateList.valueOf(buttonBg));
+    }
+
+    private void updateUpgradeBannerText() {
+        FeedSet fs = getFeedSet();
+        int textRes;
+        if (fs.isAllNormal()) {
+            textRes = R.string.premium_subscribers_allstories;
+        } else if (fs.isSingleSavedTag()) {
+            textRes = R.string.premium_subscribers_saved_tag;
+        } else {
+            textRes = R.string.premium_subscribers_folder;
+        }
+        fleuronBinding.textSubscription.setText(textRes);
     }
 
     public void notifyContentPrefsChanged() {
@@ -544,6 +611,133 @@ public class ItemSetFragment extends NbFragment {
             ItemsList activity = ((ItemsList) getActivity());
             if (activity != null) activity.startReadingActivity(feedSet, storyHash);
         };
+    }
+
+    private boolean isInteractiveStoryListSwipeEnabled() {
+        ItemsList activity = (ItemsList) getActivity();
+        return activity != null &&
+                !activity.isTaskRoot() &&
+                prefsRepo.getLeftToRightGestureAction() == GestureAction.GEST_ACTION_BACK;
+    }
+
+    private final class StoryListBackTouchListener implements RecyclerView.OnItemTouchListener {
+        private final int touchSlopPx = ViewConfiguration.get(requireContext()).getScaledTouchSlop();
+        private final int minimumFlingVelocityPx = ViewConfiguration.get(requireContext()).getScaledMinimumFlingVelocity();
+        @Nullable
+        private VelocityTracker velocityTracker;
+        private float downRawX;
+        private float downRawY;
+        private boolean isDragging;
+        private boolean gestureEligible;
+
+        @Override
+        public boolean onInterceptTouchEvent(@NonNull RecyclerView recyclerView, @NonNull MotionEvent event) {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    gestureEligible = isInteractiveStoryListSwipeEnabled();
+                    isDragging = false;
+                    downRawX = event.getRawX();
+                    downRawY = event.getRawY();
+                    resetVelocityTracker();
+                    velocityTracker = VelocityTracker.obtain();
+                    trackMovement(event);
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    if (!gestureEligible) return false;
+                    trackMovement(event);
+                    float deltaX = event.getRawX() - downRawX;
+                    float deltaY = event.getRawY() - downRawY;
+                    if (!isDragging &&
+                            deltaX > touchSlopPx &&
+                            deltaX > Math.abs(deltaY) * STORY_LIST_BACK_GESTURE_DIRECTION_RATIO) {
+                        isDragging = true;
+                        ItemsList activity = (ItemsList) getActivity();
+                        if (activity != null) {
+                            activity.beginInteractiveStoryListSwipe();
+                            activity.updateInteractiveStoryListSwipe(deltaX);
+                        }
+                        recyclerView.requestDisallowInterceptTouchEvent(true);
+                        return true;
+                    }
+                    break;
+                case MotionEvent.ACTION_CANCEL:
+                case MotionEvent.ACTION_UP:
+                    resetGestureState();
+                    break;
+                default:
+                    break;
+            }
+            return false;
+        }
+
+        @Override
+        public void onTouchEvent(@NonNull RecyclerView recyclerView, @NonNull MotionEvent event) {
+            if (!isDragging) return;
+            trackMovement(event);
+
+            ItemsList activity = (ItemsList) getActivity();
+            if (activity == null) {
+                resetGestureState();
+                return;
+            }
+
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_MOVE:
+                    activity.updateInteractiveStoryListSwipe(event.getRawX() - downRawX);
+                    break;
+                case MotionEvent.ACTION_UP:
+                    float totalDeltaX = Math.max(0f, event.getRawX() - downRawX);
+                    float xVelocity = getXVelocity();
+                    boolean shouldComplete = totalDeltaX >= recyclerView.getWidth() * STORY_LIST_BACK_GESTURE_TRIGGER_RATIO;
+                    if (!shouldComplete && xVelocity > minimumFlingVelocityPx * 4f) {
+                        shouldComplete = true;
+                    }
+                    if (shouldComplete) {
+                        activity.completeInteractiveStoryListSwipe();
+                    } else {
+                        activity.cancelInteractiveStoryListSwipe();
+                    }
+                    resetGestureState();
+                    break;
+                case MotionEvent.ACTION_CANCEL:
+                    activity.cancelInteractiveStoryListSwipe();
+                    resetGestureState();
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        @Override
+        public void onRequestDisallowInterceptTouchEvent(boolean disallowIntercept) {
+        }
+
+        private float getXVelocity() {
+            if (velocityTracker == null) return 0f;
+            velocityTracker.computeCurrentVelocity(1000);
+            return velocityTracker.getXVelocity();
+        }
+
+        private void trackMovement(@NonNull MotionEvent event) {
+            if (velocityTracker == null) return;
+            MotionEvent screenEvent = MotionEvent.obtain(event);
+            screenEvent.offsetLocation(event.getRawX() - event.getX(), event.getRawY() - event.getY());
+            velocityTracker.addMovement(screenEvent);
+            screenEvent.recycle();
+        }
+
+        private void resetGestureState() {
+            isDragging = false;
+            gestureEligible = false;
+            resetVelocityTracker();
+        }
+
+        private void resetVelocityTracker() {
+            if (velocityTracker != null) {
+                velocityTracker.recycle();
+                velocityTracker = null;
+            }
+        }
     }
 
     @Override

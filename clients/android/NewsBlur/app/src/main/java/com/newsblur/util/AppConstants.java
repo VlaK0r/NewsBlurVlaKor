@@ -81,6 +81,7 @@ public class AppConstants {
     // Subscription SKU
     public final static String PREMIUM_SUB_ID = "nb.premium.36";
     public final static String PREMIUM_ARCHIVE_SUB_ID = "nb.premium.archive.99";
+    public final static String PREMIUM_PRO_SUB_ID = "nb.premium.pro.299";
 
     // Free standard account sites limit
     public final static int FREE_ACCOUNT_SITE_LIMIT = 64;
@@ -95,6 +96,7 @@ public class AppConstants {
     public static final String GLOBAL_SHARED_STORIES_GROUP_KEY = "GLOBAL_SHARED_STORIES_GROUP_KEY";
     public static final String ALL_SHARED_STORIES_GROUP_KEY = "ALL_SHARED_STORIES_GROUP_KEY";
     public static final String ALL_STORIES_GROUP_KEY = "ALL_STORIES_GROUP_KEY";
+    public static final String DAILY_BRIEFING_GROUP_KEY = "DAILY_BRIEFING_GROUP_KEY";
     public static final String INFREQUENT_SITE_STORIES_GROUP_KEY = "INFREQUENT_SITE_STORIES_GROUP_KEY";
     public static final String READ_STORIES_GROUP_KEY = "READ_STORIES_GROUP_KEY";
     public static final String SAVED_STORIES_GROUP_KEY = "SAVED_STORIES_GROUP_KEY";

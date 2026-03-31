@@ -1343,7 +1343,7 @@ class Test_Models(BriefingTestCase):
     def test_default_values(self):
         prefs = MBriefingPreferences.get_or_create(self.user.pk)
         self.assertEqual(prefs.frequency, "daily")
-        self.assertFalse(prefs.enabled)
+        self.assertTrue(prefs.enabled)
         self.assertEqual(prefs.story_count, 5)
 
     # --- ensure_briefing_feed ---
@@ -1468,13 +1468,20 @@ class Test_Views(BriefingTestCase):
 
     # --- load_briefing_stories ---
 
-    def test_load_requires_staff(self):
+    @patch("apps.briefing.views.redis.Redis")
+    def test_load_accessible_by_non_staff(self, mock_redis_cls):
+        mock_r = MagicMock()
+        mock_redis_cls.return_value = mock_r
+        mock_pipe = MagicMock()
+        mock_r.pipeline.return_value = mock_pipe
+        mock_pipe.execute.return_value = []
+
         non_staff = User.objects.create_user(username="nostaff", password="testpass")
         c = Client()
         c.login(username="nostaff", password="testpass")
         response = c.get(reverse("load-briefing-stories"))
         data = json.decode(response.content)
-        self.assertEqual(data["code"], -1)
+        self.assertIn("briefings", data)
 
     @patch("apps.briefing.views.redis.Redis")
     def test_load_empty_briefings(self, mock_redis_cls):
@@ -1497,13 +1504,14 @@ class Test_Views(BriefingTestCase):
         mock_pipe.execute.return_value = [False]
 
         story = self.make_story(self.feed, "Briefing Summary", content="<div>Summary content</div>")
-        self.make_briefing(summary_story_hash=story.story_hash, curated_hashes=[story.story_hash])
+        self.make_briefing(summary_story_hash=story.story_hash, curated_hashes=[story.story_hash], slot="evening")
 
         response = self.client.get(reverse("load-briefing-stories"))
         data = json.decode(response.content)
         self.assertEqual(len(data["briefings"]), 1)
         self.assertIsNotNone(data["briefings"][0]["summary_story"])
         self.assertEqual(data["briefings"][0]["summary_story"]["story_title"], "Briefing Summary")
+        self.assertEqual(data["briefings"][0]["slot"], "evening")
 
     @patch("apps.briefing.views.redis.Redis")
     def test_non_premium_truncates(self, mock_redis_cls):
@@ -1627,6 +1635,14 @@ class Test_Views(BriefingTestCase):
         data = json.decode(response.content)
         self.assertTrue(data["enabled"])
 
+    def test_post_enabled_updates_reader_preference(self):
+        self.make_prefs(enabled=False)
+        self.client.post(reverse("briefing-preferences"), {"enabled": "true"})
+
+        self.user.profile.refresh_from_db()
+        preferences = json.decode(self.user.profile.preferences or "{}")
+        self.assertTrue(preferences["briefing_enabled"])
+
     def test_post_story_count_valid(self):
         self.make_prefs()
         response = self.client.post(reverse("briefing-preferences"), {"story_count": "10"})
@@ -1743,6 +1759,24 @@ class Test_Views(BriefingTestCase):
         response = self.client.post(reverse("generate-briefing"))
         prefs = MBriefingPreferences.objects.get(user_id=self.user.pk)
         self.assertTrue(prefs.enabled)
+
+    @patch("apps.briefing.views.ensure_briefing_feed")
+    @patch("apps.briefing.tasks.GenerateUserBriefing")
+    def test_generate_enables_reader_preference(self, mock_task, mock_feed):
+        mock_feed.return_value = self.feed
+        self.make_prefs(enabled=False)
+
+        self.client.post(reverse("generate-briefing"))
+        self.user.profile.refresh_from_db()
+        preferences = json.decode(self.user.profile.preferences or "{}")
+        self.assertTrue(preferences["briefing_enabled"])
+
+    def test_profile_preference_updates_briefing_enabled(self):
+        self.make_prefs(enabled=True)
+
+        self.client.post("/profile/set_preference", {"briefing_enabled": "false"})
+        prefs = MBriefingPreferences.objects.get(user_id=self.user.pk)
+        self.assertFalse(prefs.enabled)
 
     @patch("apps.briefing.views.ensure_briefing_feed")
     @patch("apps.briefing.tasks.GenerateUserBriefing")

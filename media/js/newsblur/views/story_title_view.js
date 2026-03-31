@@ -24,6 +24,18 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
         this.model.bind('change:intelligence', this.toggle_intelligence, this);
         this.collection.bind('render:intelligence', this.render_intelligence, this);
         this.model.story_title_view = this;
+
+        // Listen for feed title changes to update grid/list/magazine views in real time
+        this.story_feed = NEWSBLUR.assets.get_feed(this.model.get('story_feed_id'));
+        if (this.story_feed) {
+            this.listenTo(this.story_feed, 'change:feed_title', this.update_feed_title);
+        }
+    },
+
+    update_feed_title: function () {
+        if (this.story_feed) {
+            this.$('.feed_title').text(this.story_feed.get('feed_title'));
+        }
     },
 
     render: function () {
@@ -759,19 +771,22 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
         if (!cluster_stories || !cluster_stories.length) return;
         if (this.options.is_cluster_detail) return;
 
-        if (!NEWSBLUR.Globals.is_staff) return;
-
         var preview_style = NEWSBLUR.assets.preference('cluster_preview_style') || 'single_line';
         var is_expanded = preview_style === 'expanded';
         var image_pref = NEWSBLUR.assets.preference('image_preview') || 'none';
         var show_image = image_pref && image_pref !== 'none';
 
         var $container = $('<div class="NB-story-cluster-sources"></div>');
-        $container.append('<span class="NB-staff-only-badge">STAFF ONLY</span>');
+        cluster_stories = _.sortBy(cluster_stories, function (cs) {
+            return -parseInt(cs.story_timestamp, 10);
+        });
+        if (!NEWSBLUR.Globals.is_archive) {
+            cluster_stories = cluster_stories.slice(0, 1);
+        }
         _.each(cluster_stories, function (cs) {
             var feed = NEWSBLUR.assets.get_feed(cs.story_feed_id);
             var favicon = feed ? $.favicon_html(feed) : '';
-            var title = cs.story_title || '';
+            var title = cs.story_title ? $('<div/>').html(cs.story_title).text() : '';
             var date = '';
             if (cs.story_timestamp) {
                 var d = new Date(parseInt(cs.story_timestamp, 10) * 1000);

@@ -99,14 +99,29 @@ class Profile(models.Model):
     )
 
     @property
+    def is_self_hosted_ai(self):
+        """True when Stripe billing is not configured but AI provider keys are.
+        Self-hosted users provide their own API keys and pay providers directly.
+        """
+        stripe_configured = bool(
+            getattr(settings, "STRIPE_PRICE_TEXT_CLASSIFICATION", "")
+            and getattr(settings, "STRIPE_PRICE_IMAGE_CLASSIFICATION", "")
+        )
+        if stripe_configured:
+            return False
+        from apps.ask_ai.providers import AnthropicProvider
+
+        return AnthropicProvider().is_configured()
+
+    @property
     def can_use_ai_classifiers(self):
-        return bool(self.is_usage_billing)
+        return bool(self.is_usage_billing) or self.is_self_hosted_ai
 
     def get_usage_billing_spend(self):
         """Get current billing cycle spend from MLLMCost MongoDB records.
         Returns (current_spend_usd, limit_usd, is_limit_reached) tuple.
         """
-        if not self.is_usage_billing:
+        if not self.is_usage_billing and not self.is_self_hosted_ai:
             return (0.0, None, False)
 
         from apps.monitor.models import MLLMCost
@@ -119,7 +134,9 @@ class Profile(models.Model):
     @property
     def is_usage_limit_reached(self):
         """Quick check: has user hit their spending limit? Uses Redis cache."""
-        if not self.is_usage_billing or not self.usage_billing_limit:
+        if not self.usage_billing_limit:
+            return False
+        if not self.is_usage_billing and not self.is_self_hosted_ai:
             return False
         return self._check_cached_limit_status()
 
@@ -402,6 +419,11 @@ class Profile(models.Model):
             "url_ng": MClassifierUrl.objects.filter(user_id=self.user.pk, score__lt=0).count(),
         }
 
+        # Collect all PayPal and Stripe IDs before deletion
+        self.retrieve_paypal_ids()
+        paypal_ids = list(self.user.paypal_ids.values_list("paypal_sub_id", flat=True))
+        stripe_ids = list(self.user.stripe_ids.values_list("stripe_id", flat=True))
+
         # Create the archived record
         deleted_user = MDeletedUser(
             user_id=self.user.pk,
@@ -421,7 +443,9 @@ class Profile(models.Model):
             total_payments=total_payments,
             payment_history=payment_history,
             stripe_id=self.stripe_id,
+            stripe_ids=stripe_ids,
             paypal_email=self.latest_paypal_email,
+            paypal_ids=paypal_ids,
             feeds_count=feeds_count,
             feed_opens=feed_opens,
             read_story_count=read_story_count,
@@ -439,20 +463,34 @@ class Profile(models.Model):
             % (feeds_count, len(payments), total_payments, read_story_count),
         )
 
+        return deleted_user
+
     def delete_user(self, confirm=False, fast=False):
         if not confirm:
             print(" ---> You must pass confirm=True to delete this user.")
             return
 
         # Archive user data BEFORE deletion for analytics
-        self.archive_deleted_user()
+        deleted_user = self.archive_deleted_user()
 
         logging.user(self.user, "Deleting user: %s / %s" % (self.user.email, self.user.profile.last_seen_ip))
+        cancellation_succeeded = False
         try:
             if not fast:
-                self.cancel_premium()
-        except:
-            logging.user(self.user, "~BR~SK~FWError cancelling premium renewal for: %s" % self.user.username)
+                self.cancel_premium(force=True)
+                cancellation_succeeded = True
+        except Exception as e:
+            logging.user(
+                self.user,
+                "~BR~SK~FWError cancelling premium renewal for: %s (%s)" % (self.user.username, e),
+            )
+
+        if deleted_user:
+            try:
+                deleted_user.cancellation_succeeded = cancellation_succeeded
+                deleted_user.save()
+            except Exception as e:
+                logging.user(self.user, "~FRError updating deleted user archive: %s" % e)
 
         from apps.social.models import (
             MActivity,
@@ -674,6 +712,107 @@ class Profile(models.Model):
             )
 
         return True
+
+    def extend_premium_by_days(self, days, tier=None):
+        now = datetime.datetime.now()
+
+        # Ensure user is at the required tier
+        if tier == "pro" and not self.is_pro:
+            self.activate_pro()
+        elif tier == "archive" and not self.is_archive:
+            self.activate_archive()
+        elif not self.is_premium:
+            self.activate_premium()
+
+        # Extend premium_expire
+        if self.premium_expire and self.premium_expire > now:
+            self.premium_expire = self.premium_expire + datetime.timedelta(days=days)
+        else:
+            self.premium_expire = now + datetime.timedelta(days=days)
+        self.save()
+
+        # Push subscription billing date forward (Stripe and/or PayPal)
+        self.delay_subscription_renewal(days)
+
+        PaymentHistory.objects.create(
+            user=self.user,
+            payment_date=now,
+            payment_amount=0,
+            payment_provider="referral credit",
+        )
+
+        logging.user(
+            self.user,
+            "~FG~BBExtended premium by %s days (tier: %s, new expire: %s)~FW"
+            % (days, tier or "premium", self.premium_expire),
+        )
+
+    def delay_subscription_renewal(self, days):
+        """Push the next billing date forward for Stripe or PayPal subscriptions."""
+        if self.stripe_id:
+            self._delay_stripe_renewal(days)
+        if self.paypal_sub_id:
+            self._delay_paypal_renewal(days)
+
+    def _delay_stripe_renewal(self, days):
+        stripe.api_key = settings.STRIPE_SECRET
+        stripe_customer = self.stripe_customer()
+        if not stripe_customer:
+            return
+
+        try:
+            subscriptions = stripe.Subscription.list(customer=stripe_customer.id).data
+            active_sub = None
+            for sub in subscriptions:
+                if sub.plan.active and sub.status in ("active", "trialing"):
+                    active_sub = sub
+                    break
+            if not active_sub:
+                return
+
+            current_period_end = active_sub.current_period_end
+            new_trial_end = current_period_end + (days * 86400)  # seconds
+
+            stripe.Subscription.modify(
+                active_sub.id,
+                trial_end=new_trial_end,
+                proration_behavior="none",
+            )
+            logging.user(
+                self.user,
+                "~FG~BBDelayed Stripe renewal by %s days (sub: %s)~FW" % (days, active_sub.id),
+            )
+        except Exception as e:
+            logging.user(
+                self.user,
+                "~FR~BBFailed to delay Stripe renewal: %s~FW" % e,
+            )
+
+    def _delay_paypal_renewal(self, days):
+        paypal_api = self.paypal_api()
+        if not paypal_api:
+            return
+
+        try:
+            # Suspend and reactivate to reset billing cycle
+            paypal_api.post(
+                f"/v1/billing/subscriptions/{self.paypal_sub_id}/suspend",
+                {"reason": "Referral credit: %s days added" % days},
+            )
+            paypal_api.post(
+                f"/v1/billing/subscriptions/{self.paypal_sub_id}/activate",
+                {"reason": "Referral credit applied"},
+            )
+            logging.user(
+                self.user,
+                "~FG~BBReset PayPal billing cycle for %s days credit (sub: %s)~FW"
+                % (days, self.paypal_sub_id),
+            )
+        except Exception as e:
+            logging.user(
+                self.user,
+                "~FR~BBFailed to delay PayPal renewal: %s~FW" % e,
+            )
 
     def activate_archive(self, never_expire=False):
         logging.user(
@@ -1259,6 +1398,9 @@ class Profile(models.Model):
                 logging.user(self.user, "~BY~SN~FWFree lifetime premium")
                 free_lifetime_premium = True
                 continue
+            # Skip refund records (negative amounts)
+            if payment.payment_amount < 0:
+                continue
 
             # Only update exiration if payment in the last year
             if payment.payment_date > last_year:
@@ -1605,13 +1747,14 @@ class Profile(models.Model):
         return refunded
 
     def refund_latest_stripe_payment(self, partial=False):
-        refunded = False
-        if not self.stripe_id:
-            return
+        stripe_customer = self.stripe_customer()
+        if not stripe_customer:
+            return False
 
-        stripe.api_key = settings.STRIPE_SECRET
-        stripe_customer = stripe.Customer.retrieve(self.stripe_id)
-        stripe_payments = stripe.Charge.list(customer=stripe_customer.id).data
+        stripe_payments = stripe.Charge.list(customer=stripe_customer.id, limit=1).data
+        if not stripe_payments:
+            return False
+
         if partial:
             stripe_payments[0].refund(amount=1200)
             refunded = 12
@@ -1620,6 +1763,13 @@ class Profile(models.Model):
             self.cancel_premium_stripe()
             refunded = stripe_payments[0].amount / 100
 
+        PaymentHistory.objects.create(
+            user=self.user,
+            payment_date=datetime.datetime.now(),
+            payment_amount=-int(refunded),
+            payment_provider="stripe",
+            refunded=True,
+        )
         logging.user(self.user, "~FRRefunding stripe payment: $%s" % refunded)
         return refunded
 
@@ -1680,6 +1830,13 @@ class Profile(models.Model):
             logging.user(self.user, f"Paypal refund response: {response}")
         if "status" in response and response["status"] == "COMPLETED":
             refunded = int(float(transaction["amount_with_breakdown"]["gross_amount"]["value"]))
+            PaymentHistory.objects.create(
+                user=self.user,
+                payment_date=datetime.datetime.now(),
+                payment_amount=-int(round(refund_amount)),
+                payment_provider="paypal",
+                refunded=True,
+            )
             logging.user(self.user, "~FRRefunding paypal payment: $%s/%s" % (refund_amount, refunded))
         else:
             logging.user(self.user, "~FRCouldn't refund paypal payment: %s" % response)
@@ -1687,18 +1844,129 @@ class Profile(models.Model):
 
         return refunded
 
-    def cancel_premium(self):
-        paypal_cancel = self.cancel_premium_paypal()
-        stripe_cancel = self.cancel_premium_stripe()
+    def refund_prorated_stripe_payment(self):
+        """Refund a prorated portion of the latest Stripe payment based on unused days.
+
+        Used when a user switches from Stripe to another payment provider.
+        Calculates (days_left / 365) * charge_amount and issues a partial refund.
+        Returns the refunded dollar amount, or None if no refund was possible.
+        """
+        stripe_customer = self.stripe_customer()
+        if not stripe_customer:
+            return None
+
+        try:
+            stripe_payments = stripe.Charge.list(customer=stripe_customer.id, limit=1).data
+        except stripe.error.InvalidRequestError as e:
+            logging.user(self.user, "~FRFailed to retrieve Stripe charges for prorated refund: ~SB%s" % e)
+            return None
+
+        if not stripe_payments:
+            logging.user(self.user, "~FRNo Stripe payments found for prorated refund")
+            return None
+
+        latest_charge = stripe_payments[0]
+        if latest_charge.refunded:
+            logging.user(self.user, "~FRLatest Stripe charge already refunded, skipping proration")
+            return None
+
+        charge_date = datetime.datetime.fromtimestamp(latest_charge.created)
+        days_since = (datetime.datetime.now() - charge_date).days
+
+        if days_since >= 365:
+            logging.user(
+                self.user,
+                "~FRCouldn't prorate Stripe payment, too old: ~SB%s days since charge" % days_since,
+            )
+            return None
+
+        days_left = 365 - days_since
+        refund_amount_cents = int(round((days_left / 365) * latest_charge.amount))
+
+        if refund_amount_cents <= 0:
+            logging.user(self.user, "~FRProrated Stripe refund amount is zero or negative")
+            return None
+
+        try:
+            refund = stripe.Refund.create(charge=latest_charge.id, amount=refund_amount_cents)
+        except stripe.error.InvalidRequestError as e:
+            logging.user(self.user, "~FRFailed to prorate Stripe refund: ~SB%s" % e)
+            return None
+
+        refund_dollars = refund_amount_cents / 100.0
+        charge_dollars = latest_charge.amount / 100.0
+        PaymentHistory.objects.create(
+            user=self.user,
+            payment_date=datetime.datetime.now(),
+            payment_amount=-int(round(refund_dollars)),
+            payment_provider="stripe",
+            payment_identifier=refund.id,
+            refunded=True,
+        )
+        logging.user(
+            self.user,
+            "~FRProrated Stripe refund: $%.2f (of $%.2f, %s days left)"
+            % (refund_dollars, charge_dollars, days_left),
+        )
+        return refund_dollars
+
+    def refund_prorated_paypal_for_provider_switch(self):
+        """Refund a prorated portion of the latest PayPal payment when switching to Stripe.
+
+        Delegates to refund_paypal_payment_from_subscription with prorate=True.
+        Returns the refunded amount, or None if no refund was possible.
+        """
+        paypal_sub_id = self.paypal_sub_id
+        if not paypal_sub_id:
+            logging.user(self.user, "~FRNo PayPal sub ID for prorated refund during provider switch")
+            return None
+
+        last_paypal_payment = (
+            PaymentHistory.objects.filter(
+                user=self.user,
+                payment_provider="paypal",
+                payment_amount__gt=0,
+            )
+            .exclude(refunded=True)
+            .order_by("-payment_date")
+            .first()
+        )
+
+        if not last_paypal_payment:
+            logging.user(self.user, "~FRNo unrefunded PayPal payment found for prorated refund")
+            return None
+
+        payment_date = last_paypal_payment.payment_date
+        if payment_date.tzinfo:
+            payment_date = payment_date.replace(tzinfo=None)
+        days_since = (datetime.datetime.now() - payment_date).days
+        if days_since >= 365:
+            logging.user(
+                self.user,
+                "~FRPayPal payment too old for proration: ~SB%s days ago" % days_since,
+            )
+            return None
+
+        refunded = self.refund_paypal_payment_from_subscription(paypal_sub_id, prorate=True)
+        if refunded and isinstance(refunded, (int, float)):
+            logging.user(
+                self.user,
+                "~FRProrated PayPal refund for provider switch: $%s" % refunded,
+            )
+        return refunded
+
+    def cancel_premium(self, force=False):
+        paypal_cancel = self.cancel_premium_paypal(force=force)
+        stripe_cancel = self.cancel_premium_stripe(force=force)
         self.setup_premium_history()  # Sure, webhooks will force new history, but they take forever
         return stripe_cancel or paypal_cancel
 
-    def cancel_premium_paypal(self, cancel_older_subscriptions_only=False):
+    def cancel_premium_paypal(self, cancel_older_subscriptions_only=False, force=False):
         self.retrieve_paypal_ids()
         if not self.paypal_sub_id:
             logging.user(self.user, "~FRUser doesn't have a Paypal subscription, how did we get here?")
             return
-        if not self.premium_renewal and not cancel_older_subscriptions_only:
+        if not force and not self.premium_renewal and not cancel_older_subscriptions_only:
             logging.user(
                 self.user, "~FRUser ~SBalready~SN canceled Paypal subscription: %s" % self.paypal_sub_id
             )
@@ -1736,9 +2004,12 @@ class Profile(models.Model):
 
         return True
 
-    def cancel_premium_stripe(self):
+    def cancel_premium_stripe(self, force=False):
         if not self.stripe_id:
-            return
+            if force:
+                self.retrieve_stripe_ids()
+            if not self.stripe_id:
+                return
 
         stripe.api_key = settings.STRIPE_SECRET
         for stripe_id_model in self.user.stripe_ids.all():
@@ -2072,9 +2343,16 @@ class Profile(models.Model):
         logging.user(self.user, "~FG~BBNew iOS pro subscription: $%s~FW" % amount)
         return True
 
-    def activate_android_premium(self, order_id=None, product_id=None, amount=36):
-        if product_id == "nb.premium.archive.99":
-            amount = 99
+    def activate_android_premium(self, order_id=None, product_id=None, amount=None):
+        payment_provider = "android-subscription"
+        payment_amount = 36 if amount is None else amount
+
+        if product_id and "premium.archive" in product_id:
+            payment_provider = "android-archive"
+            payment_amount = 99 if amount is None else amount
+        elif product_id and "premium.pro" in product_id:
+            payment_provider = "android-pro"
+            payment_amount = 299 if amount is None else amount
 
         with transaction.atomic():
             Profile.objects.select_for_update().filter(user=self.user).first()
@@ -2083,41 +2361,46 @@ class Profile(models.Model):
                 if PaymentHistory.objects.filter(
                     user=self.user,
                     payment_identifier=order_id,
-                    payment_provider="android-subscription",
+                    payment_provider=payment_provider,
                 ).exists():
                     logging.user(
                         self.user,
-                        "~FG~BBAlready paid Android premium subscription (same txn): $%s~FW" % amount,
+                        "~FG~BBAlready paid Android premium subscription (same txn): $%s~FW" % payment_amount,
                     )
                     return False
 
             if PaymentHistory.objects.filter(
                 user=self.user,
-                payment_provider="android-subscription",
+                payment_provider=payment_provider,
                 payment_date__gte=datetime.datetime.now() - datetime.timedelta(days=3),
             ).exists():
                 logging.user(
                     self.user,
-                    "~FG~BBAlready paid Android premium subscription (recent): $%s~FW" % amount,
+                    "~FG~BBAlready paid Android premium subscription (recent): $%s~FW" % payment_amount,
                 )
                 return False
 
             PaymentHistory.objects.create(
                 user=self.user,
                 payment_date=datetime.datetime.now(),
-                payment_amount=amount,
-                payment_provider="android-subscription",
+                payment_amount=payment_amount,
+                payment_provider=payment_provider,
                 payment_identifier=order_id,
             )
 
         self.setup_premium_history()
 
-        if product_id == "nb.premium.archive.99":
+        if product_id and "premium.pro" in product_id:
+            self.activate_pro()
+        elif product_id and "premium.archive" in product_id:
             self.activate_archive()
         elif not self.is_premium:
             self.activate_premium()
 
-        logging.user(self.user, "~FG~BBNew Android premium subscription: $%s (%s)~FW" % (amount, product_id))
+        logging.user(
+            self.user,
+            "~FG~BBNew Android premium subscription: $%s (%s)~FW" % (payment_amount, product_id),
+        )
         return True
 
     @classmethod
@@ -2289,7 +2572,7 @@ class Profile(models.Model):
             % (len(active_feed_ids), len(muted_feed_ids)),
         )
         for feed_ids in [active_feed_ids, muted_feed_ids]:
-            for feeds_group in chunks(feed_ids, 20):
+            for feeds_group in chunks(feed_ids, 200):
                 pipeline = r.pipeline()
                 for feed_id in feeds_group:
                     key = "s:%s" % feed_id
@@ -3029,6 +3312,64 @@ class Profile(models.Model):
         MSentEmail.record(receiver_user_id=self.user.pk, email_type="premium_trial_expire")
         logging.user(self.user, "~BB~FM~SBSending trial expire email for: %s" % self.user.email)
 
+    def send_premium_renewal_notice_email(self, force=False):
+        if not self.user.email:
+            logging.user(
+                self.user,
+                "~FM~SB~FRNot~FM sending renewal notice for user: %s" % (self.user),
+            )
+            return
+
+        emails_sent = MSentEmail.objects.filter(
+            receiver_user_id=self.user.pk, email_type="premium_renewal_notice"
+        )
+        day_ago = datetime.datetime.now() - datetime.timedelta(days=300)
+        for email in emails_sent:
+            if email.date_sent > day_ago and not force:
+                logging.user(
+                    self.user,
+                    "~FM~SBNot sending renewal notice email, already sent recently.",
+                )
+                return
+
+        if self.is_pro:
+            tier_name = "Premium Pro"
+            amount = "$29/month"
+        elif self.is_archive:
+            tier_name = "Premium Archive"
+            amount = "$99/year"
+        else:
+            tier_name = "Premium"
+            amount = "$36/year"
+
+        user = self.user
+        renewal_date = self.premium_expire
+        data = dict(
+            user=user,
+            renewal_date=renewal_date,
+            tier_name=tier_name,
+            amount=amount,
+            is_pro=self.is_pro,
+            is_archive=self.is_archive,
+        )
+        text = render_to_string("mail/email_premium_renewal_notice.txt", data)
+        html = render_to_string("mail/email_premium_renewal_notice.xhtml", data)
+        subject = "Your %s subscription renews soon" % tier_name
+        msg = EmailMultiAlternatives(
+            subject,
+            text,
+            from_email="NewsBlur <%s>" % settings.HELLO_EMAIL,
+            to=["%s <%s>" % (user, user.email)],
+        )
+        msg.attach_alternative(html, "text/html")
+        msg.send()
+
+        MSentEmail.record(receiver_user_id=self.user.pk, email_type="premium_renewal_notice")
+        logging.user(
+            self.user,
+            "~BB~FM~SBSending renewal notice email for %s: %s" % (tier_name, self.user.email),
+        )
+
     def autologin_url(self, next=None):
         return reverse("autologin", kwargs={"username": self.user.username, "secret": self.secret_token}) + (
             "?" + next + "=1" if next else ""
@@ -3111,6 +3452,8 @@ def paypal_signup(sender, **kwargs):
             user = User.objects.get(email__iexact=ipn_obj.payer_email)
         except User.DoesNotExist:
             pass
+        except User.MultipleObjectsReturned:
+            user = User.objects.filter(email__iexact=ipn_obj.payer_email).order_by("-last_login").first()
 
     if not user and ipn_obj.custom:
         try:
@@ -3148,11 +3491,14 @@ def paypal_signup(sender, **kwargs):
             user.save()
     except:
         pass
+    # Store the PayPal subscription ID so setup_premium_history can query PayPal for payments.
+    # IPN recurring payments use recurring_payment_id; older ones use subscr_id.
+    paypal_sub_id = ipn_obj.recurring_payment_id or ipn_obj.subscr_id
+    if paypal_sub_id:
+        user.profile.store_paypal_sub_id(paypal_sub_id)
     user.profile.setup_premium_history()
-    user.profile.cancel_premium_stripe()
-    # user.profile.cancel_premium_paypal(second_most_recent_only=True)
-
-    # assert False, "Shouldn't be here anymore as the new Paypal REST API uses webhooks"
+    if user.profile.active_provider != "stripe":
+        user.profile.cancel_premium_stripe()
 
 
 valid_ipn_received.connect(paypal_signup)
@@ -3171,6 +3517,8 @@ def paypal_payment_history_sync(sender, **kwargs):
             user = User.objects.get(email__iexact=ipn_obj.payer_email)
         except User.DoesNotExist:
             pass
+        except User.MultipleObjectsReturned:
+            user = User.objects.filter(email__iexact=ipn_obj.payer_email).order_by("-last_login").first()
 
     if not user and ipn_obj.subscr_id:
         try:
@@ -3194,6 +3542,9 @@ def paypal_payment_history_sync(sender, **kwargs):
 
     logging.user(user, "~BC~SB~FBPaypal subscription payment")
     try:
+        paypal_sub_id = ipn_obj.recurring_payment_id or ipn_obj.subscr_id
+        if paypal_sub_id:
+            user.profile.store_paypal_sub_id(paypal_sub_id)
         user.profile.setup_premium_history()
     except:
         return {"code": -1, "message": "User doesn't exist."}
@@ -3215,6 +3566,8 @@ def paypal_payment_was_flagged(sender, **kwargs):
             user = User.objects.get(email__iexact=ipn_obj.payer_email)
         except User.DoesNotExist:
             pass
+        except User.MultipleObjectsReturned:
+            user = User.objects.filter(email__iexact=ipn_obj.payer_email).order_by("-last_login").first()
 
     if not user and ipn_obj.subscr_id:
         try:
@@ -3237,6 +3590,9 @@ def paypal_payment_was_flagged(sender, **kwargs):
         return {"code": -1, "message": "User doesn't exist."}
 
     try:
+        paypal_sub_id = ipn_obj.recurring_payment_id or ipn_obj.subscr_id
+        if paypal_sub_id:
+            user.profile.store_paypal_sub_id(paypal_sub_id)
         user.profile.setup_premium_history()
         logging.user(user, "~BC~SB~FBPaypal subscription payment flagged")
     except:
@@ -3283,6 +3639,61 @@ def stripe_checkout_session_completed(sender, full_json, **kwargs):
             logging.debug(" ---> Couldn't find user for usage billing setup: %s" % newsblur_user_id)
         return
 
+    # Handle gift purchase completion
+    if purpose == "gift":
+        gift_tier = metadata.get("gift_tier", "premium")
+        try:
+            import stripe
+
+            stripe.api_key = settings.STRIPE_SECRET
+            user = User.objects.get(pk=int(newsblur_user_id))
+            payment_intent_id = full_json["data"]["object"].get("payment_intent")
+            tier_prices = {"premium": 36, "archive": 99, "pro": 299}
+            payment_amount = tier_prices.get(gift_tier, 36)
+            duration = 365 if gift_tier != "pro" else 30
+            if metadata.get("gift_duration") == "year":
+                duration = 365
+
+            gift = MGiftCode.add(
+                gifting_user_id=user.pk,
+                duration=duration,
+                payment=payment_amount,
+                gift_tier=gift_tier,
+                stripe_payment_intent_id=payment_intent_id,
+            )
+            logging.user(
+                user,
+                "~BC~SB~FBStripe gift checkout complete: %s tier=%s code=%s"
+                % (user.username, gift_tier, gift.gift_code),
+            )
+            from apps.profile.tasks import EmailGiftCreated, EmailStaffNotification
+
+            domain = Site.objects.get_current().domain
+            gift_url = "https://%s/gift/%s/%s/%s" % (domain, gift_tier, user.username, gift.gift_code)
+
+            tier_names = {"premium": "Premium", "archive": "Premium Archive", "pro": "Premium Pro"}
+            EmailGiftCreated.delay(
+                gifter_user_id=user.pk,
+                gift_url=gift_url,
+                gift_tier=gift_tier,
+            )
+            EmailStaffNotification.delay(
+                event_type="gift_purchased",
+                subject="Gift purchased: %s bought %s gift ($%s)"
+                % (user.username, tier_names.get(gift_tier, "Premium"), payment_amount),
+                body="%s purchased a %s gift for $%s. Gift code: %s\nGift URL: %s"
+                % (
+                    user.username,
+                    tier_names.get(gift_tier, "Premium"),
+                    payment_amount,
+                    gift.gift_code,
+                    gift_url,
+                ),
+            )
+        except User.DoesNotExist:
+            logging.debug(" ---> Couldn't find user for gift checkout: %s" % newsblur_user_id)
+        return
+
     stripe_id = full_json["data"]["object"]["customer"]
     profile = None
     try:
@@ -3322,12 +3733,18 @@ def stripe_signup(sender, full_json, **kwargs):
     try:
         profile = Profile.objects.get(stripe_id=stripe_id)
         logging.user(profile.user, "~BC~SB~FBStripe subscription signup")
+        # Prorate refund on old PayPal subscription before activating new tier
+        if profile.paypal_sub_id and profile.active_provider == "paypal":
+            profile.refund_prorated_paypal_for_provider_switch()
         if plan_id == Profile.plan_to_stripe_price("premium"):
             profile.activate_premium()
+            MReferral.award_credit(profile.user.pk, 36, "premium")
         elif plan_id == Profile.plan_to_stripe_price("archive"):
             profile.activate_archive()
+            MReferral.award_credit(profile.user.pk, 99, "archive")
         elif plan_id == Profile.plan_to_stripe_price("pro"):
             profile.activate_pro()
+            MReferral.award_credit(profile.user.pk, 29, "pro")
         profile.cancel_premium_paypal()
         profile.retrieve_stripe_ids()
     except Profile.DoesNotExist:
@@ -3339,16 +3756,25 @@ zebra_webhook_customer_subscription_created.connect(stripe_signup)
 
 def stripe_subscription_updated(sender, full_json, **kwargs):
     stripe_id = full_json["data"]["object"]["customer"]
-    plan_id = full_json["data"]["object"]["plan"]["id"]
+    plan = full_json["data"]["object"].get("plan")
+    if plan is None:
+        items = full_json["data"]["object"].get("items", {}).get("data", [])
+        if items:
+            plan = items[0].get("plan") or items[0].get("price")
+    if plan is None:
+        logging.debug("~BC~SB~FRStripe subscription updated but no plan found for customer %s" % stripe_id)
+        return
+    plan_id = plan["id"]
     try:
         profile = Profile.objects.get(stripe_id=stripe_id)
-        active = (
-            not full_json["data"]["object"]["cancel_at"] and full_json["data"]["object"]["plan"]["active"]
-        )
+        active = not full_json["data"]["object"]["cancel_at"] and plan.get("active", True)
         logging.user(
             profile.user, "~BC~SB~FBStripe subscription updated: %s" % "active" if active else "cancelled"
         )
         if active:
+            # Prorate refund on old PayPal subscription before activating new tier
+            if profile.paypal_sub_id and profile.active_provider == "paypal":
+                profile.refund_prorated_paypal_for_provider_switch()
             if plan_id == Profile.plan_to_stripe_price("premium"):
                 profile.activate_premium()
             elif plan_id == Profile.plan_to_stripe_price("archive"):
@@ -3510,7 +3936,7 @@ class PaymentHistory(models.Model):
     user = models.ForeignKey(User, related_name="payments", on_delete=models.CASCADE)
     payment_date = models.DateTimeField()
     payment_amount = models.IntegerField()
-    payment_provider = models.CharField(max_length=20)
+    payment_provider = models.CharField(max_length=32)
     payment_identifier = models.CharField(max_length=100, null=True)
     refunded = models.BooleanField(blank=True, null=True)
 
@@ -3690,12 +4116,24 @@ class MGiftCode(mongo.Document):
     gift_code = mongo.StringField(max_length=12)
     duration_days = mongo.IntField()
     payment_amount = mongo.IntField()
+    gift_tier = mongo.StringField(default="premium")  # "premium", "archive", "pro"
+    stripe_payment_intent_id = mongo.StringField()
+    stripe_refund_id = mongo.StringField()
+    redeemed_date = mongo.DateTimeField()
+    expires_date = mongo.DateTimeField()  # 90 days after creation for auto-refund
+    is_staff_gift = mongo.BooleanField(default=False)
     created_date = mongo.DateTimeField(default=datetime.datetime.now)
 
     meta = {
         "collection": "gift_codes",
         "allow_inheritance": False,
-        "indexes": ["gifting_user_id", "receiving_user_id", "created_date"],
+        "indexes": ["gifting_user_id", "receiving_user_id", "gift_code", "created_date"],
+    }
+
+    TIER_PRICES = {
+        "premium": 36,
+        "archive": 99,
+        "pro": 299,
     }
 
     def __str__(self):
@@ -3721,13 +4159,28 @@ class MGiftCode(mongo.Document):
         return code
 
     @classmethod
-    def add(cls, gift_code=None, duration=0, gifting_user_id=None, receiving_user_id=None, payment=0):
+    def add(
+        cls,
+        gift_code=None,
+        duration=0,
+        gifting_user_id=None,
+        receiving_user_id=None,
+        payment=0,
+        gift_tier="premium",
+        stripe_payment_intent_id=None,
+        is_staff_gift=False,
+    ):
+        expires_date = datetime.datetime.now() + datetime.timedelta(days=90)
         return cls.objects.create(
             gift_code=cls.create_code(gift_code),
             gifting_user_id=gifting_user_id,
             receiving_user_id=receiving_user_id,
             duration_days=duration,
             payment_amount=payment,
+            gift_tier=gift_tier,
+            stripe_payment_intent_id=stripe_payment_intent_id,
+            is_staff_gift=is_staff_gift,
+            expires_date=expires_date,
         )
 
 
@@ -3760,6 +4213,9 @@ class MRedeemedCode(mongo.Document):
                 payment_amount=newsblur_gift_code.payment_amount,
                 payment_provider="newsblur-gift",
             )
+            # Mark the gift code as redeemed
+            newsblur_gift_code.redeemed_date = datetime.datetime.now()
+            newsblur_gift_code.save()
 
         else:
             # Thinkup / Good Web Bundle
@@ -3770,8 +4226,192 @@ class MRedeemedCode(mongo.Document):
                 payment_provider="good-web-bundle",
             )
         cls.record(user.pk, gift_code)
-        user.profile.activate_premium()
-        logging.user(user, "~FG~BBRedeeming gift code: %s~FW" % gift_code)
+
+        # Activate the appropriate tier based on the gift
+        gift_tier = getattr(newsblur_gift_code, "gift_tier", "premium") if newsblur_gift_code else "premium"
+        if gift_tier == "pro":
+            user.profile.activate_pro()
+        elif gift_tier == "archive":
+            user.profile.activate_archive()
+        else:
+            user.profile.activate_premium()
+        logging.user(user, "~FG~BBRedeeming gift code: %s (tier: %s)~FW" % (gift_code, gift_tier))
+
+        from apps.profile.tasks import EmailStaffNotification
+
+        gifter_username = "unknown"
+        if newsblur_gift_code:
+            try:
+                gifter = User.objects.get(pk=newsblur_gift_code.gifting_user_id)
+                gifter_username = gifter.username
+            except User.DoesNotExist:
+                pass
+        tier_names = {"premium": "Premium", "archive": "Premium Archive", "pro": "Premium Pro"}
+        EmailStaffNotification.delay(
+            event_type="gift_redeemed",
+            subject="Gift redeemed: %s claimed %s from %s"
+            % (user.username, tier_names.get(gift_tier, "Premium"), gifter_username),
+            body="%s redeemed gift code %s (%s) from %s."
+            % (user.username, gift_code, tier_names.get(gift_tier, "Premium"), gifter_username),
+        )
+
+
+class MReferral(mongo.Document):
+    referrer_user_id = mongo.IntField()
+    referred_user_id = mongo.IntField(unique=True)
+    referred_username = mongo.StringField()
+    created_date = mongo.DateTimeField(default=datetime.datetime.now)
+    payment_date = mongo.DateTimeField()
+    payment_amount = mongo.IntField(default=0)
+    payment_tier = mongo.StringField()  # "premium", "archive", "pro"
+    credit_days_awarded = mongo.IntField(default=0)
+    credit_awarded_date = mongo.DateTimeField()
+    status = mongo.StringField(default="pending")  # "pending", "converted"
+
+    meta = {
+        "collection": "referrals",
+        "allow_inheritance": False,
+        "indexes": ["referrer_user_id", "referred_user_id", "status", "created_date"],
+    }
+
+    TIER_YEARLY_COST = {
+        "premium": 36,
+        "archive": 99,
+        "pro": 299,
+    }
+
+    def __str__(self):
+        return "%s referred %s on %s (status: %s)" % (
+            self.referrer_user_id,
+            self.referred_username,
+            self.created_date,
+            self.status,
+        )
+
+    @classmethod
+    def create_referral(cls, referrer_user_id, referred_user_id, referred_username):
+        if cls.check_circular(referrer_user_id, referred_user_id):
+            logging.debug(" ---> Circular referral blocked: %s -> %s" % (referrer_user_id, referred_user_id))
+            return None
+        try:
+            referral = cls.objects.create(
+                referrer_user_id=referrer_user_id,
+                referred_user_id=referred_user_id,
+                referred_username=referred_username,
+            )
+            logging.debug(" ---> Referral created: %s referred %s" % (referrer_user_id, referred_username))
+            from apps.profile.tasks import EmailStaffNotification
+
+            try:
+                referrer = User.objects.get(pk=referrer_user_id)
+                referrer_username = referrer.username
+            except User.DoesNotExist:
+                referrer_username = str(referrer_user_id)
+            EmailStaffNotification.delay(
+                event_type="referral_signup",
+                subject="Referral signup: %s signed up via %s" % (referred_username, referrer_username),
+                body="%s signed up using %s's referral link. Pending until they subscribe."
+                % (referred_username, referrer_username),
+            )
+            return referral
+        except mongo.NotUniqueError:
+            logging.debug(" ---> Referral already exists for user %s" % referred_user_id)
+            return None
+
+    @classmethod
+    def check_circular(cls, referrer_user_id, referred_user_id):
+        return cls.objects(referrer_user_id=referred_user_id, referred_user_id=referrer_user_id).count() > 0
+
+    @classmethod
+    def award_credit(cls, referred_user_id, payment_amount, payment_tier):
+        from apps.profile.tasks import EmailReferralCredit
+
+        referral = cls.objects(referred_user_id=referred_user_id, status="pending").first()
+        if not referral:
+            return
+
+        # Atomically update to prevent double-awarding
+        updated = cls.objects(id=referral.id, status="pending").update_one(set__status="converting")
+        if not updated:
+            return
+
+        try:
+            referrer = User.objects.get(pk=referral.referrer_user_id)
+        except User.DoesNotExist:
+            cls.objects(id=referral.id).update_one(set__status="pending")
+            return
+
+        # Determine referrer's current tier for credit calculation
+        profile = referrer.profile
+        if profile.is_pro:
+            referrer_tier = "pro"
+        elif profile.is_archive:
+            referrer_tier = "archive"
+        elif profile.is_premium:
+            referrer_tier = "premium"
+        else:
+            referrer_tier = "premium"  # Free users get Premium time
+
+        # Credit is proportional: (payment / referrer_yearly_cost) * 12 months,
+        # capped at 12. Annual referrals (Premium/Archive) earn the referrer at
+        # least 2 months; monthly referrals (Pro) earn at least 1 month.
+        referrer_yearly = cls.TIER_YEARLY_COST.get(referrer_tier, 36)
+
+        if payment_amount >= referrer_yearly:
+            credit_months = 12
+        else:
+            is_annual_referral = payment_tier in ("premium", "archive")
+            min_months = 2 if is_annual_referral else 1
+            credit_months = min(12, max(min_months, round(payment_amount / referrer_yearly * 12)))
+
+        credit_days = credit_months * 30
+
+        if credit_days > 0:
+            profile.extend_premium_by_days(credit_days, tier=referrer_tier)
+
+        cls.objects(id=referral.id).update_one(
+            set__status="converted",
+            set__payment_date=datetime.datetime.now(),
+            set__payment_amount=payment_amount,
+            set__payment_tier=payment_tier,
+            set__credit_days_awarded=credit_days,
+            set__credit_awarded_date=datetime.datetime.now(),
+        )
+
+        logging.debug(
+            " ---> Referral credit awarded: %s gets %s days of %s (referred user %s paid $%s for %s)"
+            % (referrer.username, credit_days, referrer_tier, referred_user_id, payment_amount, payment_tier)
+        )
+
+        EmailReferralCredit.delay(
+            referrer_user_id=referral.referrer_user_id,
+            referred_username=referral.referred_username,
+            credit_days=credit_days,
+            referrer_tier=referrer_tier,
+        )
+
+    @classmethod
+    def get_referral_stats(cls, user_id):
+        referrals = cls.objects(referrer_user_id=user_id)
+        pending = referrals.filter(status="pending").count()
+        converted = referrals.filter(status="converted").count()
+        total_days = sum(r.credit_days_awarded for r in referrals.filter(status="converted"))
+        return {
+            "pending": pending,
+            "converted": converted,
+            "total_days_earned": total_days,
+            "total_referrals": pending + converted,
+            "referrals": [
+                {
+                    "username": r.referred_username,
+                    "date": r.created_date.strftime("%Y-%m-%d") if r.created_date else None,
+                    "status": r.status,
+                    "credit_days": r.credit_days_awarded,
+                    "payment_tier": r.payment_tier,
+                }
+                for r in referrals.order_by("-created_date")
+            ],
+        }
 
 
 class MCustomStyling(mongo.Document):
@@ -3992,7 +4632,10 @@ class MDeletedUser(mongo.Document):
     total_payments = mongo.IntField(default=0)  # in dollars
     payment_history = mongo.ListField(mongo.DictField())  # [{date, amount, provider}]
     stripe_id = mongo.StringField(max_length=255)
+    stripe_ids = mongo.ListField(mongo.StringField())
     paypal_email = mongo.StringField(max_length=255)
+    paypal_ids = mongo.ListField(mongo.StringField())
+    cancellation_succeeded = mongo.BooleanField(default=False)
 
     # Usage stats
     feeds_count = mongo.IntField(default=0)

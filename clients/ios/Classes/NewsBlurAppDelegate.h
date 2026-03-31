@@ -222,6 +222,7 @@ SFSafariViewControllerDelegate, UIGestureRecognizerDelegate>  {
 @property (nonatomic) NSDictionary *findingStoryDictionary;
 @property (nonatomic) NSString *tryFeedStoryId;
 @property (nonatomic) NSString *tryFeedFeedId;
+@property (nonatomic) NSString *tryFeedStoryTitle;
 @property (nonatomic) NSString *tryFeedCategory;
 @property (nonatomic, readwrite) BOOL popoverHasFeedView;
 @property (nonatomic, readwrite) BOOL inFeedDetail;
@@ -268,6 +269,7 @@ SFSafariViewControllerDelegate, UIGestureRecognizerDelegate>  {
 @property (nonatomic) BOOL isPremium;
 @property (nonatomic) BOOL isPremiumArchive;
 @property (nonatomic) BOOL isPremiumPro;
+@property (nonatomic) BOOL briefingEnabled;
 @property (nonatomic) NSInteger premiumExpire;
 @property (nonatomic, strong) NSMutableDictionary *dictUnreadCounts;
 @property (nonatomic, strong) NSMutableDictionary *dictTextFeeds;
@@ -334,6 +336,7 @@ SFSafariViewControllerDelegate, UIGestureRecognizerDelegate>  {
 - (void)updateSplitBehavior:(BOOL)refresh;
 - (void)addSplitControlToMenuController:(MenuViewController *)menuViewController;
 - (void)showPreferences;
+- (void)showKeyboardShortcuts;
 - (void)resizePreviewSize;
 - (void)resizeFontSize;
 - (void)popToRootWithCompletion:(void (^)(void))completion;
@@ -362,6 +365,10 @@ SFSafariViewControllerDelegate, UIGestureRecognizerDelegate>  {
 - (void)loadFeedDetailView;
 - (void)loadFeedDetailView:(BOOL)transition;
 - (void)loadFeed:(NSString *)feedId withStory:(NSString *)contentId animated:(BOOL)animated;
+- (void)loadFeed:(NSString *)feedId
+       withStory:(NSString *)contentId
+      storyTitle:(NSString *)storyTitle
+        animated:(BOOL)animated;
 - (void)loadTryFeedDetailView:(NSString *)feedId withStory:(NSString *)contentId isSocial:(BOOL)social withUser:(NSDictionary *)user showFindingStory:(BOOL)showHUD;
 - (void)addTryFeedToSidebar:(NSDictionary *)feed;
 - (void)removeTryFeedFromSidebar;
@@ -370,6 +377,8 @@ SFSafariViewControllerDelegate, UIGestureRecognizerDelegate>  {
 - (void)loadRiverFeedDetailView:(FeedDetailViewController *)feedDetailView withFolder:(NSString *)folder;
 
 - (void)loadStoryDetailView;
+- (void)loadStoryDetailViewAnimated:(BOOL)animated;
+- (void)loadStoryDetailViewAtLocation:(NSInteger)location animated:(BOOL)animated;
 - (void)adjustStoryDetailWebView;
 - (void)calibrateStoryTitles;
 - (void)recalculateIntelligenceScores:(id)feedId;
@@ -484,6 +493,8 @@ SFSafariViewControllerDelegate, UIGestureRecognizerDelegate>  {
 - (NSString *)feedIdWithoutSearchQuery:(NSString *)feedId;
 - (NSString *)searchQueryForFeedId:(NSString *)feedId;
 - (NSString *)searchFolderForFeedId:(NSString *)feedId;
+- (NSSet<NSString *> *)subscribedFeedIdsForStoryClusters;
+- (BOOL)isSubscribedFeedIdForStoryClusters:(NSString *)feedId;
 - (NSDictionary *)getFeedWithId:(id)feedId;
 - (NSDictionary *)getFeed:(NSString *)feedId;
 - (NSDictionary *)getStory:(NSString *)storyHash;
@@ -566,4 +577,3 @@ SFSafariViewControllerDelegate, UIGestureRecognizerDelegate>  {
 - (void)addCounts:(UnreadCounts *)counts;
 
 @end
-

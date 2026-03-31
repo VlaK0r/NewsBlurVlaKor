@@ -1,7 +1,7 @@
 # NewsBlur Development Guidelines
 
 ## Planning & Clarification
-**IMPORTANT: Before starting any implementation or creating a plan, ask clarifying questions in chat.** The AskUserQuestion tool is not available in Codex/Claude Code, so use normal questions to understand:
+**IMPORTANT: Before starting any implementation or creating a plan, ask clarifying questions using the AskUserQuestion tool (not plain text).** Always use the AskUserQuestion tool in Claude Code when you have questions to ask after a prompt. Use it to understand:
 - The specific goals and desired outcomes
 - Edge cases and error handling preferences
 - UI/UX preferences (if applicable)
@@ -11,7 +11,7 @@
 - Any constraints or preferences I might have
 
 **Codex: Use the `request_user_input` tool frequently throughout development - not just during planning.**
-**Claude: Continue using the AskUserQuestion tool frequently throughout development - not just during planning.**
+**Claude Code: Always use the AskUserQuestion tool (not plain text questions) when you need to ask the user something - during planning, implementation, and any other time.**
 
 Actively interview the user at any point (especially during planning). Prefer multiple rounds of short questions.
 
@@ -41,6 +41,64 @@ When I report a bug, don't start by trying to fix it. Instead, start by writing 
 ## Platform-Specific Guidelines
 - **iOS**: See `clients/ios/CLAUDE.md` for iOS simulator testing and development
   - **All new iOS files must be written in Swift** (not Objective-C)
+- **Android**: Use the adb/emulator workflow below for emulator testing and screenshots
+  - **Commit early and often for Android work**: make frequent commits throughout implementation so there is a clear trail of changes; commit freely rather than batching large edits.
+  - **Theme coverage is required for Android UI work**: any Android UI change must be checked against all supported NewsBlur themes, not just the current device theme.
+  - Current required Android theme coverage: `light`, `dark`, and `black`.
+  - Upcoming theme requirement: account for `Sapia` in any new Android UI work so theme-specific colors are centralized and easy to extend when that theme lands.
+
+## Android Emulator Testing
+- Prefer reusing an already running emulator instead of booting a new one
+- Check attached devices with `adb devices -l`
+- The current app package is `com.newsblur`
+- The launcher activity resolves to `com.newsblur/.activity.InitActivity`
+- Do not rely on `emulator -list-avds` being available on `PATH`; in this repo it was not
+
+### Build and Install
+- Run Android Gradle commands from `clients/android/NewsBlur`
+- Set `JAVA_HOME` explicitly before Gradle commands or the build may pick the wrong JDK and fail with `invalid source release: 21`
+- Working command: `env JAVA_HOME=/opt/homebrew/opt/openjdk ./gradlew :app:installDebug`
+- Fast compile-only verification: `env JAVA_HOME=/opt/homebrew/opt/openjdk ./gradlew :app:compileDebugJavaWithJavac --rerun-tasks`
+- Reinstalling with `installDebug` preserves the existing logged-in emulator app state
+- Do **not** run `connectedDebugAndroidTest` on a shared or logged-in emulator unless explicitly asked. It installs the instrumentation APK and can replace the app in a way that costs the current login/session state. Use `:app:installDebug` for normal build/install work, and only run instrumentation tests on a disposable emulator.
+
+### Launch and App State
+- Launch the app with `adb -s emulator-5554 shell monkey -p com.newsblur -c android.intent.category.LAUNCHER 1`
+- Do not try `adb shell am start -n com.newsblur/com.newsblur.activity.Main`; `Main` is not exported and throws a `SecurityException`
+- Check the current foreground screen with `adb -s emulator-5554 shell dumpsys window | rg "mCurrentFocus|mFocusedApp"`
+- Check whether the app process is alive with `adb -s emulator-5554 shell pidof com.newsblur`
+- Resolve the launcher activity with `adb -s emulator-5554 shell cmd package resolve-activity --brief com.newsblur`
+
+### Screenshots and Manual Verification
+- Save emulator screenshots with `adb -s emulator-5554 exec-out screencap -p > /tmp/newsblur-screenshot.png`
+- View the screenshot from `/tmp/newsblur-screenshot.png`
+- For cold-launch capture, force stop and relaunch, then capture multiple frames:
+```bash
+adb -s emulator-5554 shell am force-stop com.newsblur
+adb -s emulator-5554 shell monkey -p com.newsblur -c android.intent.category.LAUNCHER 1
+sleep 0.2
+adb -s emulator-5554 exec-out screencap -p > /tmp/newsblur-launch-02.png
+```
+
+### Useful Emulator Inputs
+- Pull to refresh from the feed list on the current 1080x2400 AVD with `adb -s emulator-5554 shell input swipe 540 600 540 1800 500`
+- Sanity check animation timing before UI verification:
+  - `adb -s emulator-5554 shell settings get global animator_duration_scale`
+  - `adb -s emulator-5554 shell settings get global transition_animation_scale`
+  - `adb -s emulator-5554 shell settings get global window_animation_scale`
+  - Expected value for real-speed verification is `1.0`
+- If sync UI is too fast to catch, throttle the emulator network:
+  - `adb -s emulator-5554 emu network speed gsm`
+  - `adb -s emulator-5554 emu network delay gprs`
+- Restore normal network speed afterward:
+  - `adb -s emulator-5554 emu network speed full`
+  - `adb -s emulator-5554 emu network delay none`
+- Disable network to test offline behavior:
+  - `adb -s emulator-5554 shell svc wifi disable`
+  - `adb -s emulator-5554 shell svc data disable`
+- Re-enable network afterward:
+  - `adb -s emulator-5554 shell svc wifi enable`
+  - `adb -s emulator-5554 shell svc data enable`
 
 ## Git Worktree Development
 - **Use git worktrees for parallel development**: Run `make worktree` in a worktree to start workspace-specific services
@@ -129,6 +187,10 @@ Server names are defined in `ansible/inventories/hetzner.ini`. Common server pre
 - **Leave no TODOs or placeholders**
 - **Always reference file names in comments**
 
+## Blog
+- Posts live in `blog/_posts/`, drafts in `blog/_drafts/`
+- `blog/_site/` contains generated output and **must be committed** — it's how the blog gets deployed
+
 ## API Testing
 - Test API endpoints: `make api URL=/reader/feeds`
 - With POST data: `make api URL=/reader/river_stories ARGS="-X POST -d 'feeds[]=1&feeds[]=2&feeds[]=3'"`
@@ -167,7 +229,7 @@ sentry-cli --url https://sentry.newsblur.com issues resolve -o newsblur -p web -
 2. Get issue details with `--log-level debug` to find the file and function
 3. Fix the issue in code
 4. Commit the fix
-5. Resolve the issue with `sentry-cli issues resolve -i <issue_id>`
+5. **Always resolve the issue on Sentry** with `sentry-cli issues resolve -i <issue_id>` — do not skip this step
 
 ## Browser Testing
 - **Do NOT use the Chrome DevTools MCP server unless explicitly asked** — the user will verify manually
@@ -253,7 +315,14 @@ p.save()
 ## Downtime Investigation
 When the user reports downtime, read `DOWNTIME.md` for the full investigation playbook, then run `./utils/check_health.sh`.
 
+## Slow Load Times Investigation
+When load times are elevated but the site isn't down, read `SLOW_LOAD_TIMES.md` for the full investigation playbook. Start with the Quick Assessment commands to check per-minute and hourly load times.
+
 ## Writing Emails
-- Never use em dashes
+- Never use em dashes or hyphens as punctuation. Restructure the sentence instead.
 - Sign off with just "Sam" (no "Best," "Thanks," or other closings before it)
 - Keep it concise and direct
+
+## Writing Forum Replies
+- Keep replies free of AI slop: no em dashes, no hyphens as punctuation, no overly polished language. Restructure sentences instead.
+- Be concise and direct, matching a natural conversational tone
