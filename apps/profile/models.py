@@ -109,9 +109,9 @@ class Profile(models.Model):
         )
         if stripe_configured:
             return False
-        from apps.ask_ai.providers import AnthropicProvider
+        from apps.ask_ai.providers import OpenAIProvider
 
-        return AnthropicProvider().is_configured()
+        return OpenAIProvider().is_configured()
 
     @property
     def can_use_ai_classifiers(self):
