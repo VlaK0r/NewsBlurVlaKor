@@ -226,7 +226,7 @@ services:
     environment:
       - PYTHONPATH=/srv/newsblur_mcp
       - NEWSBLUR_BASE_URL=http://newsblur_web:8000
-      - MCP_PORT=8098
+      - MCP_PORT=8099
       - MCP_HOST=0.0.0.0
       - MCP_OAUTH_CLIENT_ID=newsblur-mcp-server
       - MCP_OAUTH_CLIENT_SECRET=newsblur-mcp-dev-secret
