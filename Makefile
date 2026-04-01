@@ -447,6 +447,8 @@ push_deploy: buildx_setup
 	docker buildx build . --push --platform linux/amd64,linux/arm64 --file=docker/newsblur_deploy.Dockerfile --tag=newsblur/newsblur_deploy
 push_mcp: buildx_setup
 	docker buildx build ./newsblur_mcp --push --platform linux/amd64,linux/arm64 --file=newsblur_mcp/Dockerfile --tag=newsblur/newsblur_mcp
+push_cli:
+	gh workflow run publish-cli.yml -f dry_run=false
 push_images: push_web push_node push_monitor push_deploy push_mcp
 push: push_images
 
@@ -459,6 +461,9 @@ web: deploy_web
 deploy_static:
 	ansible-playbook ansible/deploy.yml -l app --tags static
 static: deploy_static
+deploy_mcp:
+	ansible-playbook ansible/playbooks/deploy_mcp.yml
+mcp: deploy_mcp
 deploy_node:
 	ansible-playbook ansible/deploy.yml -l node
 node: deploy_node
@@ -632,7 +637,7 @@ offsite-backup:
 	ssh $(HA_HOST) "$(HA_SCRIPTS)/offsite_pull.sh"
 
 offsite-backup-status:
-	@ssh $(HA_HOST) "$(HA_SCRIPTS)/mount_backup_drive.sh > /dev/null && (echo '=== Backup log ==='; tail -15 /media/newsblur-backup/backup.log 2>/dev/null; echo; echo '=== Mongo stream ==='; tail -5 /media/newsblur-backup/backup_run.log 2>/dev/null; echo; /config/scripts/venv/bin/python3 /config/scripts/offsite_status.py); $(HA_SCRIPTS)/unmount_backup_drive.sh > /dev/null"
+	@ssh $(HA_HOST) "$(HA_SCRIPTS)/mount_backup_drive.sh > /dev/null && (echo '=== Backup log ==='; tail -15 /media/newsblur-backup/backup.log 2>/dev/null; echo; echo '=== Mongo stream ==='; tail -5 /media/newsblur-backup/backup_run.log 2>/dev/null; echo; /config/scripts/venv/bin/python3 /config/scripts/offsite_status.py); if pgrep -f offsite_pull.sh > /dev/null 2>&1; then echo '  (drive left mounted — backup in progress)'; else $(HA_SCRIPTS)/unmount_backup_drive.sh > /dev/null; fi"
 
 offsite-backup-uninstall:
 	@$(call log,~FY---> Removing off-site backup from HA box~ST)

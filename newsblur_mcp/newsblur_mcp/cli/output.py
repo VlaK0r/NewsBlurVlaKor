@@ -86,11 +86,23 @@ def _intelligence_dot(score: int) -> str:
 
 
 def _intelligence_summary(intel: dict) -> str:
-    """Build a compact intelligence indicator string."""
+    """Build a compact intelligence indicator string showing all non-zero classifiers."""
+    keys = ("feed", "author", "tags", "title", "title_regex", "text", "text_regex",
+            "url", "url_regex", "prompt")
+    labels = {
+        "feed": "feed", "author": "author", "tags": "tags", "title": "title",
+        "title_regex": "title-regex", "text": "text", "text_regex": "text-regex",
+        "url": "url", "url_regex": "url-regex", "prompt": "ai-prompt",
+    }
     parts = []
-    for key in ("feed", "author", "tags", "title"):
+    for key in keys:
         score = intel.get(key, 0)
-        parts.append(_intelligence_dot(score))
+        if score > 0:
+            parts.append(f"[green]{labels[key]}:+[/green]")
+        elif score < 0:
+            parts.append(f"[red]{labels[key]}:-[/red]")
+    if not parts:
+        return "[dim]neutral[/dim]"
     return " ".join(parts)
 
 
@@ -119,9 +131,10 @@ def render_stories(data: dict) -> None:
             meta_parts.append(feed_title)
         subtitle = " | ".join(meta_parts)
 
-        # Intelligence scores
+        # Intelligence scores and computed score
         intel = story.get("intelligence", {})
         intel_str = _intelligence_summary(intel)
+        score = story.get("score", 0)
 
         # Status indicators
         indicators = []
@@ -138,21 +151,30 @@ def render_stories(data: dict) -> None:
         if len(content) > 300:
             preview += "..."
 
-        body = Text()
         body_str = f"{subtitle}\n"
         if preview:
             body_str += f"\n{preview}\n"
-        body_str += f"\n{story_hash}"
 
         panel_title = f"[bold]{title}[/bold]"
         if indicator_str:
             panel_title += f"  {indicator_str}"
 
+        subtitle_parts = []
+        if story_hash:
+            subtitle_parts.append(f"[dim]{story_hash}[/dim]")
+        if score > 0:
+            score_str = f"[green]Score: {score}[/green]"
+        elif score < 0:
+            score_str = f"[red]Score: {score}[/red]"
+        else:
+            score_str = f"[dim]Score: {score}[/dim]"
+        subtitle_parts.append(f"{score_str} {intel_str}")
+
         panel = Panel(
             body_str,
             title=panel_title,
             title_align="left",
-            subtitle=f"Intelligence: {intel_str}",
+            subtitle=" | ".join(subtitle_parts),
             subtitle_align="right",
             border_style="dim",
             padding=(0, 1),
@@ -164,9 +186,9 @@ def render_stories(data: dict) -> None:
     has_more = data.get("has_more", False)
     count = data.get("count", len(stories))
     if has_more:
-        console.print(f"\n[dim]Page {page} ({count} stories) -- more available, use --page {page + 1}[/dim]")
+        console.print(f"\n[dim]Page {page} ({count} stories) -- more available, use --page {page + 1} or --json for full output[/dim]")
     else:
-        console.print(f"\n[dim]Page {page} ({count} stories)[/dim]")
+        console.print(f"\n[dim]Page {page} ({count} stories) -- use --json for full output[/dim]")
 
 
 def render_feeds_table(data: dict) -> None:
@@ -195,7 +217,7 @@ def render_feeds_table(data: dict) -> None:
 
     console.print(table)
     console.print(f"\n[dim]{data.get('feed_count', len(feeds))} feeds total, "
-                  f"{data.get('starred_count', 0)} saved stories[/dim]")
+                  f"{data.get('starred_count', 0)} saved stories -- use --json for full output[/dim]")
 
 
 def render_folders(data: dict) -> None:
@@ -235,7 +257,7 @@ def render_folders(data: dict) -> None:
                 branch.add(label)
         console.print(tree)
 
-    console.print(f"\n[dim]{data.get('folder_count', len(folders))} folders[/dim]")
+    console.print(f"\n[dim]{data.get('folder_count', len(folders))} folders -- use --json for full output[/dim]")
 
 
 def render_account(data: dict) -> None:
@@ -278,12 +300,15 @@ def render_briefing(data: dict) -> None:
     for briefing in briefings:
         briefing_date = briefing.get("briefing_date", "")
         frequency = briefing.get("frequency", "")
-        header = f"Briefing: {briefing_date}"
-        if frequency:
-            header += f" ({frequency})"
+        # Parse the date for a cleaner display
+        date_display = briefing_date
+        try:
+            dt = datetime.fromisoformat(briefing_date.replace("Z", "+00:00"))
+            date_display = dt.strftime("%B %-d, %Y")
+        except (ValueError, AttributeError):
+            pass
+        header = f"Daily Briefing — {date_display}"
 
-        # Section summaries
-        section_summaries = briefing.get("section_summaries", {})
         sections = briefing.get("sections", {})
         stories = briefing.get("curated_stories", [])
 
@@ -292,30 +317,30 @@ def render_briefing(data: dict) -> None:
 
         body_parts = []
 
-        for section_name, summary_text in section_summaries.items():
+        for section_name, section_hashes in sections.items():
+            if body_parts:
+                body_parts.append("")
             body_parts.append(f"[bold]{section_name}[/bold]")
-            if summary_text:
-                body_parts.append(summary_text[:500])
 
-            # Show stories in this section
-            section_hashes = sections.get(section_name, [])
             for sh in section_hashes:
                 story = story_lookup.get(sh)
                 if story:
                     title = story.get("title", "Untitled")
                     feed_title = story.get("feed_title", "")
-                    label = f"  - {title}"
+                    author = story.get("author", "")
+                    # Build attribution: "author, feed" or just "feed"
+                    # Skip author if it matches the feed title
+                    attribution_parts = []
+                    if author and author.lower() != feed_title.lower():
+                        attribution_parts.append(author)
                     if feed_title:
-                        label += f" [dim]({feed_title})[/dim]"
+                        attribution_parts.append(feed_title)
+                    attribution = ", ".join(attribution_parts)
+
+                    label = f"  [green]•[/green] {title}"
+                    if attribution:
+                        label += f"  [dim]— {attribution}[/dim]"
                     body_parts.append(label)
-
-            body_parts.append("")
-
-        # Summary story if present
-        summary_story = briefing.get("summary_story")
-        if summary_story:
-            body_parts.append("[bold]Summary[/bold]")
-            body_parts.append(summary_story.get("content", "")[:500])
 
         body = "\n".join(body_parts).strip()
         if not body:
@@ -327,7 +352,7 @@ def render_briefing(data: dict) -> None:
     page = data.get("page", 1)
     has_more = data.get("has_more", False)
     if has_more:
-        console.print(f"\n[dim]Page {page} -- more available, use --page {page + 1}[/dim]")
+        console.print(f"\n[dim]Page {page} — more available, use --page {page + 1} or --json for full output[/dim]")
 
 
 def render_classifiers(data: dict) -> None:
@@ -396,4 +421,4 @@ def render_discover_results(data: dict) -> None:
         table.add_row(title, url, subscribers)
 
     console.print(table)
-    console.print(f"\n[dim]{data.get('count', len(feeds))} feeds found[/dim]")
+    console.print(f"\n[dim]{data.get('count', len(feeds))} feeds found -- use --json for full output[/dim]")

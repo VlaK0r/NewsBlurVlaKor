@@ -265,6 +265,42 @@ def login_flow(server: str | None = None) -> dict:
         server.shutdown()
 
 
+def get_readonly() -> bool:
+    """Return True if readonly mode is enabled."""
+    config_path = get_config_path()
+    if config_path.exists():
+        try:
+            data = json.loads(config_path.read_text())
+            return bool(data.get("readonly", False))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return False
+
+
+def set_readonly(enabled: bool) -> None:
+    """Enable or disable readonly mode.
+
+    Enabling readonly restricts the CLI to read-only operations.
+    Disabling readonly requires re-authentication: the stored token is
+    deleted so an AI agent cannot silently toggle readonly off and
+    start making writes without the user logging in again.
+    """
+    config_path = get_config_path()
+    data = {}
+    if config_path.exists():
+        try:
+            data = json.loads(config_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    data["readonly"] = enabled
+    config_path.write_text(json.dumps(data, indent=2))
+    os.chmod(config_path, stat.S_IRUSR | stat.S_IWUSR)
+
+    if not enabled:
+        # Force re-authentication so an agent can't silently disable readonly
+        delete_token()
+
+
 def get_auth_status() -> dict:
     """Return the current authentication state.
 
@@ -320,6 +356,7 @@ def get_auth_status() -> dict:
 
     # Verify the token is valid by calling the user info endpoint
     username = None
+    profile = {}
     try:
         resp = httpx.get(
             f"{get_server_url()}/oauth/user/info/",
@@ -330,6 +367,16 @@ def get_auth_status() -> dict:
         if resp.status_code == 200:
             user_info = resp.json()
             username = user_info.get("user_name")
+            info_data = user_info.get("data", {})
+            if info_data:
+                username = username or info_data.get("name")
+                profile = {
+                    "email": info_data.get("email", ""),
+                    "is_premium": info_data.get("is_premium", False),
+                    "is_archive": info_data.get("is_archive", False),
+                    "is_pro": info_data.get("is_pro", False),
+                    "feed_count": info_data.get("feed_count", 0),
+                }
     except Exception:
         pass
 
@@ -339,4 +386,5 @@ def get_auth_status() -> dict:
         "server": get_server_url(),
         "token_path": str(token_path),
         "expires_at": data.get("expires_at"),
+        **profile,
     }

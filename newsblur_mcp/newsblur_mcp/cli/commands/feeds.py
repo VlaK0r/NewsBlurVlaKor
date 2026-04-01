@@ -8,10 +8,12 @@ import typer
 from rich.console import Console
 
 from newsblur_mcp.cli.output import render, render_feeds_table, render_folders
-from newsblur_mcp.cli.runner import async_command, get_authenticated_client
+from newsblur_mcp.cli.runner import async_command, get_authenticated_client, require_writable
 
 console = Console(stderr=True)
-app = typer.Typer()
+from newsblur_mcp.cli import CONTEXT_SETTINGS
+
+app = typer.Typer(context_settings=CONTEXT_SETTINGS)
 
 
 @app.command("list")
@@ -56,6 +58,7 @@ async def feeds_add(
     folder: Optional[str] = typer.Option(None, "--folder", "-f", help="Folder to place the feed in"),
 ):
     """Subscribe to a new feed by URL."""
+    require_writable()
     client = get_authenticated_client()
     try:
         from newsblur_mcp.tools.feeds import _subscribe
@@ -78,6 +81,7 @@ async def feeds_remove(
     ),
 ):
     """Unsubscribe from a feed."""
+    require_writable()
     client = get_authenticated_client()
     try:
         from newsblur_mcp.tools.feeds import _unsubscribe
@@ -123,6 +127,7 @@ async def feeds_organize(
     ),
 ):
     """Move or rename feeds and folders."""
+    require_writable()
     client = get_authenticated_client()
     try:
         from newsblur_mcp.tools.feeds import _organize_feed

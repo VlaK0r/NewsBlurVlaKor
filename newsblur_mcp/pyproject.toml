@@ -1,6 +1,6 @@
 [project]
 name = "newsblur-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "NewsBlur CLI and MCP server - manage feeds, stories, and classifiers"
 readme = "README.md"
 license = "MIT"
@@ -23,6 +23,8 @@ dependencies = [
     "beautifulsoup4>=4.12.0",
     "typer>=0.15.0",
     "rich>=13.0.0",
+    "redis>=5.0.0",
+    "sentry-sdk>=2.0.0",
 ]
 
 [project.scripts]
