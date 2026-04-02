@@ -5656,6 +5656,8 @@ body {
     display: inline-flex;
     align-items: center;
     vertical-align: middle;
+    margin: 6px 0 0 0;
+    align-self: start;
 }
 
 .NB-feed-story .NB-feed-story-ai-classifiers .NB-middot {
@@ -13727,6 +13729,19 @@ form.opml_import_form input {
 .NB-classifier-match-type-control .NB-match-type-option.NB-match-type-regex.NB-active {
     background: #7B68EE;
     color: white;
+}
+
+/* Subtitle explainer inside section */
+.NB-classifier-section-explainer {
+    font-size: 11px;
+    line-height: 1.3;
+    color: #999;
+    font-style: italic;
+    margin: -12px 0 10px 0;
+}
+
+.NB-dark .NB-classifier-section-explainer {
+    color: #777;
 }
 
 /* Help icon to left of input */

@@ -251,7 +251,9 @@ var classifier_prototype = {
             this.make_modal_title();
         }
 
-        this.reload_modal();
+        this.reload_modal(_.bind(function () {
+            this.load_prompt_classifiers();
+        }, this));
     },
 
     reload_modal: function (callback) {
@@ -727,8 +729,8 @@ var classifier_prototype = {
                 ])
             ]),
             $.make('div', { className: 'NB-fieldset-fields NB-classifiers' }, [
+                $.make('div', { className: 'NB-classifier-section-explainer' }, 'Match stories by words or phrases in the body. Highlight text in the story and click Train to auto-fill.'),
                 $.make('div', { className: 'NB-classifier-input-row' }, [
-                    $.make('span', { className: 'NB-classifier-help-icon', title: 'Enter a phrase or regex pattern. You can also highlight text in the story and click Train to populate this field.' }, 'ⓘ'),
                     $.make('input', { type: 'text', value: selected_text || '', className: 'NB-classifier-text-input', placeholder: 'Enter text to match...' }),
                     $.make('div', { className: 'NB-classifier-match-type-control' }, [
                         $.make('span', { className: 'NB-match-type-option NB-match-type-exact NB-active', 'data-type': 'exact' }, 'Exact phrase'),
@@ -781,8 +783,8 @@ var classifier_prototype = {
                 ])
             ]),
             $.make('div', { className: 'NB-fieldset-fields NB-classifiers' }, [
+                $.make('div', { className: 'NB-classifier-section-explainer' }, 'Highlight words in the title to train on specific phrases.'),
                 $.make('div', { className: 'NB-classifier-input-row' }, [
-                    $.make('span', { className: 'NB-classifier-help-icon', title: 'Highlight phrases in the title to train on specific words' }, 'ⓘ'),
                     $.make('input', { type: 'text', value: story_title || '', className: 'NB-classifier-title-input' }),
                     $.make('div', { className: 'NB-classifier-match-type-control' }, [
                         $.make('span', { className: 'NB-match-type-option NB-match-type-exact NB-active', 'data-type': 'exact' }, 'Exact phrase'),
@@ -844,8 +846,8 @@ var classifier_prototype = {
                 ])
             ]),
             $.make('div', { className: 'NB-fieldset-fields NB-classifiers' }, [
+                $.make('div', { className: 'NB-classifier-section-explainer' }, 'Select part of the URL to match patterns like sections or categories.'),
                 $.make('div', { className: 'NB-classifier-input-row' }, [
-                    $.make('span', { className: 'NB-classifier-help-icon', title: 'Highlight portions of the URL to train on specific patterns' }, 'ⓘ'),
                     $.make('input', { type: 'text', value: story_url || '', className: 'NB-classifier-url-input', placeholder: 'Enter URL pattern to match...' }),
                     $.make('div', { className: 'NB-classifier-match-type-control' }, [
                         $.make('span', { className: 'NB-match-type-option NB-match-type-exact NB-active', 'data-type': 'exact' }, 'Exact phrase'),
@@ -1090,14 +1092,13 @@ var classifier_prototype = {
         return $.make('div', { className: 'NB-modal-field NB-fieldset' }, [
             $.make('h5', 'Publisher'),
             $.make('div', { className: 'NB-fieldset-fields NB-classifiers' },
-                [this.make_publisher(feed)].concat($scoped_groups)
+                [$.make('div', { className: 'NB-classifier-section-explainer' }, 'Focus or hide all stories from this publisher.'),
+                this.make_publisher(feed)].concat($scoped_groups)
             )
         ]);
     },
 
     make_content_filter_section: function () {
-        if (!NEWSBLUR.Globals.is_staff) return '';
-
         var self = this;
         var feed_id = this.feed_id;
         var story = this.story;
@@ -1113,11 +1114,11 @@ var classifier_prototype = {
             $.make('h5', { className: 'NB-classifier-section-header' }, [
                 $.make('span', { className: 'NB-content-filter-header' }, [
                     $.make('span', { className: 'NB-content-filter-header-icon' }, ai_svg),
-                    'AI Content Filter'
-                ]),
-                $.make('span', { className: 'NB-classifier-staff-badge' }, 'Staff Only')
+                    'Natural Language Text Classifier'
+                ])
             ]),
             $.make('div', { className: 'NB-fieldset-fields NB-classifiers' }, [
+                $.make('div', { className: 'NB-classifier-section-explainer' }, 'Describe a topic and AI will score each story against your prompt to focus or hide matches.'),
                 $.make('div', { className: 'NB-ai-cost-estimate' }),
                 $.make('div', { className: 'NB-classifier-input-row' }, [
                     $.make('input', {
@@ -1332,8 +1333,6 @@ var classifier_prototype = {
     },
 
     make_image_filter_section: function () {
-        if (!NEWSBLUR.Globals.is_staff) return '';
-
         var self = this;
         var feed_id = this.feed_id;
         var story = this.story;
@@ -1365,11 +1364,11 @@ var classifier_prototype = {
             $.make('h5', { className: 'NB-classifier-section-header' }, [
                 $.make('span', { className: 'NB-image-filter-header' }, [
                     $.make('span', { className: 'NB-image-filter-header-icon' }, vision_svg),
-                    'AI Image Filter'
-                ]),
-                $.make('span', { className: 'NB-classifier-staff-badge' }, 'Staff Only')
+                    'Natural Language Image Classifier'
+                ])
             ]),
             $.make('div', { className: 'NB-fieldset-fields NB-classifiers' }, [
+                $.make('div', { className: 'NB-classifier-section-explainer' }, 'Describe what to look for and AI will analyze each story\u2019s images against your prompt.'),
                 $.make('div', { className: 'NB-ai-cost-estimate' }),
                 $image_grid,
                 $.make('div', { className: 'NB-classifier-input-row' }, [
@@ -4673,14 +4672,14 @@ var classifier_prototype = {
                         className: 'NB-manage-filter-type-prompt' + (this.manage_filter_types === 'prompt' ? ' NB-active' : '') + (counts.type_prompt === 0 ? ' NB-zero-count' : ''),
                         'data-type': 'prompt'
                     }, [
-                        $.make('span', { className: 'NB-type-label' }, 'AI Content'),
+                        $.make('span', { className: 'NB-type-label' }, 'Content Filter'),
                         $.make('span', { className: 'NB-type-count' }, counts.type_prompt)
                     ]),
                     $.make('li', {
                         className: 'NB-manage-filter-type-image_prompt' + (this.manage_filter_types === 'image_prompt' ? ' NB-active' : '') + (counts.type_image_prompt === 0 ? ' NB-zero-count' : ''),
                         'data-type': 'image_prompt'
                     }, [
-                        $.make('span', { className: 'NB-type-label' }, 'AI Image'),
+                        $.make('span', { className: 'NB-type-label' }, 'Image Filter'),
                         $.make('span', { className: 'NB-type-count' }, counts.type_image_prompt)
                     ])
                 ])
@@ -4922,8 +4921,8 @@ var classifier_prototype = {
         var type_label = type.charAt(0).toUpperCase() + type.slice(1);
         if (type === 'feed') type_label = 'Site';
         if (type === 'url') type_label = 'URL';
-        if (type === 'prompt') type_label = 'AI Content';
-        if (type === 'image_prompt') type_label = 'AI Image';
+        if (type === 'prompt') type_label = 'Content Filter';
+        if (type === 'image_prompt') type_label = 'Image Filter';
 
         var effective_scope = scope || 'feed';
 
