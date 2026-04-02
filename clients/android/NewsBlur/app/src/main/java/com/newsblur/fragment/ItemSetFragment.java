@@ -294,7 +294,7 @@ public class ItemSetFragment extends NbFragment {
      * some info about the story list when it is ready.
      */
     public void storyThawCompleted(int indexOfLastUnread) {
-        this.indexOfLastUnread = indexOfLastUnread;
+        this.indexOfLastUnread = (indexOfLastUnread >= 0) ? adapter.getDisplayPositionForStoryIndex(indexOfLastUnread) : -1;
         this.fullFlingComplete = false;
         // we don't actually calculate list speed until it has some stories
         setupAnimSpeeds();
@@ -305,9 +305,10 @@ public class ItemSetFragment extends NbFragment {
     }
 
     public void scrollToPosition(int position) {
+        int layoutPosition = adapter.getDisplayPositionForStoryIndex(position);
         int layoutTotalPositions = layoutManager.getItemCount() - 1;
-        if (position > 0 && position <= layoutTotalPositions) {
-            layoutManager.scrollToPosition(position);
+        if (layoutPosition > 0 && layoutPosition <= layoutTotalPositions) {
+            layoutManager.scrollToPosition(layoutPosition);
         }
     }
 
@@ -395,9 +396,8 @@ public class ItemSetFragment extends NbFragment {
         int cardBg, strokeColor, textColor, buttonBg;
         int goldColor = ContextCompat.getColor(requireContext(), R.color.premium_gold);
 
-        PrefConstants.ThemeValue theme = prefsRepo.getSelectedTheme();
-        boolean isDarkSystem = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
-        boolean isDark = theme == PrefConstants.ThemeValue.DARK || theme == PrefConstants.ThemeValue.BLACK || (theme == PrefConstants.ThemeValue.AUTO && isDarkSystem);
+        PrefConstants.ThemeValue theme = prefsRepo.getResolvedTheme(requireContext());
+        boolean isDark = theme == PrefConstants.ThemeValue.DARK || theme == PrefConstants.ThemeValue.BLACK;
 
         if (theme == PrefConstants.ThemeValue.SEPIA) {
             cardBg = ContextCompat.getColor(requireContext(), R.color.item_background_sepia);
@@ -558,12 +558,19 @@ public class ItemSetFragment extends NbFragment {
         if (prefsRepo.isMarkReadOnFeedScroll()) {
             // we want the top row of stories that is partially obscured. go back one from the first fully visible
             int markEnd = layoutManager.findFirstCompletelyVisibleItemPosition() - 1;
+            // when scrolled to the bottom, the last story is fully visible but never scrolls off-screen,
+            // so extend markEnd to include all remaining visible stories
+            int lastCompletelyVisible = layoutManager.findLastCompletelyVisibleItemPosition();
+            int storyCount = adapter.getStoryCount();
+            if (storyCount > 0 && lastCompletelyVisible >= storyCount - 1) {
+                markEnd = Math.max(markEnd, storyCount - 1);
+            }
             if (markEnd > lastAutoMarkIndex) {
+                int prevIndex = lastAutoMarkIndex;
                 lastAutoMarkIndex = markEnd;
-                // iterate backwards through that row, marking read
-                for (int i = 0; i < columnCount; i++) {
-                    int index = markEnd - i;
-                    Story story = adapter.getStory(index);
+                // mark all stories between the previous mark position and the new one
+                for (int i = prevIndex + 1; i <= markEnd; i++) {
+                    Story story = adapter.getStory(i);
                     if (story != null) {
                         feedUtils.markStoryAsRead(story, requireContext());
                     }

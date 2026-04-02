@@ -150,7 +150,7 @@ static inline double NBDailyBriefingElapsedMs(CFTimeInterval start) {
     self.dashboardSingleMode = NO;
     
     self.storyTitlesTable.backgroundColor = UIColorFromRGB(0xf4f4f4);
-    self.storyTitlesTable.separatorColor = UIColorFromLightSepiaMediumDarkRGB(0xE9E8E4, 0xF2E9DE, 0x383838, 0x222222);
+    self.storyTitlesTable.separatorColor = UIColorFromLightSepiaMediumDarkRGB(0xE9E8E4, 0xD4C8B8, 0x383838, 0x222222);
     if (@available(iOS 15.0, *)) {
         self.storyTitlesTable.allowsFocus = NO;
         self.storyTitlesTable.sectionHeaderTopPadding = 0;
@@ -559,7 +559,12 @@ static inline double NBDailyBriefingElapsedMs(CFTimeInterval start) {
     }
     
     CFTimeInterval reloadStartedAt = shouldLogDailyBriefingRender ? NBDailyBriefingNow() : 0;
+    CGPoint offsetBefore = self.storyTitlesTable.contentOffset;
     [self.storyTitlesTable reloadData];
+    CGPoint offsetAfter = self.storyTitlesTable.contentOffset;
+    if (offsetBefore.y != offsetAfter.y) {
+        NSLog(@"📍 reloadTable: contentOffset CHANGED from %.0f to %.0f", offsetBefore.y, offsetAfter.y);
+    }
     if (shouldLogDailyBriefingRender) {
         self.dailyBriefingReloadDataMs = NBDailyBriefingElapsedMs(reloadStartedAt);
         NSLog(@"DailyBriefing iOS render: reloadData rows=%ld reload=%.1fms text_size=%ld",
@@ -2080,7 +2085,9 @@ static inline double NBDailyBriefingElapsedMs(CFTimeInterval start) {
             storyChanged = YES;
         }
 
+        NSLog(@"📍 finishedLoadingFeed: pageIndex=%ld storyChanged=%d locationsCount=%ld feedPage=%ld", (long)pageIndex, storyChanged, (long)storiesCollection.storyLocationsCount, (long)storiesCollection.feedPage);
         if (storyChanged && storiesCollection.storyLocationsCount > 0) {
+            NSLog(@"📍 finishedLoadingFeed: storyChanged=YES, calling changePage");
             NSInteger targetLocation = [StoryRefreshSelectionDecision targetLocationWithActiveStoryLocation:storiesCollection.locationOfActiveStory
                                                                                          storyLocationsCount:storiesCollection.storyLocationsCount];
             NSInteger targetIndex = [storiesCollection indexFromLocation:targetLocation];
@@ -2092,6 +2099,7 @@ static inline double NBDailyBriefingElapsedMs(CFTimeInterval start) {
             appDelegate.storyPagesViewController.previousPage.pageIndex = -2;
             [appDelegate.storyPagesViewController changePage:targetLocation animated:NO];
         } else {
+            NSLog(@"📍 finishedLoadingFeed: storyChanged=NO, calling resizeScrollView+setStoryFromScroll");
             [appDelegate.storyPagesViewController resizeScrollView];
             [appDelegate.storyPagesViewController setStoryFromScroll:YES];
         }
@@ -4597,7 +4605,7 @@ didEndSwipingSwipingWithState:(MCSwipeTableViewCellState)state
     [self.storyTitlesHeaderBar updateOptionsPillWithOrder:order readFilter:readFilter];
 
     // Update discover pill visibility
-    BOOL isEverything = storiesCollection.isEverything;
+    BOOL isEverything = storiesCollection.isEverything && storiesCollection.isRiverView;
     BOOL isSocial = storiesCollection.isSocialRiverView || storiesCollection.isSocialView;
     BOOL isSaved = storiesCollection.isSavedView;
     BOOL isRead = storiesCollection.isReadView;
@@ -5142,6 +5150,7 @@ didEndSwipingSwipingWithState:(MCSwipeTableViewCellState)state
 }
 
 - (void)changeActiveFeedDetailRow {
+    NSLog(@"📍 changeActiveFeedDetailRow called. isLegacy=%d, caller=%@", self.isLegacyTable, [NSThread callStackSymbols]);
     if (!self.isLegacyTable) {
         [self reload];
         return;
@@ -5243,7 +5252,7 @@ didEndSwipingSwipingWithState:(MCSwipeTableViewCellState)state
     
     self.view.backgroundColor = UIColorFromRGB(0xf4f4f4);
     self.storyTitlesTable.backgroundColor = UIColorFromRGB(0xf4f4f4);
-    self.storyTitlesTable.separatorColor = UIColorFromLightSepiaMediumDarkRGB(0xE9E8E4, 0xF2E9DE, 0x383838, 0x222222);
+    self.storyTitlesTable.separatorColor = UIColorFromLightSepiaMediumDarkRGB(0xE9E8E4, 0xD4C8B8, 0x383838, 0x222222);
     if (@available(iOS 13.0, *)) {
         self.storyTitlesTable.overrideUserInterfaceStyle = ThemeManager.shared.isDarkTheme ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
     }

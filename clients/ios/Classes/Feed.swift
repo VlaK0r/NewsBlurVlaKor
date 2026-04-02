@@ -54,7 +54,8 @@ typealias AnyDictionary = [AnyHashable : Any]
         case none = 0
         case like = 1
         case dislike = -1
-        
+        case superDislike = -2
+
         var imageName: String {
             switch self {
                 case .none:
@@ -63,6 +64,8 @@ typealias AnyDictionary = [AnyHashable : Any]
                     return "hand.thumbsup.fill"
                 case .dislike:
                     return "hand.thumbsdown.fill"
+                case .superDislike:
+                    return "hand.thumbsdown.circle.fill"
             }
         }
     }
@@ -193,9 +196,19 @@ typealias AnyDictionary = [AnyHashable : Any]
         }
         
         let userItems = classifiers.map {
-            Training(name: $0.key as! String,
-                     count: 0,
-                     score: Score(rawValue: $0.value as? Int ?? 0) ?? .none)
+            let name = $0.key as! String
+            let scopeInfo = ClassifierScopeResolver.resolveInfo(
+                from: self.classifiers,
+                classifierKey: key,
+                name: name
+            )
+            return Training(
+                name: name,
+                count: 0,
+                score: Score(rawValue: $0.value as? Int ?? 0) ?? .none,
+                scope: scopeInfo.scope,
+                folderName: scopeInfo.folderName
+            )
         }
         
         return userItems.sorted()

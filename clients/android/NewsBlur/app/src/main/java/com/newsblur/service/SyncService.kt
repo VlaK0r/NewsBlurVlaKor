@@ -19,6 +19,7 @@ import com.newsblur.network.APIConstants
 import com.newsblur.network.FeedApi
 import com.newsblur.network.NetworkClient
 import com.newsblur.network.StoryApi
+import com.newsblur.network.domain.NewsBlurResponse
 import com.newsblur.network.domain.StoriesResponse
 import com.newsblur.preference.PrefsRepo
 import com.newsblur.service.NbSyncManager.UPDATE_DB_READY
@@ -36,6 +37,7 @@ import com.newsblur.util.FileCache
 import com.newsblur.util.Log
 import com.newsblur.util.NetworkUtils
 import com.newsblur.util.NotificationUtils
+import com.newsblur.util.PrefConstants
 import com.newsblur.util.ReadingAction
 import com.newsblur.util.StateFilter
 import com.newsblur.util.doLocal
@@ -296,7 +298,15 @@ open class SyncService :
                 if ((ra.tried > 0) && (syncServiceState.pendingFeed != null)) continue@actionsLoop
 
                 Log.d(this, "attempting action: " + ra.toContentValues())
-                val response = ra.doRemote(syncServiceState, feedApi, storyApi, dbHelper, stateFilter)
+                val response: NewsBlurResponse?
+                try {
+                    response = ra.doRemote(syncServiceState, feedApi, storyApi, dbHelper, stateFilter)
+                } catch (e: Exception) {
+                    Log.e(this.javaClass.name, "Discarding reading action that threw unexpected exception", e)
+                    dbHelper.clearAction(id)
+                    syncServiceState.lastActionCount--
+                    continue@actionsLoop
+                }
 
                 if (response == null) {
                     Log.e(this.javaClass.name, "Discarding reading action with client-side error.")
@@ -400,6 +410,9 @@ open class SyncService :
             prefsRepo.setPro(feedResponse.isPro, feedResponse.premiumExpire)
             prefsRepo.setIsStaff(feedResponse.isStaff)
             prefsRepo.setExtToken(feedResponse.shareExtToken)
+            feedResponse.storyClustering?.let {
+                prefsRepo.putBoolean(PrefConstants.STORY_CLUSTERING, it)
+            }
 
             // note all feeds that belong to some folder so we can find orphans
             for (folder in feedResponse.folders) {
