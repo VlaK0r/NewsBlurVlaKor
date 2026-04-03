@@ -32,69 +32,63 @@ def setup_openai_model(openai_model):
 
 def classify_stories_with_ai(prompt_classifier, stories, model="gpt-4o-mini", user_id=None):
     """
-    Classify a list of stories using Claude's tool use.
-
-    Args:
-        prompt_classifier: User-defined prompt (MClassifierPrompt) for classification criteria
-        stories: List of dictionaries containing story data with at least title and content
-        model: Claude model to use
-        user_id: User ID for usage tracking and billing
-
-    Returns:
-        Dictionary mapping story_ids to classifications: 1 (focus), 0 (neutral), -1 (hidden)
+    Classify a list of stories using OpenAI's function calling.
     """
+    import openai
+    import json
+    import logging
     from apps.ask_ai.providers import OpenAIProvider
+    from django.conf import settings
 
     if not OpenAIProvider().is_configured():
-        logging.error("Anthropic API key not configured")
+        logging.error("OpenAI API key not configured")
         return {story["story_id"]: 0 for story in stories}
 
-    # Initialize Anthropic client
     client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
 
-    # Prepare stories for classification
+    # Prepare stories
     story_items = []
     for story in stories:
-        story_items.append(
-            {
-                "id": story["story_id"],
-                "title": story["story_title"],
-                "excerpt": story.get("story_content", "")[:500],  # Limit content size
-            }
-        )
+        story_items.append({
+            "id": story["story_id"],
+            "title": story["story_title"],
+            "excerpt": story.get("story_content", "")[:500],
+        })
 
-    # Define the tool for classification
+    # Define the tool for OpenAI
     tool_definition = {
-        "name": "classify_stories",
-        "description": "Classify stories based on user-defined criteria",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "classifications": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "string"},
-                            "classification": {
-                                "type": "integer",
-                                "enum": [1, 0, -1],
-                                "description": "1 for focus (promote), 0 for neutral, -1 for hidden (demote)",
+        "type": "function",
+        "function": {
+            "name": "classify_stories",
+            "description": "Classify stories based on user-defined criteria",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "classifications": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "classification": {
+                                    "type": "integer",
+                                    "enum": [1, 0, -1],
+                                    "description": "1 for focus (promote), 0 for neutral, -1 for hidden (demote)",
+                                },
+                                "explanation": {
+                                    "type": "string",
+                                    "description": "Brief explanation of classification",
+                                },
                             },
-                            "explanation": {
-                                "type": "string",
-                                "description": "Brief explanation of classification",
-                            },
+                            "required": ["id", "classification"],
                         },
-                        "required": ["id", "classification"],
-                    },
-                }
+                    }
+                },
+                "required": ["classifications"],
             },
-            "required": ["classifications"],
-        },
+        }
     }
 
-    # Create system message based on prompt type
     system_message = f"""You are a story classifier for a news reader application. Your task is to classify stories based on the user's criteria. Each story should be classified as one of:
 
 - Focus (1): Stories that strongly match the user's interests according to their prompt
@@ -106,51 +100,52 @@ The user's classification criteria is: {prompt_classifier.prompt}
 Classify each story independently. Most stories should remain neutral (0) by default.
 Only classify stories as Focus (1) or Hidden (-1) if they clearly match the user's criteria.
 
-You MUST use the classify_stories tool to return your classifications."""
+You MUST use the classify_stories function to return your classifications."""
 
     try:
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": system_message},   # ← system передаётся здесь
+                {"role": "system", "content": system_message},
                 {"role": "user", "content": f"Please classify these stories: {json.dumps(story_items)}"}
             ],
             tools=[tool_definition],
-            tool_choice={"type": "function", "function": {"name": "classify_stories"}},  # ← правильный формат
+            tool_choice={"type": "function", "function": {"name": "classify_stories"}},
             max_tokens=1024,
         )
 
         # Record LLM cost
         if response.usage:
             LLMCostTracker.record_usage(
-                provider="anthropic",
+                provider="openai",
                 model=model,
                 feature="story_classification",
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
+                input_tokens=response.usage.prompt_tokens,
+                output_tokens=response.usage.completion_tokens,
                 user_id=user_id,
                 metadata={"story_count": len(stories)},
             )
 
-        # Parse the response - look for tool_use blocks
-        for block in response.content:
-            if block.type == "tool_use" and block.name == "classify_stories":
-                try:
-                    result = block.input
-                    # Convert to dictionary mapping story_id to classification
-                    classifications = {
-                        item["id"]: item["classification"] for item in result["classifications"]
-                    }
-                    return classifications
-                except (KeyError, TypeError) as e:
-                    logging.error(f"Error parsing AI classification response: {e}")
-                    return {story["story_id"]: 0 for story in stories}
+        # Parse the response - look for tool_calls
+        message = response.choices[0].message
+        if message.tool_calls:
+            for tool_call in message.tool_calls:
+                if tool_call.function.name == "classify_stories":
+                    try:
+                        result = json.loads(tool_call.function.arguments)
+                        classifications = {
+                            item["id"]: item["classification"] for item in result["classifications"]
+                        }
+                        return classifications
+                    except (KeyError, json.JSONDecodeError, TypeError) as e:
+                        logging.error(f"Error parsing OpenAI classification response: {e}")
+                        return {story["story_id"]: 0 for story in stories}
 
-        logging.error("AI did not return a valid tool use")
+        logging.error("OpenAI did not return a valid function call")
         return {story["story_id"]: 0 for story in stories}
 
     except Exception as e:
-        logging.error(f"Error during AI classification: {e}")
+        logging.error(f"Error during OpenAI classification: {e}")
         return {story["story_id"]: 0 for story in stories}
 
 
