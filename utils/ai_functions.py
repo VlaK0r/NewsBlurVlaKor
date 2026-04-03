@@ -30,7 +30,7 @@ def setup_openai_model(openai_model):
     return encoding
 
 
-def classify_stories_with_ai(prompt_classifier, stories, model="claude-haiku-4-5", user_id=None):
+def classify_stories_with_ai(prompt_classifier, stories, model="gpt-4o-mini", user_id=None):
     """
     Classify a list of stories using Claude's tool use.
 
@@ -43,14 +43,14 @@ def classify_stories_with_ai(prompt_classifier, stories, model="claude-haiku-4-5
     Returns:
         Dictionary mapping story_ids to classifications: 1 (focus), 0 (neutral), -1 (hidden)
     """
-    from apps.ask_ai.providers import AnthropicProvider
+    from apps.ask_ai.providers import OpenAIProvider
 
-    if not AnthropicProvider().is_configured():
+    if not OpenAIProvider().is_configured():
         logging.error("Anthropic API key not configured")
         return {story["story_id"]: 0 for story in stories}
 
     # Initialize Anthropic client
-    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
 
     # Prepare stories for classification
     story_items = []
