@@ -109,16 +109,15 @@ Only classify stories as Focus (1) or Hidden (-1) if they clearly match the user
 You MUST use the classify_stories tool to return your classifications."""
 
     try:
-        # Call the Anthropic API with tool use
         response = client.chat.completions.create(
             model=model,
-            max_tokens=1024,
-            system=system_message,
-            tools=[tool_definition],
-            tool_choice={"type": "tool", "name": "classify_stories"},
             messages=[
+                {"role": "system", "content": system_message},   # ← system передаётся здесь
                 {"role": "user", "content": f"Please classify these stories: {json.dumps(story_items)}"}
             ],
+            tools=[tool_definition],
+            tool_choice={"type": "function", "function": {"name": "classify_stories"}},  # ← правильный формат
+            max_tokens=1024,
         )
 
         # Record LLM cost
