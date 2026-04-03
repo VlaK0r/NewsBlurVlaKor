@@ -34,11 +34,8 @@ def classify_stories_with_ai(prompt_classifier, stories, model="gpt-4o-mini", us
     """
     Classify a list of stories using OpenAI's function calling.
     """
-    import openai
-    import json
-    import logging
+
     from apps.ask_ai.providers import OpenAIProvider
-    from django.conf import settings
 
     if not OpenAIProvider().is_configured():
         logging.error("OpenAI API key not configured")
