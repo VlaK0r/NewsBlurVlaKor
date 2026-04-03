@@ -110,7 +110,7 @@ You MUST use the classify_stories tool to return your classifications."""
 
     try:
         # Call the Anthropic API with tool use
-        response = client.messages.create(
+        response = client.chat.completions.create(
             model=model,
             max_tokens=1024,
             system=system_message,
