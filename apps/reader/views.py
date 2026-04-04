@@ -5472,6 +5472,221 @@ def trending_feeds(request):
     return {"trending_feeds": result}
 
 
+@json.json_view
+def load_trending_stories(request):
+    """
+    Load stories from the permanent trending lists (Well-Read Stories or Long Reads).
+
+    GET Parameters:
+        trending_type: "well_read" or "long_reads"
+        page: Page number (default 1)
+        limit: Stories per page (default 12)
+        order: "newest" or "oldest" (default "newest")
+        read_filter: "all" or "unread" (default "all")
+    """
+    user = get_user(request)
+    trending_type = request.GET.get("trending_type", "well_read")
+    page = max(int(request.GET.get("page", 1)), 1)
+    limit = min(int(request.GET.get("limit", 12)), 100)
+    order = request.GET.get("order", "newest")
+    read_filter = request.GET.get("read_filter", "all")
+    offset = (page - 1) * limit
+    now = localtime_for_timezone(datetime.datetime.now(), user.profile.timezone)
+    nowtz = now
+
+    user_id = user.pk if user.is_authenticated else None
+
+    if trending_type == "long_reads":
+        story_hashes = RTrendingStory.get_long_read_story_hashes(
+            offset=offset, limit=limit, order=order, read_filter=read_filter, user_id=user_id
+        )
+    else:
+        story_hashes = RTrendingStory.get_well_read_story_hashes(
+            offset=offset, limit=limit, order=order, read_filter=read_filter, user_id=user_id
+        )
+
+    mstories = MStory.objects(story_hash__in=story_hashes).order_by()
+    stories = Feed.format_stories(mstories)
+
+    # Sort stories to match the order from the sorted set
+    story_hash_order = {h: i for i, h in enumerate(story_hashes)}
+    stories.sort(key=lambda s: story_hash_order.get(s["story_hash"], 999))
+
+    # Look up read state from Redis
+    r2 = redis.Redis(connection_pool=settings.REDIS_STORY_HASH_POOL)
+    read_key = "RS:%s" % user.pk if user.is_authenticated else None
+    read_hashes = set()
+    if read_key and stories:
+        pipe = r2.pipeline()
+        for s in stories:
+            pipe.sismember(read_key, s["story_hash"])
+        results = pipe.execute()
+        read_hashes = {s["story_hash"] for s, is_read in zip(stories, results) if is_read}
+
+    stories, user_profiles = MSharedStory.stories_with_comments_and_profiles(stories, user.pk if user.is_authenticated else 0, check_all=True)
+
+    # Get feed metadata for stories
+    story_feed_ids = list(set(s["story_feed_id"] for s in stories))
+    usersubs = UserSubscription.subs_for_feeds(user.pk, feed_ids=story_feed_ids)
+    usersub_ids = [sub.feed_id for sub in usersubs]
+    unsub_feed_ids = list(set(story_feed_ids).difference(set(usersub_ids)))
+    unsub_feeds = Feed.objects.filter(pk__in=unsub_feed_ids)
+    unsub_feeds = [feed.canonical(include_favicon=False) for feed in unsub_feeds]
+
+    # Load classifiers for feeds the user has trained
+    trained_feed_ids = [sub.feed_id for sub in usersubs if sub.is_trained]
+    found_trained_feed_ids = list(set(trained_feed_ids) & set(story_feed_ids))
+    has_scoped = user.profile.is_archive and user.profile.has_scoped_classifiers
+    folder_feed_ids = None
+
+    if found_trained_feed_ids or has_scoped:
+        if found_trained_feed_ids:
+            classifier_feeds = list(
+                MClassifierFeed.objects(user_id=user.pk, feed_id__in=found_trained_feed_ids, social_user_id=0)
+            )
+            classifier_authors = list(
+                MClassifierAuthor.objects(user_id=user.pk, feed_id__in=found_trained_feed_ids)
+            )
+            classifier_titles = list(
+                MClassifierTitle.objects(user_id=user.pk, feed_id__in=found_trained_feed_ids)
+            )
+            classifier_tags = list(
+                MClassifierTag.objects(user_id=user.pk, feed_id__in=found_trained_feed_ids)
+            )
+            classifier_texts = list(
+                MClassifierText.objects(user_id=user.pk, feed_id__in=found_trained_feed_ids)
+            )
+            classifier_urls = list(
+                MClassifierUrl.objects(user_id=user.pk, feed_id__in=found_trained_feed_ids)
+            )
+        else:
+            classifier_feeds = []
+            classifier_authors = []
+            classifier_titles = []
+            classifier_tags = []
+            classifier_texts = []
+            classifier_urls = []
+
+        if has_scoped:
+            scoped = load_scoped_classifiers(user.pk)
+            classifier_titles.extend(scoped["titles"])
+            classifier_texts.extend(scoped["texts"])
+            classifier_urls.extend(scoped["urls"])
+            classifier_authors.extend(scoped["authors"])
+            classifier_tags.extend(scoped["tags"])
+            try:
+                usf = UserSubscriptionFolders.objects.get(user=user)
+                flat_folders = usf.flatten_folders()
+                folder_feed_ids = {name: set(fids) for name, fids in flat_folders.items()}
+            except UserSubscriptionFolders.DoesNotExist:
+                folder_feed_ids = {}
+    else:
+        classifier_feeds = []
+        classifier_authors = []
+        classifier_titles = []
+        classifier_tags = []
+        classifier_texts = []
+        classifier_urls = []
+
+    classifiers = sort_classifiers_by_feed(
+        user=user,
+        feed_ids=story_feed_ids,
+        classifier_feeds=classifier_feeds,
+        classifier_authors=classifier_authors,
+        classifier_titles=classifier_titles,
+        classifier_tags=classifier_tags,
+        classifier_texts=classifier_texts,
+        classifier_urls=classifier_urls,
+        folder_feed_ids=folder_feed_ids,
+    )
+
+    user_is_pro = user.profile.is_pro
+
+    # Look up starred stories
+    story_hash_list = [s["story_hash"] for s in stories]
+    starred_stories = {}
+    shared_stories = {}
+    if user.is_authenticated:
+        starred_stories = dict(
+            [
+                (story.story_hash, story)
+                for story in MStarredStory.objects(
+                    user_id=user.pk, story_hash__in=story_hash_list
+                ).hint([("user_id", 1), ("story_hash", 1)])
+            ]
+        )
+        shared_stories = dict(
+            [
+                (story.story_hash, dict(shared_date=story.shared_date, comments=story.comments))
+                for story in MSharedStory.objects(
+                    user_id=user.pk, story_hash__in=story_hash_list
+                )
+                .hint([("story_hash", 1)])
+                .only("story_hash", "shared_date", "comments")
+            ]
+        )
+
+    for story in stories:
+        story["read_status"] = 1 if story["story_hash"] in read_hashes else 0
+        story_date = localtime_for_timezone(story["story_date"], user.profile.timezone)
+        story["short_parsed_date"] = format_story_link_date__short(story_date, nowtz)
+        story["long_parsed_date"] = format_story_link_date__long(story_date, nowtz)
+        if story["story_hash"] in starred_stories:
+            story["starred"] = True
+            starred_story = Feed.format_story(starred_stories[story["story_hash"]])
+            starred_date = localtime_for_timezone(starred_story["starred_date"], user.profile.timezone)
+            story["starred_date"] = format_story_link_date__long(starred_date, now)
+            story["starred_timestamp"] = int(starred_date.timestamp())
+        if story["story_hash"] in shared_stories:
+            story["shared"] = True
+            story["shared_comments"] = strip_tags_preserve_blockquote(
+                shared_stories[story["story_hash"]]["comments"]
+            )
+        story["intelligence"] = {
+            "feed": apply_classifier_feeds(classifier_feeds, story["story_feed_id"]),
+            "author": apply_classifier_authors(classifier_authors, story, folder_feed_ids=folder_feed_ids),
+            "tags": apply_classifier_tags(classifier_tags, story, folder_feed_ids=folder_feed_ids),
+            "title": apply_classifier_titles(classifier_titles, story, folder_feed_ids=folder_feed_ids),
+            "title_regex": (
+                apply_classifier_title_regex(classifier_titles, story, folder_feed_ids=folder_feed_ids)
+                if user_is_pro
+                else 0
+            ),
+            "text": (
+                apply_classifier_texts(classifier_texts, story, folder_feed_ids=folder_feed_ids)
+                if user.profile.premium_available_text_classifiers
+                else 0
+            ),
+            "text_regex": (
+                apply_classifier_text_regex(classifier_texts, story, folder_feed_ids=folder_feed_ids)
+                if user_is_pro and user.profile.premium_available_text_classifiers
+                else 0
+            ),
+            "url": apply_classifier_urls(
+                classifier_urls,
+                story,
+                user_is_premium=user.profile.is_premium,
+                folder_feed_ids=folder_feed_ids,
+            ),
+            "url_regex": (
+                apply_classifier_url_regex(classifier_urls, story, folder_feed_ids=folder_feed_ids)
+                if user_is_pro
+                else 0
+            ),
+        }
+        story["score"] = UserSubscription.score_story(story["intelligence"])
+
+    type_label = "long reads" if trending_type == "long_reads" else "widely-read"
+    logging.user(request, "~FCLoading ~SB%s~SN %s stories (p. %s)" % (len(stories), type_label, page))
+
+    return {
+        "stories": stories,
+        "user_profiles": user_profiles,
+        "feeds": unsub_feeds,
+        "classifiers": classifiers,
+    }
+
+
 @ajax_login_required
 @json.json_view
 def save_feed_auto_mark_read(request):

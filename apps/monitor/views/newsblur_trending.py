@@ -23,6 +23,12 @@ class TrendingFeeds(View):
         """
         r = redis.Redis(connection_pool=settings.REDIS_STATISTICS_POOL)
 
+        # Refresh permanent trending lists on every scrape (not gated by cache)
+        try:
+            RTrendingStory.refresh_trending_lists()
+        except Exception:
+            pass
+
         cached = r.get(CACHE_KEY)
         if cached:
             return HttpResponse(cached, content_type="text/plain")

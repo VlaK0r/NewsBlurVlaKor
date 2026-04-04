@@ -1037,7 +1037,7 @@ NEWSBLUR.AssetModel = Backbone.Router.extend({
             }
 
             if (data.feeds) {
-                var river = _.any(['river:', 'social:'], function (prefix) {
+                var river = _.any(['river:', 'social:', 'trending:'], function (prefix) {
                     return _.isString(feed_id) && _.string.startsWith(feed_id, prefix);
                 });
                 if (river) _.each(data.feeds, function (feed) { feed.temp = true; });
@@ -1047,7 +1047,13 @@ NEWSBLUR.AssetModel = Backbone.Router.extend({
             callback(data);
         };
 
-        if (_.string.startsWith(feed_id, 'river:global')) {
+        if (_.string.startsWith(feed_id, 'trending:')) {
+            options.trending_type = feed_id.replace('trending:', '');
+            this.make_request('/reader/trending_stories', options, pre_callback, error_callback, {
+                'ajax_group': 'dashboard',
+                'request_type': 'GET'
+            });
+        } else if (_.string.startsWith(feed_id, 'river:global')) {
             this.make_request('/social/river_stories', options, pre_callback, error_callback, {
                 'ajax_group': 'dashboard',
                 'request_type': 'GET'
@@ -1115,6 +1121,26 @@ NEWSBLUR.AssetModel = Backbone.Router.extend({
             read_filter: this.view_setting(feed_id, 'read_filter'),
             date_filter_start: NEWSBLUR.reader.flags.date_filter_start,
             date_filter_end: NEWSBLUR.reader.flags.date_filter_end
+        }, pre_callback, error_callback, {
+            'ajax_group': (page ? 'feed_page' : 'feed'),
+            'request_type': 'GET'
+        });
+    },
+
+    fetch_trending_stories: function (feed_id, page, options, callback, error_callback, first_load) {
+        var self = this;
+
+        var pre_callback = function (data) {
+            self.load_feed_precallback(data, feed_id, callback, first_load);
+        };
+
+        this.feed_id = feed_id;
+
+        this.make_request('/reader/trending_stories', {
+            trending_type: options.trending_type,
+            page: page,
+            order: this.view_setting(feed_id, 'order'),
+            read_filter: this.view_setting(feed_id, 'read_filter')
         }, pre_callback, error_callback, {
             'ajax_group': (page ? 'feed_page' : 'feed'),
             'request_type': 'GET'
