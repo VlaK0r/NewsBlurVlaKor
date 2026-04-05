@@ -385,6 +385,9 @@ SFSafariViewControllerDelegate, UIGestureRecognizerDelegate>  {
 - (void)recalculateIntelligenceScores:(id)feedId;
 
 - (void)cancelRequests;
+- (void)resetNetworkManagerForTesting;
+- (void)setCustomDomainForTesting:(NSString *)urlString;
+- (void)replaceUnreadCountsForTesting:(NSArray<NSDictionary *> *)unreadRows;
 - (NSString *)beginNetworkOperation;
 - (void)endNetworkOperation:(NSString *)networkOperationIdentifier;
 
