@@ -72,7 +72,6 @@ from apps.analyzer.models import (
     load_scoped_classifiers,
     sort_classifiers_by_feed,
 )
-from apps.analyzer.tasks import ClassifyStoriesWithPrompt
 from apps.notifications.models import MUserFeedNotification
 from apps.profile.models import (
     MCustomStyling,
@@ -991,12 +990,15 @@ def refresh_feed(request, feed_id):
 
 
 def get_prompt_scores_or_queue(user, stories, feed_ids):
-    """Get cached AI prompt classifier scores, queueing uncached stories for async classification.
+    """Read cached AI prompt classifier scores (cache-read-only).
+
+    Classification happens at FeedFetch time, not at read time.
+    This function only reads from Redis cache and returns whatever
+    scores are available. Uncached stories get no score.
 
     Returns dict with:
       "scores": {story_hash: prompt_score} - aggregate score per story
       "details": {story_hash: [{"prompt": text, "score": int, "include_images": bool}]}
-    Uncached stories get score 0 and a Celery task is fired to classify them in the background.
     """
     empty_result = {"scores": {}, "details": {}}
     if not stories or not feed_ids:
@@ -1021,10 +1023,9 @@ def get_prompt_scores_or_queue(user, stories, feed_ids):
     for story in stories:
         stories_by_feed[story["story_feed_id"]].append(story)
 
-    # Check cache for all prompts and collect uncached story hashes
+    # Check cache for all prompts
     prompt_scores = {}  # {story_hash: aggregated_score}
     prompt_details = defaultdict(list)  # {story_hash: [{prompt, score, include_images}]}
-    uncached_hashes = set()
 
     for feed_id, feed_stories in stories_by_feed.items():
         story_hashes = [s["story_hash"] for s in feed_stories]
@@ -1061,12 +1062,6 @@ def get_prompt_scores_or_queue(user, stories, feed_ids):
                                 "include_images": prompt.include_images,
                             }
                         )
-                else:
-                    uncached_hashes.add(sh)
-
-    # Queue async classification for uncached stories
-    if uncached_hashes:
-        ClassifyStoriesWithPrompt.delay(user.pk, list(uncached_hashes))
 
     return {"scores": prompt_scores, "details": dict(prompt_details)}
 
@@ -3748,7 +3743,7 @@ def add_url(request):
     elif any([(banned_url in url) for banned_url in BANNED_URLS]):
         code = -1
         message = "The publisher of this website has banned NewsBlur."
-    elif re.match("(https?://)?twitter.com/\w+/?$", url):
+    elif re.match(r"(https?://)?twitter.com/\w+/?$", url):
         if not request.user.profile.is_premium:
             message = "You must be a premium subscriber to add Twitter feeds."
             code = -1
@@ -4651,6 +4646,14 @@ def all_classifiers(request):
     all_classifier_feed_ids = set(classifiers_by_feed.keys())
     feeds_by_id = {f.pk: f for f in Feed.objects.filter(pk__in=all_classifier_feed_ids)}
 
+    # Fetch user-renamed feed titles so the training UI shows custom names
+    user_titles = dict(
+        UserSubscription.objects.filter(user=user, feed_id__in=all_classifier_feed_ids)
+        .exclude(user_title__isnull=True)
+        .exclude(user_title="")
+        .values_list("feed_id", "user_title")
+    )
+
     # Build response organized by folder structure
     folders_with_classifiers = []
     all_folder_feed_ids = set()
@@ -4665,7 +4668,7 @@ def all_classifiers(request):
                     folder_feeds.append(
                         {
                             "feed_id": feed_id,
-                            "feed_title": feed.feed_title,
+                            "feed_title": user_titles.get(feed_id, feed.feed_title),
                             "favicon_url": feed.favicon_url,
                             "favicon_color": feed.favicon_color,
                             "favicon_fetching": feed.favicon_fetching,
@@ -4685,7 +4688,7 @@ def all_classifiers(request):
                 orphan_feeds.append(
                     {
                         "feed_id": feed_id,
-                        "feed_title": feed.feed_title,
+                        "feed_title": user_titles.get(feed_id, feed.feed_title),
                         "favicon_url": feed.favicon_url,
                         "favicon_color": feed.favicon_color,
                         "favicon_fetching": feed.favicon_fetching,

@@ -11390,7 +11390,7 @@
             "spanNulls": true,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
@@ -11477,7 +11477,7 @@
             "spanNulls": true,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
@@ -11564,7 +11564,7 @@
             "spanNulls": true,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
@@ -11651,7 +11651,7 @@
             "spanNulls": true,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
@@ -11708,7 +11708,543 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 443
+        "y": 444
+      },
+      "id": 283,
+      "panels": [],
+      "title": "AI Classifier Billing",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "U1-fPO3Mk"
+      },
+      "description": "Our API cost vs revenue (cost \u00d7 1.5) from billing users over time. Gap between lines = margin.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 4,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Revenue"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Our Cost"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 445
+      },
+      "id": 290,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(llm_costs{metric=\"cost_usd\",billing=\"usage\",feature=~\"story_classification|vision_classification\",period=\"daily\"}) * 1.5",
+          "legendFormat": "Revenue",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(llm_costs{metric=\"cost_usd\",billing=\"usage\",feature=~\"story_classification|vision_classification\",period=\"daily\"})",
+          "legendFormat": "Our Cost",
+          "refId": "B"
+        }
+      ],
+      "title": "Cost vs Revenue",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "U1-fPO3Mk"
+      },
+      "description": "Classifier runs per day: all users vs billing users, text vs image",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 445
+      },
+      "id": 291,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "llm_costs{metric=\"requests\",billing=\"\",feature=\"story_classification\",period=\"daily\"}",
+          "legendFormat": "Text (all)",
+          "refId": "A"
+        },
+        {
+          "expr": "llm_costs{metric=\"requests\",billing=\"\",feature=\"vision_classification\",period=\"daily\"}",
+          "legendFormat": "Image (all)",
+          "refId": "B"
+        },
+        {
+          "expr": "llm_costs{metric=\"requests\",billing=\"usage\",feature=\"story_classification\",period=\"daily\"}",
+          "legendFormat": "Text (billed)",
+          "refId": "C"
+        },
+        {
+          "expr": "llm_costs{metric=\"requests\",billing=\"usage\",feature=\"vision_classification\",period=\"daily\"}",
+          "legendFormat": "Image (billed)",
+          "refId": "D"
+        }
+      ],
+      "title": "Classifier Runs by Type",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "U1-fPO3Mk"
+      },
+      "description": "Actual API cost for text vs image classifiers (billing users only)",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 30,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 4,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 445
+      },
+      "id": 292,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "llm_costs{metric=\"cost_usd\",billing=\"usage\",feature=\"story_classification\",period=\"daily\"}",
+          "legendFormat": "Text",
+          "refId": "A"
+        },
+        {
+          "expr": "llm_costs{metric=\"cost_usd\",billing=\"usage\",feature=\"vision_classification\",period=\"daily\"}",
+          "legendFormat": "Image",
+          "refId": "B"
+        }
+      ],
+      "title": "Billed Cost by Type",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "U1-fPO3Mk"
+      },
+      "description": "Per-user breakdown of AI classifier usage and revenue for billing customers (30-day aggregate)",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cost"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 4
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Revenue"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 4
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 453
+      },
+      "id": 293,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": true
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Cost"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "U1-fPO3Mk"
+          },
+          "expr": "llm_costs{metric=\"cost_usd\",billing=\"user\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "U1-fPO3Mk"
+          },
+          "expr": "llm_costs{metric=\"revenue_usd\",billing=\"user\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "U1-fPO3Mk"
+          },
+          "expr": "llm_costs{metric=\"text_requests\",billing=\"user\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "U1-fPO3Mk"
+          },
+          "expr": "llm_costs{metric=\"vision_requests\",billing=\"user\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "U1-fPO3Mk"
+          },
+          "expr": "llm_costs{metric=\"total_stories\",billing=\"user\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "E"
+        }
+      ],
+      "title": "Per-User Billing Breakdown",
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "username",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Time 4": true,
+              "Time 5": true,
+              "__name__": true,
+              "__name__ 1": true,
+              "__name__ 2": true,
+              "__name__ 3": true,
+              "__name__ 4": true,
+              "__name__ 5": true,
+              "billing": true,
+              "billing 1": true,
+              "billing 2": true,
+              "billing 3": true,
+              "billing 4": true,
+              "billing 5": true,
+              "instance": true,
+              "instance 1": true,
+              "instance 2": true,
+              "instance 3": true,
+              "instance 4": true,
+              "instance 5": true,
+              "job": true,
+              "job 1": true,
+              "job 2": true,
+              "job 3": true,
+              "job 4": true,
+              "job 5": true,
+              "metric": true,
+              "metric 1": true,
+              "metric 2": true,
+              "metric 3": true,
+              "metric 4": true,
+              "metric 5": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "username": "User",
+              "Value #A": "Cost",
+              "Value #B": "Revenue",
+              "Value #C": "Text Classifiers",
+              "Value #D": "Vision Classifiers",
+              "Value #E": "Total Stories"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 461
       },
       "id": 161,
       "panels": [],
@@ -11886,7 +12422,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 444
+        "y": 462
       },
       "id": 162,
       "options": {
@@ -12141,7 +12677,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 454
+        "y": 472
       },
       "id": 208,
       "options": {
@@ -12242,7 +12778,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 474
+        "y": 492
       },
       "id": 163,
       "options": {
@@ -12312,7 +12848,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 474
+        "y": 492
       },
       "id": 164,
       "options": {
@@ -12382,7 +12918,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 474
+        "y": 492
       },
       "id": 165,
       "options": {
@@ -12473,7 +13009,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 482
+        "y": 500
       },
       "id": 166,
       "options": {
@@ -12561,7 +13097,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 482
+        "y": 500
       },
       "id": 167,
       "options": {
@@ -12628,7 +13164,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 490
+        "y": 508
       },
       "id": 168,
       "options": {
@@ -12698,7 +13234,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 490
+        "y": 508
       },
       "id": 169,
       "options": {
@@ -12738,7 +13274,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 498
+        "y": 516
       },
       "id": 171,
       "panels": [],
@@ -12872,7 +13408,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 464
+        "y": 482
       },
       "id": 172,
       "options": {
@@ -12971,7 +13507,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 499
+        "y": 517
       },
       "id": 173,
       "options": {
@@ -13041,7 +13577,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 499
+        "y": 517
       },
       "id": 174,
       "options": {
@@ -13133,7 +13669,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 499
+        "y": 517
       },
       "id": 175,
       "options": {
@@ -13174,7 +13710,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 550
+        "y": 568
       },
       "id": 176,
       "panels": [],
@@ -13251,7 +13787,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 551
+        "y": 569
       },
       "id": 177,
       "options": {
@@ -13343,7 +13879,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 551
+        "y": 569
       },
       "id": 178,
       "options": {
@@ -13631,7 +14167,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 559
+        "y": 577
       },
       "id": 211,
       "options": {
@@ -13709,7 +14245,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 571
+        "y": 589
       },
       "id": 212,
       "panels": [],
@@ -13778,7 +14314,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 572
+        "y": 590
       },
       "id": 213,
       "options": {
@@ -13877,7 +14413,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 580
+        "y": 598
       },
       "id": 216,
       "options": {
@@ -13914,7 +14450,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 588
+        "y": 606
       },
       "id": 218,
       "panels": [],
@@ -13979,7 +14515,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 589
+        "y": 607
       },
       "id": 219,
       "options": {
@@ -14016,7 +14552,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 597
+        "y": 615
       },
       "id": 266,
       "panels": [],
@@ -14085,7 +14621,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 598
+        "y": 616
       },
       "id": 267,
       "options": {
@@ -14179,7 +14715,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 598
+        "y": 616
       },
       "id": 268,
       "options": {
@@ -14217,7 +14753,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 606
+        "y": 624
       },
       "id": 239,
       "panels": [],
@@ -14285,7 +14821,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 607
+        "y": 625
       },
       "id": 240,
       "options": {
@@ -14414,7 +14950,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 607
+        "y": 625
       },
       "id": 241,
       "options": {
@@ -14543,7 +15079,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 607
+        "y": 625
       },
       "id": 242,
       "options": {
@@ -14672,7 +15208,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 615
+        "y": 633
       },
       "id": 243,
       "options": {
@@ -14801,7 +15337,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 615
+        "y": 633
       },
       "id": 270,
       "options": {
@@ -14918,7 +15454,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 615
+        "y": 633
       },
       "id": 271,
       "options": {
@@ -14968,7 +15504,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 517
+        "y": 535
       },
       "id": 249,
       "panels": [],
@@ -15003,7 +15539,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 518
+        "y": 536
       },
       "id": 250,
       "options": {
@@ -15065,7 +15601,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 518
+        "y": 536
       },
       "id": 251,
       "options": {
@@ -15127,7 +15663,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 518
+        "y": 536
       },
       "id": 252,
       "options": {
@@ -15189,7 +15725,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 526
+        "y": 544
       },
       "id": 253,
       "options": {
@@ -15251,7 +15787,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 526
+        "y": 544
       },
       "id": 254,
       "options": {
@@ -15313,7 +15849,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 526
+        "y": 544
       },
       "id": 255,
       "options": {
@@ -15405,7 +15941,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 534
+        "y": 552
       },
       "id": 256,
       "options": {
@@ -15516,7 +16052,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 534
+        "y": 552
       },
       "id": 257,
       "options": {
@@ -15575,7 +16111,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 542
+        "y": 560
       },
       "id": 258,
       "options": {
@@ -15637,7 +16173,7 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 542
+        "y": 560
       },
       "id": 259,
       "options": {
@@ -15699,7 +16235,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 542
+        "y": 560
       },
       "id": 260,
       "options": {
@@ -15761,7 +16297,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 542
+        "y": 560
       },
       "id": 261,
       "options": {
@@ -15805,7 +16341,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 616
+        "y": 634
       },
       "id": 276,
       "panels": [],
@@ -15848,7 +16384,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 617
+        "y": 635
       },
       "id": 277,
       "options": {
@@ -15912,7 +16448,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 617
+        "y": 635
       },
       "id": 278,
       "options": {
@@ -15964,7 +16500,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 625
+        "y": 643
       },
       "id": 279,
       "panels": [],
@@ -16041,7 +16577,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 626
+        "y": 644
       },
       "id": 280,
       "options": {
@@ -16194,7 +16730,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 626
+        "y": 644
       },
       "id": 281,
       "options": {
@@ -16323,7 +16859,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 626
+        "y": 644
       },
       "id": 282,
       "options": {
