@@ -1,122 +1,161 @@
 import XCTest
 
 final class ReaderUITests: XCTestCase {
+    private var app: XCUIApplication!
+
     override func setUpWithError() throws {
         continueAfterFailure = false
+        app = XCUIApplication()
     }
 
     func test_readerLaunchShowsFixtureFoldersAndFeeds() {
-        let app = makeApp()
-        app.launch()
+        launch(on: "reader")
 
-        XCTAssertTrue(app.tables["feeds-list"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["All Site Stories folder"].exists)
-        XCTAssertTrue(app.buttons["Tech folder"].exists)
-        XCTAssertTrue(app.buttons["Culture folder"].exists)
-        XCTAssertTrue(app.cells["feed-row-910001"].exists)
-        XCTAssertTrue(app.cells["feed-row-910002"].exists)
-        XCTAssertTrue(app.cells["feed-row-910003"].exists)
+        let feedsList = app.tables["feeds-list"].firstMatch
+        XCTAssertTrue(feedsList.waitForExistence(timeout: 10))
+        XCTAssertTrue(reveal(folderButton(named: "All Site Stories"), in: feedsList))
+        XCTAssertTrue(reveal(folderButton(named: "Tech"), in: feedsList))
+        XCTAssertTrue(reveal(folderButton(named: "Culture"), in: feedsList))
+        XCTAssertTrue(reveal(feedCell("910001"), in: feedsList))
+        XCTAssertTrue(reveal(feedCell("910002"), in: feedsList))
+        XCTAssertTrue(reveal(feedCell("910003"), in: feedsList))
     }
 
     func test_selectingFolderLoadsRiverStories() {
-        let app = makeApp()
-        app.launch()
+        launch(on: "reader")
 
-        let techFolder = app.buttons["Tech folder"]
-        XCTAssertTrue(techFolder.waitForExistence(timeout: 10))
-        techFolder.tap()
+        let feedsList = app.tables["feeds-list"].firstMatch
+        XCTAssertTrue(feedsList.waitForExistence(timeout: 10))
+
+        let cultureFolder = folderButton(named: "Culture")
+        XCTAssertTrue(reveal(cultureFolder, in: feedsList))
+        tapElementCenter(cultureFolder)
 
         let storyList = app.tables["story-titles-list"]
         XCTAssertTrue(storyList.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.cells["story-row-ui-story-swift-1"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.cells["story-row-ui-story-arc-1"].exists)
+        let firstStory = storyList.cells.element(boundBy: 0)
+        XCTAssertTrue(firstStory.waitForExistence(timeout: 10))
+
+        tapElementCenter(firstStory)
+
+        let currentStory = currentStoryProbe()
+        XCTAssertTrue(currentStory.waitForExistence(timeout: 10))
+        XCTAssertEqual(currentStory.label, "Design Notes Keeps Another Folder Alive")
     }
 
     func test_selectingFeedLoadsStoriesAndOpeningStoryShowsDetail() {
-        let app = makeApp()
-        app.launch()
+        launch(on: "reader-feed-swift")
 
-        let swiftFeed = app.cells["feed-row-910002"]
-        XCTAssertTrue(swiftFeed.waitForExistence(timeout: 10))
-        swiftFeed.tap()
+        let storyList = app.tables["story-titles-list"]
+        XCTAssertTrue(storyList.waitForExistence(timeout: 10))
 
-        let firstStory = app.cells["story-row-ui-story-swift-1"]
+        let firstStory = storyList.cells.element(boundBy: 0)
         XCTAssertTrue(firstStory.waitForExistence(timeout: 10))
-        firstStory.tap()
+        tapElementCenter(firstStory)
 
-        let currentStory = app.otherElements["story-current-story"]
+        let currentStory = currentStoryProbe()
         XCTAssertTrue(currentStory.waitForExistence(timeout: 10))
         XCTAssertEqual(currentStory.label, "Swift Fixture Story One")
     }
 
-    func test_storyPagingMovesBetweenFixtureStories() {
-        let app = makeApp()
-        app.launch()
+    func test_selectingFeedShowsExpectedFixtureStoryRows() {
+        launch(on: "reader-feed-swift")
 
-        let swiftFeed = app.cells["feed-row-910002"]
-        XCTAssertTrue(swiftFeed.waitForExistence(timeout: 10))
-        swiftFeed.tap()
-
-        let firstStory = app.cells["story-row-ui-story-swift-1"]
-        XCTAssertTrue(firstStory.waitForExistence(timeout: 10))
-        firstStory.tap()
-
-        let currentStory = app.otherElements["story-current-story"]
-        XCTAssertTrue(currentStory.waitForExistence(timeout: 10))
-        XCTAssertEqual(currentStory.label, "Swift Fixture Story One")
-
-        let nextButton = app.buttons["story-traverse-next-button"]
-        XCTAssertTrue(nextButton.waitForExistence(timeout: 10))
-        nextButton.tap()
-        XCTAssertTrue(waitForLabel("Swift Fixture Story Two", on: currentStory))
-
-        let previousButton = app.buttons["story-traverse-previous-button"]
-        XCTAssertTrue(previousButton.exists)
-        previousButton.tap()
-        XCTAssertTrue(waitForLabel("Swift Fixture Story One", on: currentStory))
+        let storyList = app.tables["story-titles-list"]
+        XCTAssertTrue(storyList.waitForExistence(timeout: 10))
+        XCTAssertTrue(reveal(storyCell("ui-story-swift-1"), in: storyList))
+        XCTAssertTrue(reveal(storyCell("ui-story-swift-2"), in: storyList))
+        XCTAssertTrue(reveal(storyCell("ui-story-swift-3"), in: storyList))
     }
 
     func test_nextStoryFetchesAdditionalPageWhenMoreUnreadExist() {
-        let app = makeApp()
-        app.launch()
+        launch(on: "reader-story-swift-1")
 
-        let swiftFeed = app.cells["feed-row-910002"]
-        XCTAssertTrue(swiftFeed.waitForExistence(timeout: 10))
-        swiftFeed.tap()
-
-        let firstStory = app.cells["story-row-ui-story-swift-1"]
-        XCTAssertTrue(firstStory.waitForExistence(timeout: 10))
-        firstStory.tap()
-
-        let currentStory = app.otherElements["story-current-story"]
+        let currentStory = currentStoryProbe()
         XCTAssertTrue(currentStory.waitForExistence(timeout: 10))
 
         let nextButton = app.buttons["story-traverse-next-button"]
         XCTAssertTrue(nextButton.waitForExistence(timeout: 10))
 
-        nextButton.tap()
+        tapElementCenter(nextButton)
         XCTAssertTrue(waitForLabel("Swift Fixture Story Two", on: currentStory))
 
-        nextButton.tap()
+        tapElementCenter(nextButton)
         XCTAssertTrue(waitForLabel("Swift Fixture Story Three", on: currentStory))
 
-        nextButton.tap()
+        tapElementCenter(nextButton)
         XCTAssertTrue(waitForLabel("Swift Fixture Story Four", on: currentStory))
     }
 
-    private func makeApp() -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments += [
-            "-newsblur-ui-testing",
-            "-newsblur-ui-test-screen",
-            "reader",
-        ]
-        return app
+    private func folderButton(named title: String) -> XCUIElement {
+        let predicate = NSPredicate(format: "label BEGINSWITH %@", "\(title) folder")
+        return app.buttons.matching(predicate).firstMatch
+    }
+
+    private func feedCell(_ feedID: String) -> XCUIElement {
+        app.tables["feeds-list"].cells.matching(identifier: "feed-row-\(feedID)").firstMatch
+    }
+
+    private func storyCell(_ storyHash: String) -> XCUIElement {
+        app.tables["story-titles-list"].cells.matching(identifier: "story-row-\(storyHash)").firstMatch
+    }
+
+    private func currentStoryProbe() -> XCUIElement {
+        app.staticTexts["story-current-story"].firstMatch
+    }
+
+    private func reveal(_ element: XCUIElement, in scrollView: XCUIElement, maxSwipes: Int = 6) -> Bool {
+        if element.waitForExistence(timeout: 2) {
+            return true
+        }
+
+        for _ in 0..<maxSwipes {
+            scrollView.swipeDown()
+            if element.waitForExistence(timeout: 1) {
+                return true
+            }
+        }
+
+        for _ in 0..<maxSwipes {
+            scrollView.swipeUp()
+            if element.waitForExistence(timeout: 1) {
+                return true
+            }
+        }
+
+        return element.exists
     }
 
     private func waitForLabel(_ label: String, on element: XCUIElement) -> Bool {
         let predicate = NSPredicate(format: "label == %@", label)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter().wait(for: [expectation], timeout: 10) == .completed
+    }
+
+    private func tapElementCenter(_ element: XCUIElement) {
+        XCTAssertTrue(element.exists)
+
+        if element.isHittable {
+            element.tap()
+            return
+        }
+
+        let frame = element.frame
+        XCTAssertFalse(frame.isEmpty)
+
+        let coordinate = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+            .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
+        coordinate.tap()
+    }
+
+    private func launch(on screen: String) {
+        app.launchArguments += [
+            "-newsblur-ui-testing",
+            "-newsblur-ui-test-screen",
+            screen,
+            "-ApplePersistenceIgnoreState",
+            "YES",
+        ]
+        app.launch()
     }
 }

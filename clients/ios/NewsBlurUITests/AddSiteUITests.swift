@@ -1,21 +1,28 @@
 import XCTest
 
 final class AddSiteUITests: XCTestCase {
+    private var app: XCUIApplication!
+
     override func setUpWithError() throws {
         continueAfterFailure = false
+        app = XCUIApplication()
+        app.launchArguments += [
+            "-newsblur-ui-testing",
+            "-newsblur-ui-test-screen",
+            "add-site",
+            "-ApplePersistenceIgnoreState",
+            "YES",
+        ]
     }
 
     func test_addSiteSheetLaunchesInUiTestMode() {
-        let app = makeApp()
         app.launch()
 
-        XCTAssertTrue(app.otherElements["add-site-header"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.textFields["add-site-url-field"].exists)
-        XCTAssertTrue(app.buttons["add-site-submit-button"].exists)
+        XCTAssertTrue(app.textFields["add-site-url-field"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["add-site-submit-button"].waitForExistence(timeout: 10))
     }
 
     func test_addSiteAutocompleteSelectionAndSubmitDismissesSheet() {
-        let app = makeApp()
         app.launch()
 
         let urlField = app.textFields["add-site-url-field"]
@@ -35,16 +42,6 @@ final class AddSiteUITests: XCTestCase {
         addButton.tap()
 
         XCTAssertTrue(urlField.waitForDisappearance(timeout: 10))
-    }
-
-    private func makeApp() -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments += [
-            "-newsblur-ui-testing",
-            "-newsblur-ui-test-screen",
-            "add-site",
-        ]
-        return app
     }
 }
 

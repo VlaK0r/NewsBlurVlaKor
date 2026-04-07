@@ -17,18 +17,41 @@ jobs:
         working-directory: clients/ios
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Run iOS Swift package tests
         run: swift test --parallel
 
-      - name: Run iOS app-hosted tests
+      - name: Select and boot iOS simulator
+        run: |
+          IOS_SIMULATOR_UDID="$(
+            python3 -c 'import json,re,subprocess,sys; data=json.loads(subprocess.check_output(["xcrun","simctl","list","devices","available","--json"], text=True)); candidates=[(tuple(int(part) for part in re.findall(r"\d+", runtime)), device["udid"]) for runtime, devices in data["devices"].items() if runtime.startswith("com.apple.CoreSimulator.SimRuntime.iOS-") for device in devices if device.get("name") == "iPhone 16e" and device.get("isAvailable", False)]; sys.exit("Unable to find an available iPhone 16e simulator") if not candidates else None; print(max(candidates)[1])'
+          )"
+
+          echo "IOS_SIMULATOR_UDID=$IOS_SIMULATOR_UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$IOS_SIMULATOR_UDID" || true
+          xcrun simctl bootstatus "$IOS_SIMULATOR_UDID" -b
+
+      - name: Build iOS Xcode test bundles
         run: |
           mkdir -p TestResults
-          xcodebuild test \
+          xcodebuild build-for-testing \
             -project NewsBlur.xcodeproj \
             -scheme NewsBlur \
-            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16e' \
+            -destination "id=$IOS_SIMULATOR_UDID" \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            RUN_CLANG_STATIC_ANALYZER=NO
+
+      - name: Run iOS app-hosted tests
+        run: |
+          xcodebuild test-without-building \
+            -project NewsBlur.xcodeproj \
+            -scheme NewsBlur \
+            -destination "id=$IOS_SIMULATOR_UDID" \
+            -derivedDataPath DerivedData \
+            -parallel-testing-enabled NO \
             -only-testing:NewsBlurTests \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -37,10 +60,12 @@ jobs:
 
       - name: Run iOS UI smoke tests
         run: |
-          xcodebuild test \
+          xcodebuild test-without-building \
             -project NewsBlur.xcodeproj \
             -scheme NewsBlur \
-            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16e' \
+            -destination "id=$IOS_SIMULATOR_UDID" \
+            -derivedDataPath DerivedData \
+            -parallel-testing-enabled NO \
             -only-testing:NewsBlurUITests \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -48,7 +73,7 @@ jobs:
             -resultBundlePath TestResults/NewsBlurUITests.xcresult
 
       - name: Upload iOS xcresult
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: ${{ always() }}
         with:
           name: ios-newsblur-tests-xcresults
