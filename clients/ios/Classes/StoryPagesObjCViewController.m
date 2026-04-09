@@ -161,6 +161,25 @@
     [appDelegate.detailViewController revealStoryTitlesFromLeadingEdgeGesture:gestureRecognizer];
 }
 
+- (void)ensureCurrentPageViewIsFrontmost {
+    if (!self.currentPage || !self.scrollView) {
+        return;
+    }
+
+    if (self.scrollView.subviews.lastObject != self.currentPage.view) {
+        [self.scrollView bringSubviewToFront:self.currentPage.view];
+    }
+}
+
+- (void)refreshCurrentPageChrome {
+    if (!self.currentPage) {
+        return;
+    }
+
+    [self ensureCurrentPageViewIsFrontmost];
+    [self.currentPage drawFeedGradient];
+}
+
 - (id)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil {
     self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
     if (self) {
@@ -595,9 +614,7 @@
         });
     }
     
-    if (self.scrollView.subviews.lastObject != self.currentPage.view) {
-        [self.scrollView bringSubviewToFront:self.currentPage.view];
-    }
+    [self ensureCurrentPageViewIsFrontmost];
 
     [self alignScrollViewToCurrentPageIfNeeded];
     
@@ -796,7 +813,7 @@
     }
 
     [self.appDelegate.detailViewController adjustForAutoscroll];
-    [self.currentPage drawFeedGradient];
+    [self refreshCurrentPageChrome];
     
     if (alsoTraverse) {
         [self.view layoutIfNeeded];
@@ -1439,9 +1456,10 @@
 //    NSLog(@"---> Story page control orient page: %@ (%@-%@)", NSStringFromCGRect(self.scrollView.bounds), @(pageController.pageIndex), suppressRedraw ? @"supress" : @"redraw");
 
     if (suppressRedraw) return;
-    
-//    NSInteger wasIndex = pageController.pageIndex;
-	pageController.pageIndex = newIndex;
+
+    NSString *previousStoryId = pageController.activeStoryId;
+    BOOL hadRenderedStory = pageController.hasStory;
+    pageController.pageIndex = newIndex;
 //    NSLog(@"Applied Index to %@: Was %ld, now %ld (%ld/%ld/%ld) [%lu stories - %d] %@", pageController, (long)wasIndex, (long)newIndex, (long)previousPage.pageIndex, (long)currentPage.pageIndex, (long)nextPage.pageIndex, (unsigned long)[appDelegate.storiesCollection.activeFeedStoryLocations count], outOfBounds, NSStringFromCGRect(self.scrollView.frame));
     
     if (newIndex > 0 && newIndex >= [appDelegate.storiesCollection.activeFeedStoryLocations count]) {
@@ -1463,12 +1481,23 @@
         }
     } else if (!outOfBounds) {
         NSInteger location = [appDelegate.storiesCollection indexFromLocation:pageController.pageIndex];
+        // Look up the target story hash before setActiveStoryAtIndex changes activeStory
+        NSString *targetStoryHash = nil;
+        if (location >= 0 && location < (NSInteger)[appDelegate.storiesCollection.activeFeedStories count]) {
+            targetStoryHash = [appDelegate.storiesCollection.activeFeedStories[location] objectForKey:@"story_hash"];
+        }
         [pageController setActiveStoryAtIndex:location];
         UINavigationController *navController = self.navigationController ?: appDelegate.detailViewController.parentNavigationController;
         if (navController.interactivePopGestureRecognizer) {
             [pageController.webView.scrollView.panGestureRecognizer requireGestureRecognizerToFail:navController.interactivePopGestureRecognizer];
             [self.scrollView.panGestureRecognizer requireGestureRecognizerToFail:navController.interactivePopGestureRecognizer];
         }
+        // Skip redraw if page already shows the target story (e.g. after pagination fetch)
+        if (hadRenderedStory && previousStoryId && targetStoryHash && [previousStoryId isEqualToString:targetStoryHash]) {
+            [pageController drawFeedGradient];
+            [pageController refreshHeader];
+            [pageController refreshSideOptions];
+        } else {
         [pageController clearStory];
         if (self.isDraggingScrollview ||
             self.scrollingToPage < 0 ||
@@ -1490,6 +1519,7 @@
         } else {
 //            NSLog(@"Skipping drawing %d (waiting for %d)", newIndex, self.scrollingToPage);
         }
+        } // end else (needs redraw)
     } else if (outOfBounds && pageController == self.currentPage) {
         [pageController clearStory];
         
@@ -1953,6 +1983,7 @@
     CGFloat pageAmount = self.isHorizontal ? size.width : size.height;
 	NSInteger nearestNumber = [self clampedPageIndexForOffset:(self.isHorizontal ? offset.x : offset.y)
                                                   pageAmount:pageAmount];
+    StoryDetailViewController *previousCurrentPage = currentPage;
     
     
     if (!force && currentPage.pageIndex >= 0 &&
@@ -1977,6 +2008,10 @@
 		nextPage = swapCurrentController;
         previousPage = swapNextController;
     }
+
+    if (previousCurrentPage != currentPage) {
+        [self refreshCurrentPageChrome];
+    }
     
     
     self.autoscrollActive = NO;
@@ -1991,10 +2026,8 @@
     }
     self.scrollView.scrollsToTop = NO;
     
-    NSLog(@"📍 setStoryFromScroll: force=%d isDragging=%d scrollingToPage=%ld currentPage=%ld nearestNumber=%ld", force, self.isDraggingScrollview, (long)self.scrollingToPage, (long)currentPage.pageIndex, (long)nearestNumber);
     if (self.isDraggingScrollview || self.scrollingToPage == currentPage.pageIndex) {
         if (currentPage.pageIndex == -2) return;
-        NSLog(@"📍 setStoryFromScroll: ENTERING update block (will call updatePageWithActiveStory:YES)");
         self.scrollingToPage = -1;
         NSInteger storyIndex = [appDelegate.storiesCollection indexFromLocation:currentPage.pageIndex];
         
@@ -2050,7 +2083,7 @@
             }
         }
 
-        [currentPage drawFeedGradient];
+        [self refreshCurrentPageChrome];
     }
     
     if (!appDelegate.storiesCollection.inSearch) {

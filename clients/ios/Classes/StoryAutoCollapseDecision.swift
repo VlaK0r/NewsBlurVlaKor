@@ -489,6 +489,24 @@ public enum DailyBriefingSectionLayoutDecision {
     }
 }
 
+@objcMembers public final class FeedRowScrollReadDecision: NSObject {
+    public class func targetStoryLocation(
+        rowStoryLocation: NSNumber?,
+        isDailyBriefing: Bool,
+        storyCount: Int
+    ) -> NSNumber? {
+        if let rowStoryLocation {
+            return rowStoryLocation
+        }
+
+        guard !isDailyBriefing, storyCount >= 0 else {
+            return nil
+        }
+
+        return NSNumber(value: storyCount)
+    }
+}
+
 @objcMembers public final class FeedDetailReturnFrameDecision: NSObject {
     public class func correctedFrame(
         _ frame: CGRect,
@@ -624,6 +642,36 @@ public enum DailyBriefingSectionLayoutDecision {
         }
 
         return 0
+    }
+}
+
+@objcMembers public final class StoryRefreshPagingDecision: NSObject {
+    public class func shouldSyncCurrentStoryAfterRefresh(feedPage: Int) -> Bool {
+        feedPage <= 1
+    }
+}
+
+public struct StoryCardFrame: Equatable {
+    public let id: String
+    public let frame: CGRect
+
+    public init(id: String, frame: CGRect) {
+        self.id = id
+        self.frame = frame
+    }
+}
+
+public enum StoryScrollReadDecision {
+    public static func frame(for storyID: String, in frames: [StoryCardFrame]) -> CGRect? {
+        frames.first { $0.id == storyID }?.frame
+    }
+
+    public static func shouldMarkRead(storyID: String, frames: [StoryCardFrame]) -> Bool {
+        guard let frame = frame(for: storyID, in: frames) else {
+            return false
+        }
+
+        return frame.minY < -(frame.height / 2)
     }
 }
 

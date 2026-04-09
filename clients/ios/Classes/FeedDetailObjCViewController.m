@@ -560,12 +560,7 @@ static inline double NBDailyBriefingElapsedMs(CFTimeInterval start) {
     }
     
     CFTimeInterval reloadStartedAt = shouldLogDailyBriefingRender ? NBDailyBriefingNow() : 0;
-    CGPoint offsetBefore = self.storyTitlesTable.contentOffset;
     [self.storyTitlesTable reloadData];
-    CGPoint offsetAfter = self.storyTitlesTable.contentOffset;
-    if (offsetBefore.y != offsetAfter.y) {
-        NSLog(@"📍 reloadTable: contentOffset CHANGED from %.0f to %.0f", offsetBefore.y, offsetAfter.y);
-    }
     if (shouldLogDailyBriefingRender) {
         self.dailyBriefingReloadDataMs = NBDailyBriefingElapsedMs(reloadStartedAt);
         NSLog(@"DailyBriefing iOS render: reloadData rows=%ld reload=%.1fms text_size=%ld",
@@ -695,11 +690,14 @@ static inline double NBDailyBriefingElapsedMs(CFTimeInterval start) {
 
 - (NSInteger)storyLocationForScrollingAtIndexPath:(NSIndexPath *)indexPath {
     NSDictionary *rowDescriptor = [self storyRowDescriptorForIndexPath:indexPath];
-    if (rowDescriptor[FeedDetailVisibleRowStoryLocationKey] == nil) {
+    NSNumber *targetLocation = [FeedRowScrollReadDecision targetStoryLocationWithRowStoryLocation:rowDescriptor[FeedDetailVisibleRowStoryLocationKey]
+                                                                                 isDailyBriefing:storiesCollection.isDailyBriefing
+                                                                                       storyCount:storiesCollection.storyLocationsCount];
+    if (targetLocation == nil) {
         return NSNotFound;
     }
 
-    return [rowDescriptor[FeedDetailVisibleRowStoryLocationKey] integerValue];
+    return [targetLocation integerValue];
 }
 
 - (void)openClusterStory:(NSDictionary *)clusterStory {
@@ -2086,9 +2084,7 @@ static inline double NBDailyBriefingElapsedMs(CFTimeInterval start) {
             storyChanged = YES;
         }
 
-        NSLog(@"📍 finishedLoadingFeed: pageIndex=%ld storyChanged=%d locationsCount=%ld feedPage=%ld", (long)pageIndex, storyChanged, (long)storiesCollection.storyLocationsCount, (long)storiesCollection.feedPage);
         if (storyChanged && storiesCollection.storyLocationsCount > 0) {
-            NSLog(@"📍 finishedLoadingFeed: storyChanged=YES, calling changePage");
             NSInteger targetLocation = [StoryRefreshSelectionDecision targetLocationWithActiveStoryLocation:storiesCollection.locationOfActiveStory
                                                                                          storyLocationsCount:storiesCollection.storyLocationsCount];
             NSInteger targetIndex = [storiesCollection indexFromLocation:targetLocation];
@@ -2100,9 +2096,10 @@ static inline double NBDailyBriefingElapsedMs(CFTimeInterval start) {
             appDelegate.storyPagesViewController.previousPage.pageIndex = -2;
             [appDelegate.storyPagesViewController changePage:targetLocation animated:NO];
         } else {
-            NSLog(@"📍 finishedLoadingFeed: storyChanged=NO, calling resizeScrollView+setStoryFromScroll");
             [appDelegate.storyPagesViewController resizeScrollView];
-            [appDelegate.storyPagesViewController setStoryFromScroll:YES];
+            if ([StoryRefreshPagingDecision shouldSyncCurrentStoryAfterRefreshWithFeedPage:feedPage]) {
+                [appDelegate.storyPagesViewController setStoryFromScroll:YES];
+            }
         }
     }
     [appDelegate.storyPagesViewController advanceToNextUnread];
@@ -5153,7 +5150,6 @@ didEndSwipingSwipingWithState:(MCSwipeTableViewCellState)state
 }
 
 - (void)changeActiveFeedDetailRow {
-    NSLog(@"📍 changeActiveFeedDetailRow called. isLegacy=%d, caller=%@", self.isLegacyTable, [NSThread callStackSymbols]);
     if (!self.isLegacyTable) {
         [self reload];
         return;
@@ -5190,7 +5186,7 @@ didEndSwipingSwipingWithState:(MCSwipeTableViewCellState)state
     cellRect = [storyTitlesTable convertRect:cellRect toView:storyTitlesTable.superview];
     
     BOOL completelyVisible = CGRectContainsRect(storyTitlesTable.frame, cellRect);
-    if (!completelyVisible && [storyTitlesTable numberOfRowsInSection:0] > 0) {
+    if (!completelyVisible && ![indexPath isEqual:oldIndexPath] && [storyTitlesTable numberOfRowsInSection:0] > 0) {
         [storyTitlesTable scrollToRowAtIndexPath:offsetIndexPath 
                                 atScrollPosition:UITableViewScrollPositionTop 
                                         animated:YES];
