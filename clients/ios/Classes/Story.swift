@@ -7,27 +7,33 @@
 //
 
 import Foundation
+import SwiftUI
 
 // The Folder, Feed, Story, and StoryCache classes could be quite useful going forward; Rather than calling getStory() to get the dictionary, could have a variation that returns a Story instance. Could fetch from the cache if available, or make and cache one from the dictionary. Would need to remove it from the cache when changing anything about a story. Could perhaps make the cache part of StoriesCollection.
 
 /// A story, wrapping the dictionary representation.
-@MainActor class Story: Identifiable {
+///
+/// `isRead`, `isSaved`, and `isShared` are `@Published` so SwiftUI views that
+/// observe a Story via `@ObservedObject` (see `FeedDetailCardView.swift`)
+/// re-render when these flip. Without this, grid-view cards don't re-dim after
+/// the auto-mark-read timer fires.
+@MainActor class Story: Identifiable, ObservableObject {
     let id: String
     let index: Int
 
     var dictionary = AnyDictionary()
-    
+
     var feed: Feed?
-    
+
     var title = ""
     var shortContent = ""
     var longContent = ""
     var dateString = ""
     var timestamp = 0
-    var isRead = false
+    @Published var isRead = false
     var isReadAvailable = true
-    var isSaved = false
-    var isShared = false
+    @Published var isSaved = false
+    @Published var isShared = false
     var score = 0
     var hash = ""
     var author = ""
@@ -68,8 +74,20 @@ import Foundation
         guard let classifiers = feed?.classifiers(for: "authors") else {
             return []
         }
-        
+
         return [training(name: author, classifierKey: "authors", score: classifiers[author] as? Int ?? 0)]
+    }
+
+    var authorRegexes: [Feed.Training] {
+        guard let classifiers = feed?.classifiers(for: "author_regex") else {
+            return []
+        }
+
+        let keys = classifiers.keys.compactMap { $0 as? String }
+        let matches = keys.filter { regexMatches($0, in: author) }
+        let sorted = matches.sorted()
+
+        return sorted.map { training(name: $0, classifierKey: "author_regex", score: classifiers[$0] as? Int ?? 0) }
     }
     
     var tags: [Feed.Training] {

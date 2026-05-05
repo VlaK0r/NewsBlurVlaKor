@@ -1,20 +1,23 @@
 package com.newsblur.activity
 
 import android.content.ComponentCallbacks2
-import android.graphics.Rect
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Rect
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MenuItem
 import android.view.MotionEvent
-import android.view.View
 import android.view.VelocityTracker
+import android.view.View
 import android.view.ViewConfiguration
 import android.view.animation.DecelerateInterpolator
-import android.widget.Toast
+import android.widget.FrameLayout
+import android.widget.TextView
 import androidx.activity.BackEventCompat
 import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.FragmentManager
@@ -24,6 +27,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.viewpager.widget.ViewPager
 import androidx.viewpager.widget.ViewPager.OnPageChangeListener
 import com.google.android.material.progressindicator.CircularProgressIndicator
+import com.google.android.material.snackbar.Snackbar
 import com.newsblur.R
 import com.newsblur.database.ReadingAdapter
 import com.newsblur.databinding.ActivityReadingBinding
@@ -91,23 +95,52 @@ internal fun resolveOverlayRightAction(
 internal data class ReadingConfigChangeRestore(
     val storyHash: String,
     val scrollPosRel: Float,
+    val story: Story? = null,
 )
 
-internal fun shouldReleaseReaderWebViewsOnTrim(
+internal enum class ReaderWebViewReleaseScope {
+    NONE,
+    BACKGROUND_ONLY,
+    ALL,
+}
+
+internal fun readerWebViewReleaseScopeForTrim(
     level: Int,
     isChangingConfigurations: Boolean,
-): Boolean = level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN && !isChangingConfigurations
+): ReaderWebViewReleaseScope =
+    when {
+        isChangingConfigurations -> ReaderWebViewReleaseScope.NONE
+        level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> ReaderWebViewReleaseScope.ALL
+        level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> ReaderWebViewReleaseScope.BACKGROUND_ONLY
+        else -> ReaderWebViewReleaseScope.NONE
+    }
 
 internal fun createReadingConfigChangeRestore(
     storyHash: String?,
     scrollPosRel: Float?,
+    story: Story? = null,
 ): ReadingConfigChangeRestore? =
-    storyHash?.let {
+    storyHash?.let { hash ->
         ReadingConfigChangeRestore(
-            storyHash = it,
+            storyHash = hash,
             scrollPosRel = scrollPosRel ?: 0f,
+            story = story?.takeIf { currentStory -> currentStory.storyHash == hash }?.copyForBundle(),
         )
     }
+
+internal fun createReadingConfigChangeRestore(
+    visibleStory: Story?,
+    pagerStory: Story?,
+    fallbackStoryHash: String?,
+    scrollPosRel: Float?,
+): ReadingConfigChangeRestore? {
+    val story = visibleStory ?: pagerStory
+    return createReadingConfigChangeRestore(
+        storyHash = story?.storyHash ?: fallbackStoryHash,
+        scrollPosRel = scrollPosRel,
+        story = story,
+    )
+}
 
 internal fun mergeRestoredStoryIntoStories(
     stories: List<Story>,
@@ -121,9 +154,12 @@ internal fun mergeRestoredStoryIntoStories(
 
     val mergedStories = stories.toMutableList()
     val insertIndex =
-        mergedStories.indexOfFirst { existingStory ->
-            shouldInsertRestoredStoryBefore(restoreStory, existingStory, storyOrder)
-        }.let { if (it >= 0) it else mergedStories.size }
+        mergedStories
+            .indexOfFirst { existingStory ->
+                shouldInsertRestoredStoryBefore(restoreStory, existingStory, storyOrder)
+            }.let {
+                if (it >= 0) it else mergedStories.size
+            }
     mergedStories.add(insertIndex, restoreStory)
     return mergedStories
 }
@@ -269,6 +305,11 @@ abstract class Reading :
         intelState = prefsRepo.getStateFilter()
         volumeKeyNavigation = prefsRepo.getVolumeKeyNavigation()
         markStoryReadBehavior = prefsRepo.getMarkStoryReadBehavior()
+        logReaderRestore(
+            "onCreate saved=${savedInstanceBundle != null} storyHash=$storyHash " +
+                "restored=${storyDebug(restoredCurrentStory)} mark=$markStoryReadBehavior " +
+                "loadNext=${prefsRepo.loadNextOnMarkRead()} fs=${feedSetDebug()}",
+        )
 
         setupViews()
         setupListeners()
@@ -279,6 +320,12 @@ abstract class Reading :
 
     override fun onSaveInstanceState(savedInstanceState: Bundle) {
         super.onSaveInstanceState(savedInstanceState)
+        val activeStory = activeReadingStory()
+        val pagerStory = pagerReadingStory()
+        logReaderRestore(
+            "onSave storyHash=$storyHash active=${storyDebug(activeStory)} pager=${storyDebug(pagerStory)} " +
+                "pagerIndex=${pager?.currentItem ?: -1} count=${readingAdapter?.count ?: -1}",
+        )
         if (storyHash != null) {
             savedInstanceState.putString(EXTRA_STORY_HASH, storyHash)
         } else if (pager != null) {
@@ -331,15 +378,21 @@ abstract class Reading :
 
     override fun onStop() {
         if (!isChangingConfigurations) {
-            readingAdapter?.releaseBackgroundWebViews()
+            readingAdapter?.releaseBackgroundWebViews(currentReadingStory()?.storyHash)
         }
         super.onStop()
     }
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (shouldReleaseReaderWebViewsOnTrim(level, isChangingConfigurations)) {
-            readingAdapter?.releaseBackgroundWebViews()
+        when (readerWebViewReleaseScopeForTrim(level, isChangingConfigurations)) {
+            ReaderWebViewReleaseScope.BACKGROUND_ONLY ->
+                readingAdapter?.releaseBackgroundWebViews(currentReadingStory()?.storyHash)
+
+            ReaderWebViewReleaseScope.ALL ->
+                readingAdapter?.releaseBackgroundWebViews()
+
+            ReaderWebViewReleaseScope.NONE -> Unit
         }
     }
 
@@ -353,9 +406,15 @@ abstract class Reading :
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         pendingConfigChangeRestore = captureReadingConfigChangeRestore()
+        logReaderRestore(
+            "onConfigurationChanged captured=${restoreDebug(pendingConfigChangeRestore)} " +
+                "active=${storyDebug(activeReadingStory())} pager=${storyDebug(pagerReadingStory())} " +
+                "priorStoryHash=$storyHash",
+        )
         pendingConfigChangeRestore?.let { restore ->
             storyHash = restore.storyHash
             restoredStoryScrollPosRel = restore.scrollPosRel
+            restoredCurrentStory = restore.story
             isRestoringState = true
         }
 
@@ -391,17 +450,27 @@ abstract class Reading :
         updateBackSwipeGestureExclusion()
     }
 
-    private fun captureReadingConfigChangeRestore(): ReadingConfigChangeRestore? =
-        createReadingConfigChangeRestore(
-            storyHash = currentReadingStoryHash(),
+    private fun captureReadingConfigChangeRestore(): ReadingConfigChangeRestore? {
+        val activeStory = activeReadingStory()
+        val pagerStory = pagerReadingStory()
+        logReaderRestoreMismatch("capture", activeStory, pagerStory)
+        return createReadingConfigChangeRestore(
+            visibleStory = activeStory,
+            pagerStory = pagerStory,
+            fallbackStoryHash = storyHash,
             scrollPosRel = readingFragment?.prepareForConfigurationChange(),
         )
+    }
 
-    private fun currentReadingStoryHash(): String? =
+    private fun currentReadingStory(): Story? = activeReadingStory() ?: pagerReadingStory()
+
+    private fun activeReadingStory(): Story? = readingAdapter?.getActiveStory()
+
+    private fun pagerReadingStory(): Story? =
         if (pager == null || readingAdapter == null) {
-            storyHash
+            null
         } else {
-            readingAdapter!!.getStory(pager!!.currentItem)?.storyHash ?: storyHash
+            readingAdapter!!.getStory(pager!!.currentItem)
         }
 
     private fun restoreReadingAfterConfigurationChange() {
@@ -416,14 +485,24 @@ abstract class Reading :
             }
 
             val restorePosition = adapter.findHash(restore.storyHash)
+            logReaderRestore(
+                "restore post restore=${restoreDebug(restore)} position=$restorePosition " +
+                    "pagerIndex=${pager.currentItem} count=${adapter.count}",
+            )
             if (restorePosition >= 0) {
                 pager.setCurrentItem(restorePosition, false)
                 onPageSelected(restorePosition)
+                loadActiveStories()
+            } else if (restore.story != null) {
+                loadActiveStories()
+            } else {
+                storyHash = null
+                restoredCurrentStory = null
+                isRestoringState = false
+                logReaderRestore("restore abandoned missing target=${restore.storyHash}")
             }
 
-            storyHash = null
             pendingConfigChangeRestore = null
-            isRestoringState = false
         }
     }
 
@@ -452,8 +531,8 @@ abstract class Reading :
                 override fun handleOnBackStarted(backEvent: BackEventCompat) {
                     predictiveBackInProgress =
                         supportsPredictiveReaderBack() &&
-                            isInteractiveReaderBackEnabled() &&
-                            backEvent.swipeEdge == BackEventCompat.EDGE_LEFT
+                        isInteractiveReaderBackEnabled() &&
+                        backEvent.swipeEdge == BackEventCompat.EDGE_LEFT
                     if (predictiveBackInProgress) {
                         beginInteractiveReaderBackSwipe()
                     }
@@ -533,6 +612,16 @@ abstract class Reading :
         lastBatchFirstUnreadIndex = stories.indexOfFirst { !it.read }
         storyCounts = stories.size
 
+        val activeStory = activeReadingStory()
+        val pagerStory = pagerReadingStory()
+        logReaderRestoreMismatch("setStoryData", activeStory, pagerStory)
+        logReaderRestore(
+            "setStoryData load=${batch.loadId} raw=${batch.stories.size} merged=${stories.size} " +
+                "target=$storyHash targetInRaw=${storyHash?.let { target -> batch.stories.any { it.storyHash == target } }} " +
+                "restored=${storyDebug(restoredCurrentStory)} active=${storyDebug(activeStory)} " +
+                "pager=${storyDebug(pagerStory)} pagerIndex=${pager?.currentItem ?: -1} " +
+                "first=[${storiesDebug(stories)}]",
+        )
         com.newsblur.util.Log
             .d(this.javaClass.name, "loaded stories count: ${stories.size}")
         if (stories.isEmpty()) {
@@ -578,6 +667,10 @@ abstract class Reading :
 
         if (stopLoading) return
 
+        logReaderRestore(
+            "skipPagerToStoryHash target=$storyHash position=$position stopLoading=$stopLoading " +
+                "firstUnread=$lastBatchFirstUnreadIndex count=${readingAdapter?.count ?: -1}",
+        )
         if (position >= 0) {
             pager!!.setCurrentItem(position, false)
             onPageSelected(position)
@@ -703,11 +796,16 @@ abstract class Reading :
     }
 
     override fun onPageSelected(position: Int) {
+        val isRestoringSelection = isRestoringState
         lifecycleScope.executeAsyncTask(
             doInBackground = {
                 readingAdapter?.let { readingAdapter ->
                     val story = readingAdapter.getStory(position)
                     if (story != null) {
+                        logReaderRestore(
+                            "onPageSelected position=$position story=${storyDebug(story)} " +
+                                "restoring=$isRestoringSelection current=${pager?.currentItem ?: -1} count=${readingAdapter.count}",
+                        )
                         beginReadTimeTracking(story.storyHash)
                         synchronized(pageHistory) {
                             // if the history is just starting out or the last entry in it isn't this page, add this page
@@ -718,7 +816,7 @@ abstract class Reading :
 
                         // Don't mark stories read during activity recreation (e.g., rotation).
                         // The user is still on the same story, not navigating to a new one.
-                        if (!isRestoringState) {
+                        if (!isRestoringSelection) {
                             triggerMarkStoryReadBehavior(story)
                         }
                     }
@@ -1049,30 +1147,37 @@ abstract class Reading :
             return
         }
 
-        val snackbar = com.google.android.material.snackbar.Snackbar.make(
-            binding.root,
-            message,
-            com.google.android.material.snackbar.Snackbar.LENGTH_SHORT,
-        )
+        val snackbar =
+            Snackbar.make(
+                binding.root,
+                message,
+                Snackbar.LENGTH_SHORT,
+            )
         snackbar.anchorView = binding.contentBottomOverlay
         val snackView = snackbar.view
-        val params = snackView.layoutParams as android.widget.FrameLayout.LayoutParams
-        params.width = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
-        params.gravity = android.view.Gravity.CENTER_HORIZONTAL or android.view.Gravity.BOTTOM
+        val params = snackView.layoutParams as FrameLayout.LayoutParams
+        params.width = FrameLayout.LayoutParams.WRAP_CONTENT
+        params.gravity = Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM
         snackView.layoutParams = params
-        snackView.background = android.graphics.drawable.GradientDrawable().apply {
-            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            cornerRadius = UIUtils.dp2px(this@Reading, 20f)
-            setColor(traverseBar.palette.groupBackgroundColor)
-        }
-        val textView = snackView.findViewById<android.widget.TextView>(com.google.android.material.R.id.snackbar_text)
-        textView.setTextColor(traverseBar.palette.tintColor)
-        textView.textAlignment = android.view.View.TEXT_ALIGNMENT_CENTER
-        snackbar.addCallback(object : com.google.android.material.snackbar.Snackbar.Callback() {
-            override fun onDismissed(transientBottomBar: com.google.android.material.snackbar.Snackbar?, event: Int) {
-                if (activeUnreadSnackbar === transientBottomBar) activeUnreadSnackbar = null
+        snackView.background =
+            GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = UIUtils.dp2px(this@Reading, 20f)
+                setColor(traverseBar.palette.groupBackgroundColor)
             }
-        })
+        val textView = snackView.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
+        textView.setTextColor(traverseBar.palette.tintColor)
+        textView.textAlignment = View.TEXT_ALIGNMENT_CENTER
+        snackbar.addCallback(
+            object : Snackbar.Callback() {
+                override fun onDismissed(
+                    transientBottomBar: Snackbar?,
+                    event: Int,
+                ) {
+                    if (activeUnreadSnackbar === transientBottomBar) activeUnreadSnackbar = null
+                }
+            },
+        )
         activeUnreadSnackbar = snackbar
         snackbar.show()
     }
@@ -1087,8 +1192,7 @@ abstract class Reading :
 
     private fun overlaySendClick() {
         if (readingAdapter == null || pager == null) return
-        val story = readingAdapter!!.getStory(pager!!.currentItem)
-        feedUtils.sendStoryUrl(story, this)
+        feedUtils.sendStoryUrl(currentReadingStory(), this)
     }
 
     private fun overlayTextClick() {
@@ -1105,7 +1209,7 @@ abstract class Reading :
             if (readingAdapter == null || pager == null) {
                 null
             } else {
-                readingAdapter!!.getExistingItem(pager!!.currentItem)
+                readingAdapter!!.getActiveItem() ?: readingAdapter!!.getExistingItem(pager!!.currentItem)
             }
 
     fun viewModeChanged() {
@@ -1205,9 +1309,13 @@ abstract class Reading :
 
     private fun triggerMarkStoryReadBehavior(story: Story) {
         markStoryReadJob?.cancel()
-        if (story.read) return
+        if (story.read) {
+            logReaderRestore("markBehavior skipped alreadyRead ${storyDebug(story)}")
+            return
+        }
 
         val delayMillis = markStoryReadBehavior.getDelayMillis()
+        logReaderRestore("markBehavior story=${storyDebug(story)} delayMs=$delayMillis")
         if (delayMillis >= 0) {
             markStoryReadJob =
                 createMarkStoryReadJob(story, delayMillis).also {
@@ -1226,6 +1334,7 @@ abstract class Reading :
         }
 
     fun markStoryAsRead(story: Story) {
+        logReaderRestore("markStoryAsRead story=${storyDebug(story)} loadNext=${prefsRepo.loadNextOnMarkRead()}")
         val readTimesJson = readTimeTracker.drainReadTimesForMarkedStory(story.storyHash)
         feedUtils.syncStoryAsRead(story, this, readTimesJson)
     }
@@ -1282,7 +1391,7 @@ abstract class Reading :
                     com.newsblur.util.Log
                         .d(this@Reading.javaClass.name, "Finish reading at position $position")
                     putExtra(LAST_READING_POS, position)
-                    readingAdapter?.getStory(position)?.storyHash?.let { storyHash ->
+                    (currentReadingStory() ?: readingAdapter?.getStory(position))?.storyHash?.let { storyHash ->
                         putExtra(LAST_READING_STORY_HASH, storyHash)
                     }
                 }
@@ -1428,6 +1537,53 @@ abstract class Reading :
                 emptyList()
             }
     }
+
+    private fun logReaderRestore(message: String) {
+        com.newsblur.util.Log
+            .d(this.javaClass.name, "reader_restore $message")
+    }
+
+    private fun logReaderRestoreMismatch(
+        phase: String,
+        activeStory: Story?,
+        pagerStory: Story?,
+    ) {
+        val activeHash = activeStory?.storyHash
+        val pagerHash = pagerStory?.storyHash
+        if (activeHash.isNullOrBlank() || pagerHash.isNullOrBlank() || activeHash == pagerHash) return
+
+        logReaderRestore(
+            "mismatch phase=$phase active=${storyDebug(activeStory)} pager=${storyDebug(pagerStory)} " +
+                "storyHash=$storyHash restored=${storyDebug(restoredCurrentStory)} " +
+                "pagerIndex=${pager?.currentItem ?: -1} count=${readingAdapter?.count ?: -1} " +
+                "mark=$markStoryReadBehavior loadNext=${prefsRepo.loadNextOnMarkRead()} fs=${feedSetDebug()}",
+        )
+    }
+
+    private fun restoreDebug(restore: ReadingConfigChangeRestore?): String =
+        restore?.let { "${it.storyHash}@${it.scrollPosRel}:${storyDebug(it.story)}" } ?: "null"
+
+    private fun storyDebug(story: Story?): String = story?.let { "${it.storyHash}:${if (it.read) "read" else "unread"}" } ?: "null"
+
+    private fun storiesDebug(stories: List<Story>): String =
+        stories
+            .take(3)
+            .joinToString(",") { storyDebug(it) }
+
+    private fun feedSetDebug(): String =
+        fs?.let { feedSet ->
+            when {
+                feedSet.isAllNormal -> "all"
+                feedSet.isFolder -> "folder:${feedSet.folderName}:${feedSet.multipleFeeds?.size ?: 0}"
+                feedSet.isSingleNormal -> "feed:${feedSet.singleFeed}"
+                feedSet.isAllSaved -> "saved"
+                feedSet.isAllRead -> "read"
+                feedSet.isGlobalShared -> "global-shared"
+                feedSet.isInfrequent -> "infrequent"
+                feedSet.isDailyBriefing -> "daily-briefing"
+                else -> feedSet.toCompactSerial().take(80)
+            }
+        } ?: "null"
 
     private inner class ReadingBackSwipeTouchListener : View.OnTouchListener {
         private val touchSlopPx = ViewConfiguration.get(this@Reading).scaledTouchSlop
