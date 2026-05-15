@@ -533,6 +533,31 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
         });
     },
 
+    // Sort an array of TrendingFeed Backbone models by reading attributes off the
+    // inner Feed model. Used by render_list_view_feeds so the same Sort By
+    // preference applies to the list view collections in every tab.
+    sort_feed_models: function (models) {
+        var sort_order = NEWSBLUR.assets.preference('add_site_sort_order') || 'subscribers';
+        if (!_.contains(['subscribers', 'stories', 'name'], sort_order)) sort_order = 'subscribers';
+
+        return _.sortBy(models, function (trending_feed) {
+            var feed = trending_feed.get && trending_feed.get('feed');
+            var get = function (attr) {
+                if (!feed) return null;
+                if (feed.get) return feed.get(attr);
+                return feed[attr];
+            };
+            if (sort_order === 'subscribers') {
+                return -(get('num_subscribers') || 0);
+            } else if (sort_order === 'stories') {
+                return -(get('average_stories_per_month') || 0);
+            } else if (sort_order === 'name') {
+                return (get('feed_title') || get('title') || '').toLowerCase();
+            }
+            return 0;
+        });
+    },
+
     render_active_tab: function () {
         var tab_renderers = {
             'search': 'render_search_tab',
@@ -672,13 +697,18 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
 
     bind_scroll_handler: function () {
         var self = this;
-        // Bind to all tab results containers for infinite scroll
-        var $results = this.$('.NB-add-site-tab-results');
-        if ($results.length) {
-            $results.off('scroll.infinite').on('scroll.infinite', function (e) {
+        var $scrollable = this.get_active_tab_scrollable();
+
+        this.$('.NB-add-site-tab-pane').off('scroll.infinite');
+        if ($scrollable.length) {
+            $scrollable.on('scroll.infinite', function (e) {
                 self.handle_tab_scroll(e);
             });
         }
+    },
+
+    get_active_tab_scrollable: function () {
+        return this.$('.NB-add-site-tab-pane.NB-active');
     },
 
     render_tab_search_bar: function (config) {
@@ -777,7 +807,8 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
 
         if (this.view_mode === 'grid') {
             var $grid = this.make_results_container();
-            state.trending_feeds_collection.each(function (trending_feed) {
+            var sorted_models = this.sort_feed_models(state.trending_feeds_collection.models);
+            _.each(sorted_models, function (trending_feed) {
                 var feed = trending_feed.get("feed");
                 var feed_data = feed.toJSON ? feed.toJSON() : feed;
                 $grid.append(self.render_feed_card(feed_data));
@@ -1564,6 +1595,8 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
             return;
         }
 
+        feeds = this.sort_feeds(feeds);
+
         var $grid = this.make_results_container();
         _.each(feeds, function(feed) {
             $grid.append(self.render_popular_card(feed));
@@ -1821,6 +1854,8 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
             return;
         }
 
+        channels = this.sort_feeds(channels);
+
         var $grid = this.make_results_container();
         _.each(channels, function(channel) {
             $grid.append(self.render_youtube_card(channel));
@@ -2045,6 +2080,8 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
             }
             subreddits = state.popular_subreddits;
         }
+
+        subreddits = this.sort_feeds(subreddits);
 
         var $grid = self.make_results_container();
         _.each(subreddits, function(subreddit) {
@@ -2352,6 +2389,8 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
             return;
         }
 
+        newsletters = this.sort_feeds(newsletters);
+
         var $grid = self.make_results_container();
         _.each(newsletters, function(newsletter) {
             $grid.append(self.render_newsletter_card(newsletter));
@@ -2520,6 +2559,8 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
             $content.html($.make('div', { className: 'NB-add-site-empty-state' }, empty_msg));
             return;
         }
+
+        podcasts = this.sort_feeds(podcasts);
 
         var $grid = self.make_results_container();
         _.each(podcasts, function(podcast) {
@@ -3212,7 +3253,7 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
 
         // Scroll subscribe section into view
         setTimeout(_.bind(function () {
-            var $scrollable = this.$('.NB-add-site-webfeed-content');
+            var $scrollable = this.get_active_tab_scrollable();
             if ($scrollable.length && $subscribe.length) {
                 $scrollable.animate({ scrollTop: $scrollable[0].scrollHeight }, 2000, 'swing');
             }
@@ -3769,7 +3810,7 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
     },
 
     _scroll_popular_to_top: function () {
-        var $scrollable = this.$('.NB-add-site-tab-results');
+        var $scrollable = this.get_active_tab_scrollable();
         if ($scrollable.length) {
             $scrollable.scrollTop(0);
         }
@@ -3839,7 +3880,13 @@ NEWSBLUR.Views.AddSiteView = Backbone.View.extend({
         var stories_limit = this.get_stories_limit();
         var feed_key = options.feed_key || 'on_popular_feed';
 
-        collection.each(function (feed_model) {
+        // Honor the Sort By preference from the Style popover. The collection's
+        // native order comes from the API (trending score / popular ranking), so
+        // we sort the model list here before iterating instead of mutating the
+        // collection.
+        var sorted_models = this.sort_feed_models(collection.models);
+
+        _.each(sorted_models, function (feed_model) {
             var $badge_content = [
                 new NEWSBLUR.Views.FeedBadge({
                     model: feed_model.get("feed"),
