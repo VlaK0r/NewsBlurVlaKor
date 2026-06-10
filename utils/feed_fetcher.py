@@ -66,6 +66,7 @@ from utils.bluesky_fetcher import enrich_bluesky_entries, is_bluesky_feed
 from utils.facebook_fetcher import FacebookFetcher
 from utils.feed_functions import (
     TimeoutError,
+    is_youtube_feed_address,
     strip_underscore_from_feed_address,
     timelimit,
 )
@@ -77,6 +78,7 @@ from utils.story_functions import (
     strip_tags,
 )
 from utils.twitter_fetcher import TwitterFetcher
+from utils.url_safety import UnsafeUrlError, safe_requests_get, validate_public_url
 from utils.youtube_fetcher import YoutubeFetcher
 
 
@@ -169,6 +171,11 @@ def fetch_url_with_scrapingbee(url):
     api_key = getattr(settings, "SCRAPINGBEE_API_KEY", None)
     if not api_key:
         return None, None
+    try:
+        validate_public_url(url)
+    except UnsafeUrlError as e:
+        logging.debug("   ***> ScrapingBee standalone URL rejected for %s: %s" % (url, e))
+        return None, None
 
     params = {
         "api_key": api_key,
@@ -257,7 +264,15 @@ class FetchFeed:
         except ValueError:
             clean_address = address
 
-        if "youtube.com" in address:
+        try:
+            if address.startswith("http"):
+                validate_public_url(address)
+        except UnsafeUrlError as e:
+            logging.debug("   ***> [%-30s] ~FRUnsafe feed URL rejected: %s" % (self.feed.log_title[:30], e))
+            self.feed.save_feed_history(401, "Unsafe URL", e)
+            return FEED_ERRHTTP, None
+
+        if is_youtube_feed_address(address):
             youtube_feed = self.fetch_youtube()
             if not youtube_feed:
                 logging.debug(
@@ -376,8 +391,8 @@ class FetchFeed:
                 if etag or modified:
                     headers["A-IM"] = "feed"
                 try:
-                    raw_feed = requests.get(address, headers=headers, timeout=15)
-                except (requests.adapters.ConnectionError, TimeoutError):
+                    raw_feed = safe_requests_get(address, headers=headers, timeout=15)
+                except (UnsafeUrlError, requests.adapters.ConnectionError, TimeoutError):
                     raw_feed = None
                 if raw_feed and raw_feed.status_code == 304:
                     logging.debug("   ---> [%-30s] ~FGFeed not modified (304)" % (self.feed.log_title[:30]))
@@ -404,7 +419,7 @@ class FetchFeed:
                                 "   ***> [%-30s] ~FRFeed fetch was %s status code, trying fake user agent: %s"
                                 % (self.feed.log_title[:30], raw_feed.status_code, raw_feed.headers)
                             )
-                            raw_feed = requests.get(
+                            raw_feed = safe_requests_get(
                                 self.feed.feed_address,
                                 headers=self.feed.fetch_headers(fake=True),
                                 timeout=15,
@@ -420,7 +435,7 @@ class FetchFeed:
                                 "   ***> [%-30s] ~FRJson feed fetch timed out, trying fake headers: %s"
                                 % (self.feed.log_title[:30], address)
                             )
-                            raw_feed = requests.get(
+                            raw_feed = safe_requests_get(
                                 self.feed.feed_address,
                                 headers=self.feed.fetch_headers(fake=True),
                                 timeout=15,
@@ -444,7 +459,7 @@ class FetchFeed:
                                 "   ***> [%-30s] ~FRBot challenge page detected, retrying without browser UA suffix"
                                 % (self.feed.log_title[:30])
                             )
-                            raw_feed = requests.get(
+                            raw_feed = safe_requests_get(
                                 self.feed.feed_address,
                                 headers=self.feed.fetch_headers(plain=True),
                                 timeout=15,
@@ -534,10 +549,16 @@ class FetchFeed:
 
         if (not self.fpf or self.options.get("force_fp", False)) and "openrss.org" not in address:
             try:
+                # Only HTTP(S) addresses can be SSRF vectors. Non-HTTP addresses
+                # (e.g. local file paths in test fixtures) are read directly by
+                # feedparser and must skip validation, matching the guard above.
+                if address.startswith("http"):
+                    validate_public_url(address)
                 # When feedparser fetches the URL itself, we cannot preprocess the content first
                 # We'll have to rely on feedparser's built-in handling here
                 self.fpf = feedparser.parse(address, agent=self.feed.user_agent, etag=etag, modified=modified)
             except (
+                UnsafeUrlError,
                 TypeError,
                 ValueError,
                 KeyError,
@@ -558,9 +579,15 @@ class FetchFeed:
                 logging.debug(
                     "   ***> [%-30s] ~FRTurning off headers: %s" % (self.feed.log_title[:30], address)
                 )
+                # Only HTTP(S) addresses can be SSRF vectors. Non-HTTP addresses
+                # (e.g. local file paths in test fixtures) are read directly by
+                # feedparser and must skip validation, matching the guard above.
+                if address.startswith("http"):
+                    validate_public_url(address)
                 # Another direct URL fetch that bypasses our preprocessing
                 self.fpf = feedparser.parse(address, agent=self.feed.user_agent)
             except (
+                UnsafeUrlError,
                 TypeError,
                 ValueError,
                 KeyError,
@@ -631,6 +658,14 @@ class FetchFeed:
 
     def fetch_scrapingbee(self, js_scrape=False):
         url = "https://app.scrapingbee.com/api/v1"
+        try:
+            validate_public_url(self.feed.feed_address)
+        except UnsafeUrlError as e:
+            logging.debug(
+                "   ***> [%-30s] ~FRScrapingBee target URL rejected: %s"
+                % (self.feed.log_title[:30], e)
+            )
+            return None, None
         params = {
             "api_key": settings.SCRAPINGBEE_API_KEY,
             "url": self.feed.feed_address,
@@ -705,6 +740,14 @@ class FetchFeed:
         url = "https://scrapeninja.p.rapidapi.com/scrape"
         if js_scrape:
             url = "https://scrapeninja.p.rapidapi.com/scrape-js"
+        try:
+            validate_public_url(self.feed.feed_address)
+        except UnsafeUrlError as e:
+            logging.debug(
+                "   ***> [%-30s] ~FRScrapeNinja target URL rejected: %s"
+                % (self.feed.log_title[:30], e)
+            )
+            return None, None
 
         payload = {"url": self.feed.feed_address}
 
@@ -787,7 +830,7 @@ class FetchFeed:
         # incorrectly marked forbidden because the browser UA triggered a
         # bot challenge (e.g., Anubis), while the plain feed fetcher UA works fine.
         try:
-            plain_resp = requests.get(
+            plain_resp = safe_requests_get(
                 self.feed.feed_address,
                 headers=self.feed.fetch_headers(plain=True),
                 timeout=15,
@@ -1237,7 +1280,7 @@ class ProcessFeed:
                 hub_url = link.get("href")
             elif link.get("rel") == "self":
                 self_url = link.get("href")
-        if not hub_url and "youtube.com" in self_url:
+        if not hub_url and is_youtube_feed_address(self_url):
             hub_url = "https://pubsubhubbub.appspot.com/subscribe"
             channel_id = self_url.split("channel_id=")
             if len(channel_id) > 1:
@@ -1504,6 +1547,15 @@ class FeedFetcherWorker:
             if not feed:
                 continue
 
+            # utils/feed_fetcher.py: pull the feed's self-declared images (Atom <icon>/<logo>)
+            # from the parsed feed before the page fetch (which can reset fetched_feed) so
+            # IconImporter can prefer them over a site-derived favicon. (forum #13719)
+            declared_icon_url = ""
+            declared_logo_url = ""
+            if fetched_feed and hasattr(fetched_feed, "feed"):
+                declared_icon_url = (fetched_feed.feed.get("icon") or "").strip()
+                declared_logo_url = (fetched_feed.feed.get("logo") or "").strip()
+
             if (
                 (self.options["force"])
                 or (random.random() > 0.9)
@@ -1547,7 +1599,13 @@ class FeedFetcherWorker:
                 force = self.options["force"]
                 if random.random() > 0.99:
                     force = True
-                icon_importer = IconImporter(feed, page_data=page_data, force=force)
+                icon_importer = IconImporter(
+                    feed,
+                    page_data=page_data,
+                    force=force,
+                    declared_icon_url=declared_icon_url,
+                    declared_logo_url=declared_logo_url,
+                )
                 try:
                     icon_importer.save()
                     icon_duration = time.time() - start_duration

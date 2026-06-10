@@ -58,6 +58,7 @@ from utils import log as logging
 from utils import urlnorm
 from utils.feed_functions import (
     TimeoutError,
+    is_youtube_feed_address,
     levenshtein_distance,
     relative_timesince,
     seconds_timesince,
@@ -73,6 +74,7 @@ from utils.story_functions import (
     strip_comments__lxml,
     strip_tags,
 )
+from utils.url_safety import UnsafeUrlError, safe_requests_get, validate_public_url
 from vendor.timezones.utilities import localtime_for_timezone
 
 ENTRY_NEW, ENTRY_UPDATED, ENTRY_SAME, ENTRY_ERR = list(range(4))
@@ -240,7 +242,7 @@ class Feed(models.Model):
 
     @property
     def is_youtube_feed(self):
-        return "youtube.com" in self.feed_address
+        return is_youtube_feed_address(self.feed_address)
 
     @property
     def is_google_news_feed(self):
@@ -596,22 +598,26 @@ class Feed(models.Model):
         if url and url.startswith("@") and "@" in url[1:]:
             username, domain = url[1:].split("@")
             url = f"https://{domain}/users/{username}.rss"
-        if url and "youtube.com/user/" in url:
-            username = re.search("youtube.com/user/(\w+)", url).group(1)
-            url = "http://gdata.youtube.com/feeds/base/users/%s/uploads" % username
-            without_rss = True
-        if url and "youtube.com/@" in url:
-            username = url.split("youtube.com/@")[1]
-            url = "http://gdata.youtube.com/feeds/base/users/%s/uploads" % username
-            without_rss = True
-        if url and "youtube.com/channel/" in url:
-            channel_id = re.search("youtube.com/channel/([-_\w]+)", url).group(1)
-            url = "https://www.youtube.com/feeds/videos.xml?channel_id=%s" % channel_id
-            without_rss = True
-        if url and "youtube.com/feeds" in url:
-            without_rss = True
-        if url and "youtube.com/playlist" in url:
-            without_rss = True
+        # Only rewrite when YouTube actually serves the URL. Privacy proxies like
+        # openrss.org embed the channel URL in their path, so guard on the host to
+        # avoid hijacking https://openrss.org/www.youtube.com/@user/videos.
+        if url and is_youtube_feed_address(url):
+            if "youtube.com/user/" in url:
+                username = re.search("youtube.com/user/(\w+)", url).group(1)
+                url = "http://gdata.youtube.com/feeds/base/users/%s/uploads" % username
+                without_rss = True
+            if "youtube.com/@" in url:
+                username = url.split("youtube.com/@")[1]
+                url = "http://gdata.youtube.com/feeds/base/users/%s/uploads" % username
+                without_rss = True
+            if "youtube.com/channel/" in url:
+                channel_id = re.search("youtube.com/channel/([-_\w]+)", url).group(1)
+                url = "https://www.youtube.com/feeds/videos.xml?channel_id=%s" % channel_id
+                without_rss = True
+            if "youtube.com/feeds" in url:
+                without_rss = True
+            if "youtube.com/playlist" in url:
+                without_rss = True
         if url and "reddit.com/r/" in url and url.endswith(".rss"):
             without_rss = True
         if url and "/wp-json/wp/v2/posts" in url:
@@ -666,6 +672,11 @@ class Feed(models.Model):
         url = urlnorm.normalize(url)
         if not url:
             logging.debug(" ---> ~FRCouldn't normalize url: ~SB%s" % url)
+            return
+        try:
+            validate_public_url(url)
+        except UnsafeUrlError as e:
+            logging.debug(" ---> ~FRUnsafe feed URL rejected: ~SB%s~SN (%s)" % (url, e))
             return
 
         feed = by_url(url)
@@ -730,8 +741,9 @@ class Feed(models.Model):
         # Check for JSON feed
         if not feed and fetch and create:
             try:
-                r = requests.get(url, timeout=10)
+                r = safe_requests_get(url, timeout=10)
             except (
+                UnsafeUrlError,
                 requests.ConnectionError,
                 requests.models.InvalidURL,
                 requests.ReadTimeout,
@@ -939,13 +951,18 @@ class Feed(models.Model):
             found_feed_urls = []
             try:
                 logging.debug(" ---> Checking: %s" % self.feed_address)
+                validate_public_url(self.feed_address)
                 found_feed_urls = feedfinder_forman.find_feeds(self.feed_address)
                 if found_feed_urls:
                     feed_address = found_feed_urls[0]
-            except KeyError:
+            except (KeyError, UnsafeUrlError):
                 pass
             if not len(found_feed_urls) and self.feed_link:
-                found_feed_urls = feedfinder_forman.find_feeds(self.feed_link)
+                try:
+                    validate_public_url(self.feed_link)
+                    found_feed_urls = feedfinder_forman.find_feeds(self.feed_link)
+                except UnsafeUrlError:
+                    found_feed_urls = []
                 if len(found_feed_urls) and found_feed_urls[0] != self.feed_address:
                     feed_address = found_feed_urls[0]
 
@@ -3393,6 +3410,10 @@ class MFeedIcon(mongo.Document):
     data = mongo.StringField()
     icon_url = mongo.StringField()
     not_found = mongo.BooleanField(default=False)
+    # The feed's self-declared <icon> URL that apps/rss_feeds/icon_importer.py last
+    # resolved or attempted, so a broken/undecodable declared icon is not refetched
+    # on every poll. Mongo is schemaless, so adding this needs no migration.
+    declared_source_url = mongo.StringField()
 
     meta = {
         "collection": "feed_icons",
@@ -4067,7 +4088,7 @@ class MStory(mongo.Document):
                     return None
 
             try:
-                resp = requests.get(
+                resp = safe_requests_get(
                     article_url,
                     headers={"User-Agent": "NewsBlur OG Image Fetcher"},
                     timeout=8,

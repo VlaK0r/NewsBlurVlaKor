@@ -140,6 +140,7 @@ from utils.story_functions import (
     strip_tags,
     strip_tags_preserve_blockquote,
 )
+from utils.url_safety import BLOCKED_PRIVATE_URL_MESSAGE, UnsafeUrlError, validate_public_url
 from utils.user_functions import ajax_login_required, extract_user_agent, get_user
 from utils.view_functions import (
     RequestDeduplicator,
@@ -2430,6 +2431,9 @@ def load_river_stories__redis(request):
     page = int(get_post.get("page", 1))
     order = get_post.get("order", "newest")
     read_filter = get_post.get("read_filter", "unread")
+    if page > 400 and not story_hashes:
+        logging.user(request, "~BR~FK~SBOver page 400 on river stories: %s" % page)
+        raise Http404
     date_filter_start = get_post.get("date_filter_start")
     date_filter_end = get_post.get("date_filter_end")
     # Sanitize date filters - JS sends "null" as a string
@@ -2589,15 +2593,28 @@ def load_river_stories__redis(request):
             stories = Feed.format_stories(mstories)
             unread_feed_story_hashes = None
         else:
+            requested_feed_ids = list(feed_ids)
+            if read_filter == "unread":
+                cache_usersubs = UserSubscription.subs_for_feeds(
+                    user.pk, feed_ids=requested_feed_ids, read_filter="all"
+                )
+                cache_feed_ids = [sub.feed_id for sub in cache_usersubs]
+            else:
+                cache_feed_ids = []
             usersubs = UserSubscription.subs_for_feeds(user.pk, feed_ids=feed_ids, read_filter=read_filter)
             feed_ids = [sub.feed_id for sub in usersubs]
+            if not cache_feed_ids:
+                cache_feed_ids = [sub.feed_id for sub in usersubs]
             feed_ids = Feed.exclude_briefing_feeds(feed_ids)
+            cache_feed_ids = Feed.exclude_briefing_feeds(cache_feed_ids)
             if infrequent:
                 feed_ids = Feed.low_volume_feeds(feed_ids, stories_per_month=infrequent)
+                cache_feed_ids = Feed.low_volume_feeds(cache_feed_ids, stories_per_month=infrequent)
             if feed_ids:
                 params = {
                     "user_id": user.pk,
                     "feed_ids": feed_ids,
+                    "all_feed_ids": cache_feed_ids,
                     "offset": offset,
                     "limit": limit,
                     "order": order,
@@ -3755,7 +3772,14 @@ def add_url(request):
     elif any([(banned_url in url) for banned_url in BANNED_URLS]):
         code = -1
         message = "The publisher of this website has banned NewsBlur."
-    elif re.match(r"(https?://)?twitter.com/\w+/?$", url):
+    else:
+        try:
+            validate_public_url(url)
+        except UnsafeUrlError:
+            code = -1
+            message = BLOCKED_PRIVATE_URL_MESSAGE
+
+    if code == 0 and re.match(r"(https?://)?twitter.com/\w+/?$", url):
         if not request.user.profile.is_premium:
             message = "You must be a premium subscriber to add Twitter feeds."
             code = -1

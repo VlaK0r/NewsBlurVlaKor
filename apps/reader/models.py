@@ -483,8 +483,110 @@ class UserSubscription(models.Model):
         metrics_source = normalize_reader_metrics_source(metrics_source)
         r = redis.Redis(connection_pool=settings.REDIS_STORY_HASH_POOL)
         unread_ranked_stories_key = "zU:%s:%s" % (self.user_id, self.feed_id)
+        unread_page_cache_key = "zUP:%s:%s" % (self.user_id, self.feed_id)
 
-        if offset and r.exists(unread_ranked_stories_key):
+        def story_hash_cache_member(story_hash):
+            if isinstance(story_hash, bytes):
+                return story_hash.decode("utf-8")
+            return story_hash
+
+        def split_story_hash_scores(story_hashes):
+            hashes = []
+            scores = {}
+            for story_hash in story_hashes:
+                if isinstance(story_hash, (list, tuple)) and len(story_hash) == 2:
+                    story_hash, score = story_hash
+                    scores[story_hash_cache_member(story_hash)] = score
+                hashes.append(story_hash)
+            return hashes, scores
+
+        def cache_story_hash_scores(story_hashes, known_scores=None):
+            if not story_hashes:
+                return
+
+            known_scores = known_scores or {}
+            missing_story_hashes = [
+                story_hash
+                for story_hash in story_hashes
+                if story_hash_cache_member(story_hash) not in known_scores
+            ]
+            scores = []
+            if missing_story_hashes:
+                pipeline = r.pipeline()
+                for story_hash in missing_story_hashes:
+                    pipeline.zscore(unread_ranked_stories_key, story_hash)
+                scores = pipeline.execute()
+
+            cache_scores = {}
+            for story_hash in story_hashes:
+                score = known_scores.get(story_hash_cache_member(story_hash))
+                if score is not None:
+                    cache_scores[story_hash] = score
+            for story_hash, score in zip(missing_story_hashes, scores):
+                if score is not None:
+                    cache_scores[story_hash] = score
+
+            if cache_scores:
+                r.zadd(unread_page_cache_key, cache_scores)
+                r.expire(unread_page_cache_key, 1 * 60 * 60)
+
+        if read_filter == "unread" and offset and r.exists(unread_page_cache_key):
+            page_end = offset + limit
+            cached_count = r.zcard(unread_page_cache_key)
+
+            if cached_count < page_end:
+                cached_hashes = {
+                    story_hash_cache_member(h) for h in r.zrange(unread_page_cache_key, 0, -1)
+                }
+                needed_count = page_end - cached_count
+                candidate_limit = page_end
+                candidate_hashes = []
+                candidate_scores = {}
+                byscorefunc = r.zrevrange
+                if order == "oldest":
+                    byscorefunc = r.zrange
+                unread_ranked_exists = r.exists(unread_ranked_stories_key)
+                while len(candidate_hashes) < candidate_limit:
+                    if unread_ranked_exists:
+                        candidate_rows = byscorefunc(
+                            unread_ranked_stories_key,
+                            start=0,
+                            end=candidate_limit - 1,
+                            withscores=True,
+                        )
+                    else:
+                        candidate_rows = UserSubscription.story_hashes(
+                            self.user.pk,
+                            feed_ids=[self.feed.pk],
+                            order=order,
+                            read_filter=read_filter,
+                            offset=0,
+                            limit=candidate_limit,
+                            include_timestamps=True,
+                            cutoff_date=cutoff_date,
+                            date_filter_start=date_filter_start,
+                            date_filter_end=date_filter_end,
+                            metrics_source=metrics_source,
+                        )
+                    candidate_hashes, candidate_scores = split_story_hash_scores(candidate_rows)
+                    if len(candidate_hashes) < candidate_limit or candidate_limit >= max(page_end * 4, 400):
+                        break
+                    candidate_limit = min(candidate_limit * 2, max(page_end * 4, 400))
+
+                new_hashes = []
+                for story_hash in candidate_hashes:
+                    if story_hash_cache_member(story_hash) in cached_hashes:
+                        continue
+                    new_hashes.append(story_hash)
+                    if len(new_hashes) >= needed_count:
+                        break
+                cache_story_hash_scores(new_hashes, candidate_scores)
+
+            if order == "oldest":
+                story_hashes = r.zrange(unread_page_cache_key, start=offset, end=offset + limit - 1)
+            else:
+                story_hashes = r.zrevrange(unread_page_cache_key, start=offset, end=offset + limit - 1)
+        elif offset and r.exists(unread_ranked_stories_key):
             fast_path_dirty = "dirty" if self.needs_unread_recalc else "clean"
             UNREAD_CACHE_FAST_PATH.labels(source=metrics_source, dirty=fast_path_dirty).inc()
             if self.needs_unread_recalc:
@@ -497,19 +599,34 @@ class UserSubscription(models.Model):
             if order == "oldest":
                 byscorefunc = r.zrange
             story_hashes = byscorefunc(unread_ranked_stories_key, start=offset, end=offset + limit)[:limit]
+            if read_filter == "unread":
+                cache_rows = byscorefunc(
+                    unread_ranked_stories_key,
+                    start=0,
+                    end=offset + limit - 1,
+                    withscores=True,
+                )
+                cache_hashes, cache_scores = split_story_hash_scores(cache_rows)
+                cache_story_hash_scores(cache_hashes, cache_scores)
         else:
-            story_hashes = UserSubscription.story_hashes(
+            story_hash_rows = UserSubscription.story_hashes(
                 self.user.pk,
                 feed_ids=[self.feed.pk],
                 order=order,
                 read_filter=read_filter,
                 offset=offset,
                 limit=limit,
+                include_timestamps=read_filter == "unread",
                 cutoff_date=cutoff_date,
                 date_filter_start=date_filter_start,
                 date_filter_end=date_filter_end,
                 metrics_source=metrics_source,
             )
+            story_hashes, story_scores = split_story_hash_scores(story_hash_rows)
+            if read_filter == "unread":
+                if offset == 0:
+                    r.delete(unread_page_cache_key)
+                cache_story_hash_scores(story_hashes, story_scores)
 
         story_date_order = "%sstory_date" % ("" if order == "oldest" else "-")
         mstories = MStory.objects(story_hash__in=story_hashes).order_by(story_date_order)
@@ -649,13 +766,15 @@ class UserSubscription(models.Model):
         if feed_ids is None:
             across_all_feeds = True
             feed_ids = []
-        # Deprecated: all_feed_ids is no longer used, use feed_ids for cache keys
+        # Keep page caches keyed to the stable requested feed set while merging
+        # only the feeds that can currently contribute stories.
         if not all_feed_ids:
             all_feed_ids = [f for f in feed_ids]
+        cache_feed_ids = [f for f in all_feed_ids]
 
         # Use helper method to generate consistent cache keys
         ranked_stories_keys, unread_ranked_stories_keys = cls.get_river_cache_keys(
-            user_id, feed_ids, cache_prefix
+            user_id, cache_feed_ids, cache_prefix
         )
         stories_cached = rt.exists(ranked_stories_keys)
         if offset and stories_cached:
@@ -688,13 +807,9 @@ class UserSubscription(models.Model):
             # drift when stories marked as read cause zdiffstore to recompute
             # the per-feed unread sets, shifting the merged list and causing
             # the offset to skip stories the user hasn't seen yet.
-            already_cached = set()
             extending_cache = False
             if cache_key:
-                cached_entries = rt.zrange(cache_key, 0, -1)
-                if cached_entries:
-                    already_cached = set(cached_entries)
-                    extending_cache = True
+                extending_cache = bool(rt.zcard(cache_key))
 
             per_feed_chunk = 25
             per_feed_offsets = {feed_id: per_feed_chunk for feed_id in feed_ids}
@@ -768,27 +883,41 @@ class UserSubscription(models.Model):
             merged_with_scores = []
             total_seen = 0
             merge_target = target_limit if extending_cache else target_offset + target_limit
-            while heap and len(merged_story_hashes) < merge_target:
-                transformed_score, feed_id, story_hash = heapq.heappop(heap)
-                original_score = -transformed_score if order == "newest" else transformed_score
-                if extending_cache and story_hash in already_cached:
-                    # Skip stories from previous pages — anchors pagination to
-                    # what was already shown, not to a shifting offset.
-                    push_next_from_feed(feed_id)
-                    continue
-                if not extending_cache and total_seen < target_offset:
-                    # Fresh merge (page 1 or expired cache): traditional offset skip,
-                    # but still cache skipped stories for future page extensions.
+            if extending_cache:
+                membership_batch_size = max(per_feed_chunk, target_limit * 3)
+                while heap and len(merged_story_hashes) < merge_target:
+                    candidates = []
+                    while heap and len(candidates) < membership_batch_size:
+                        transformed_score, feed_id, story_hash = heapq.heappop(heap)
+                        original_score = -transformed_score if order == "newest" else transformed_score
+                        candidates.append((story_hash, original_score))
+                        push_next_from_feed(feed_id)
+
+                    cached_scores = rt.zmscore(cache_key, [story_hash for story_hash, _ in candidates])
+                    for (story_hash, original_score), cached_score in zip(candidates, cached_scores):
+                        if cached_score is not None:
+                            continue
+                        if len(merged_story_hashes) < merge_target:
+                            merged_story_hashes.append(story_hash)
+                        if cache_key:
+                            merged_with_scores.append((story_hash, original_score))
+            else:
+                while heap and len(merged_story_hashes) < merge_target:
+                    transformed_score, feed_id, story_hash = heapq.heappop(heap)
+                    original_score = -transformed_score if order == "newest" else transformed_score
+                    if total_seen < target_offset:
+                        # Fresh merge (page 1 or expired cache): traditional offset skip,
+                        # but still cache skipped stories for future page extensions.
+                        if cache_key:
+                            merged_with_scores.append((story_hash, original_score))
+                        total_seen += 1
+                        push_next_from_feed(feed_id)
+                        continue
+                    merged_story_hashes.append(story_hash)
                     if cache_key:
                         merged_with_scores.append((story_hash, original_score))
                     total_seen += 1
                     push_next_from_feed(feed_id)
-                    continue
-                merged_story_hashes.append(story_hash)
-                if cache_key:
-                    merged_with_scores.append((story_hash, original_score))
-                total_seen += 1
-                push_next_from_feed(feed_id)
 
             # Cache merged results in Redis so page 2+ can reuse them.
             # Use ZADD without DELETE so pagination extends the cache
