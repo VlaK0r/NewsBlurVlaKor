@@ -13,6 +13,7 @@ from django.test.client import Client
 from django.urls import reverse
 from django.utils.encoding import smart_str
 
+from apps.profile.models import Profile
 from apps.reader.models import UserSubscription
 from apps.rss_feeds.models import Feed, MFeedIcon, MStory
 from apps.rss_feeds.tasks import SchedulePremiumSetup
@@ -524,9 +525,7 @@ class Test_FeedUrlSSRFProtection(TestCase):
     @patch("apps.rss_feeds.models.requests.get")
     @patch("apps.rss_feeds.models.feedfinder_pilgrim")
     @patch("apps.rss_feeds.models.feedfinder_forman")
-    def test_get_feed_from_url__rejects_loopback_ip(
-        self, mock_forman, mock_pilgrim, mock_requests_get
-    ):
+    def test_get_feed_from_url__rejects_loopback_ip(self, mock_forman, mock_pilgrim, mock_requests_get):
         result = Feed.get_feed_from_url("http://127.0.0.1:9966/feed.xml", create=False, fetch=True)
 
         self.assertIsNone(result)
@@ -913,6 +912,286 @@ class Test_YouTubeFavicons(TestCase):
         )
 
 
+class Test_YouTubeQuota(TestCase):
+    """YouTube Data API quota conservation and quota-error visibility.
+
+    The YouTube API quota pool is shared across every YouTube feed and resets at
+    midnight Pacific, so each avoidable API call matters. Channel feeds can derive
+    their uploads playlist id (UC... -> UU...) without a channels.list call, and
+    username feeds can cache the resolved playlist id. Quota failures must surface
+    in the feed's fetch history instead of silently producing no stories.
+    See utils/youtube_fetcher.py and utils/feed_fetcher.py.
+    """
+
+    PLAYLIST_ITEMS_JSON = '{"items": [{"snippet": {"resourceId": {"videoId": "vid1"}}}]}'
+    VIDEOS_JSON = (
+        '{"items": [{"id": "vid1", "snippet": {"title": "Video One", "description": "A video",'
+        ' "publishedAt": "2026-06-10T17:00:22Z", "thumbnails": {}},'
+        ' "contentDetails": {"duration": "PT3M20S"}}]}'
+    )
+    CHANNELS_JSON = (
+        '{"items": [{"snippet": {"title": "Resolved Channel", "description": "Channel description"},'
+        ' "contentDetails": {"relatedPlaylists": {"uploads": "UUresolved"}}}]}'
+    )
+    QUOTA_ERROR_JSON = (
+        '{"error": {"code": 403, "message": "Quota exceeded.",'
+        ' "errors": [{"reason": "quotaExceeded", "domain": "youtube.quota"}],'
+        ' "status": "RESOURCE_EXHAUSTED"}}'
+    )
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        self.feed = Feed.objects.create(
+            feed_address="https://www.youtube.com/feeds/videos.xml?channel_id=UCabc123",
+            feed_link="https://www.youtube.com/channel/UCabc123",
+            feed_title="Test Channel",
+        )
+        cache.delete("youtube_uploads_list_id:somecreator")
+
+    def _route(self, routes):
+        """Return a requests.get side_effect that serves payloads by URL fragment."""
+
+        def respond(url, *args, **kwargs):
+            for fragment, payload in routes:
+                if fragment in url:
+                    return MagicMock(content=payload.encode())
+            raise AssertionError("Unexpected YouTube API call: %s" % url)
+
+        return respond
+
+    @patch("utils.youtube_fetcher.requests.get")
+    def test_channel_feed_derives_uploads_playlist_without_channels_list(self, mock_get):
+        """A UC channel id with a cached feed title needs no channels.list call."""
+        from utils.youtube_fetcher import YoutubeFetcher
+
+        mock_get.side_effect = self._route(
+            [
+                ("/playlistItems?", self.PLAYLIST_ITEMS_JSON),
+                ("/videos?", self.VIDEOS_JSON),
+            ]
+        )
+
+        rss = YoutubeFetcher(self.feed).fetch()
+
+        self.assertIn("Video One", rss)
+        urls = [call.args[0] for call in mock_get.call_args_list]
+        self.assertTrue(all("/channels?" not in url for url in urls), urls)
+        self.assertIn("playlistId=UUabc123", urls[0])
+
+    @patch("utils.youtube_fetcher.requests.get")
+    def test_channel_feed_resolves_channel_when_no_cached_title(self, mock_get):
+        """Without a stored feed title, fall back to the channels.list lookup."""
+        from utils.youtube_fetcher import YoutubeFetcher
+
+        self.feed.feed_title = "[Untitled]"
+        mock_get.side_effect = self._route(
+            [
+                ("/channels?", self.CHANNELS_JSON),
+                ("/playlistItems?", self.PLAYLIST_ITEMS_JSON),
+                ("/videos?", self.VIDEOS_JSON),
+            ]
+        )
+
+        rss = YoutubeFetcher(self.feed).fetch()
+
+        self.assertIn("Video One", rss)
+        self.assertIn("Resolved Channel", rss)
+        urls = [call.args[0] for call in mock_get.call_args_list]
+        self.assertTrue(any("/channels?" in url for url in urls), urls)
+        playlist_urls = [url for url in urls if "/playlistItems?" in url]
+        self.assertIn("playlistId=UUresolved", playlist_urls[0])
+
+    @patch("utils.youtube_fetcher.requests.get")
+    def test_username_feed_caches_resolved_uploads_playlist(self, mock_get):
+        """The second fetch of a username feed reuses the cached uploads playlist id."""
+        from utils.youtube_fetcher import YoutubeFetcher
+
+        self.feed.feed_address = "http://gdata.youtube.com/feeds/base/users/somecreator/uploads"
+
+        mock_get.side_effect = self._route(
+            [
+                ("/channels?", self.CHANNELS_JSON),
+                ("/playlistItems?", self.PLAYLIST_ITEMS_JSON),
+                ("/videos?", self.VIDEOS_JSON),
+            ]
+        )
+        rss = YoutubeFetcher(self.feed).fetch()
+        self.assertIn("Video One", rss)
+        first_urls = [call.args[0] for call in mock_get.call_args_list]
+        self.assertTrue(any("/channels?" in url for url in first_urls), first_urls)
+
+        mock_get.reset_mock()
+        mock_get.side_effect = self._route(
+            [
+                ("/playlistItems?", self.PLAYLIST_ITEMS_JSON),
+                ("/videos?", self.VIDEOS_JSON),
+            ]
+        )
+        rss = YoutubeFetcher(self.feed).fetch()
+        self.assertIn("Video One", rss)
+        second_urls = [call.args[0] for call in mock_get.call_args_list]
+        self.assertTrue(all("/channels?" not in url for url in second_urls), second_urls)
+        self.assertIn("playlistId=UUresolved", second_urls[0])
+
+    @patch("utils.youtube_fetcher.requests.get")
+    def test_quota_error_raises_youtube_quota_error(self, mock_get):
+        """A quotaExceeded API response raises instead of silently returning nothing."""
+        from utils.youtube_fetcher import YoutubeFetcher, YoutubeQuotaError
+
+        mock_get.side_effect = self._route([("/playlistItems?", self.QUOTA_ERROR_JSON)])
+
+        with self.assertRaises(YoutubeQuotaError):
+            YoutubeFetcher(self.feed).fetch()
+
+    # Feed.save is mocked below because @timelimit runs FetchFeed.fetch in a
+    # separate thread whose DB connection would deadlock against the test
+    # transaction's uncommitted feed row. apps/rss_feeds/test_rss_feeds.py
+    @patch("apps.rss_feeds.models.Feed.save")
+    @patch("apps.rss_feeds.models.Feed.save_feed_history")
+    @patch("utils.feed_fetcher.validate_public_url")
+    @patch("utils.feed_fetcher.YoutubeFetcher")
+    def test_fetch_feed_records_quota_error_in_fetch_history(
+        self, mock_fetcher_cls, mock_validate, mock_history, mock_save
+    ):
+        """Quota exhaustion shows up as a 429 in fetch history instead of silence."""
+        from utils import feed_fetcher
+        from utils.youtube_fetcher import YoutubeQuotaError
+
+        mock_fetcher_cls.return_value.fetch.side_effect = YoutubeQuotaError("quotaExceeded")
+
+        ffeed = feed_fetcher.FetchFeed(self.feed.pk, {})
+        ret_code, _ = ffeed.fetch()
+
+        self.assertEqual(ret_code, feed_fetcher.FEED_ERRHTTP)
+        mock_history.assert_called_once_with(429, "YouTube API quota exceeded")
+
+    @patch("apps.rss_feeds.models.Feed.save")
+    @patch("apps.rss_feeds.models.Feed.save_feed_history")
+    @patch("utils.feed_fetcher.validate_public_url")
+    @patch("utils.feed_fetcher.YoutubeFetcher")
+    def test_fetch_feed_records_failed_youtube_fetch_in_history(
+        self, mock_fetcher_cls, mock_validate, mock_history, mock_save
+    ):
+        """A YouTube fetch that returns nothing is recorded instead of silently dropped."""
+        from utils import feed_fetcher
+
+        mock_fetcher_cls.return_value.fetch.return_value = None
+
+        ffeed = feed_fetcher.FetchFeed(self.feed.pk, {})
+        ret_code, _ = ffeed.fetch()
+
+        self.assertEqual(ret_code, feed_fetcher.FEED_ERRHTTP)
+        mock_history.assert_called_once_with(404, "YouTube fetch failed")
+
+
+class Test_MegaSubscriberThrottle(TestCase):
+    """Solo YouTube feeds of mega subscribers are capped at 4 fetches/day.
+
+    A Pro subscriber normally puts every feed they read on the fastest fetch
+    schedule (settings.PRO_MINUTES_BETWEEN_FETCHES). One Pro user importing
+    thousands of YouTube channels would burn the shared YouTube API quota, so
+    a YouTube feed whose single active subscriber carries more feeds than the
+    Premium limit gets a 6 hour fetch floor instead. Feeds with 2+ subscribers
+    are never penalized. See apps/rss_feeds/models.py.
+    """
+
+    def setUp(self):
+        self.mega_user = User.objects.create_user("mega_subscriber", "mega@example.com", "pass")
+        self.normal_user = User.objects.create_user("normal_reader", "normal@example.com", "pass")
+        self.feed = Feed.objects.create(
+            feed_address="https://www.youtube.com/feeds/videos.xml?channel_id=UCthrottle",
+            feed_link="https://www.youtube.com/channel/UCthrottle",
+            feed_title="Throttled Channel",
+            active_subscribers=1,
+            active_premium_subscribers=1,
+            pro_subscribers=1,
+            stories_last_month=30,
+        )
+
+    def _subscribe(self, user, feed, active=True):
+        return UserSubscription.objects.create(user=user, feed=feed, active=active)
+
+    def _make_mega(self, user, filler_feeds=3, active=True):
+        """Give the user enough subscriptions to exceed the (patched) Premium limit."""
+        for i in range(filler_feeds):
+            filler = Feed.objects.create(
+                feed_address="https://example.com/filler-%s-%s.xml" % (user.pk, i),
+                feed_link="https://example.com/filler-%s-%s" % (user.pk, i),
+                feed_title="Filler %s" % i,
+            )
+            self._subscribe(user, filler, active=active)
+
+    @patch.object(Profile, "PREMIUM_FEED_LIMIT", 2)
+    def test_solo_youtube_feed_of_mega_subscriber_is_capped(self):
+        self._subscribe(self.mega_user, self.feed)
+        self._make_mega(self.mega_user)
+
+        total = self.feed.get_next_scheduled_update(force=True, verbose=False)
+
+        self.assertEqual(total, 60 * 6)
+
+    @patch.object(Profile, "PREMIUM_FEED_LIMIT", 2)
+    def test_inactive_subscriptions_do_not_count_toward_mega_status(self):
+        """Muted feeds don't count against the Premium limit, so they don't make a user mega."""
+        self._subscribe(self.mega_user, self.feed)
+        self._make_mega(self.mega_user, active=False)
+
+        total = self.feed.get_next_scheduled_update(force=True, verbose=False)
+
+        self.assertEqual(total, settings.PRO_MINUTES_BETWEEN_FETCHES)
+
+    @patch.object(Profile, "PREMIUM_FEED_LIMIT", 2)
+    def test_youtube_feed_shared_by_two_mega_subscribers_keeps_pro_speed(self):
+        second_mega = User.objects.create_user("mega_subscriber_2", "mega2@example.com", "pass")
+        self._subscribe(self.mega_user, self.feed)
+        self._make_mega(self.mega_user)
+        self._subscribe(second_mega, self.feed)
+        self._make_mega(second_mega)
+        self.feed.active_subscribers = 2
+
+        total = self.feed.get_next_scheduled_update(force=True, verbose=False)
+
+        self.assertEqual(total, settings.PRO_MINUTES_BETWEEN_FETCHES)
+
+    @patch.object(Profile, "PREMIUM_FEED_LIMIT", 2)
+    def test_youtube_feed_with_normal_subscriber_keeps_pro_speed(self):
+        self._subscribe(self.normal_user, self.feed)
+
+        total = self.feed.get_next_scheduled_update(force=True, verbose=False)
+
+        self.assertEqual(total, settings.PRO_MINUTES_BETWEEN_FETCHES)
+
+    @patch.object(Profile, "PREMIUM_FEED_LIMIT", 2)
+    def test_youtube_feed_shared_with_normal_reader_keeps_pro_speed(self):
+        self._subscribe(self.mega_user, self.feed)
+        self._make_mega(self.mega_user)
+        self._subscribe(self.normal_user, self.feed)
+        self.feed.active_subscribers = 2
+
+        total = self.feed.get_next_scheduled_update(force=True, verbose=False)
+
+        self.assertEqual(total, settings.PRO_MINUTES_BETWEEN_FETCHES)
+
+    @patch.object(Profile, "PREMIUM_FEED_LIMIT", 2)
+    def test_non_youtube_feed_with_mega_subscriber_keeps_pro_speed(self):
+        feed = Feed.objects.create(
+            feed_address="https://example.com/regular-feed.xml",
+            feed_link="https://example.com/regular-feed",
+            feed_title="Regular Feed",
+            active_subscribers=1,
+            active_premium_subscribers=1,
+            pro_subscribers=1,
+            stories_last_month=30,
+        )
+        self._subscribe(self.mega_user, feed)
+        self._make_mega(self.mega_user)
+
+        total = feed.get_next_scheduled_update(force=True, verbose=False)
+
+        self.assertEqual(total, settings.PRO_MINUTES_BETWEEN_FETCHES)
+
+
 class Test_StoryImageInjection(TestCase):
     """Tests for prepending og:image into Google News story content at fetch time."""
 
@@ -1223,6 +1502,8 @@ class Test_YouTubeFeedDetection(TestCase):
             "https://notyoutube.com/@JudgeJudy/videos",
             "https://www.youtube.com.evil.example/@JudgeJudy",
             "https://example.com/?ref=youtube.com",
+            'newsletter:118958:list-id:["bf6a361f2d4146e7bf542399822c985e@growomaha.com"]',
+            'newsletter:238807:list-id:["1.816639.3123"]',
             "",
             None,
         ]:
