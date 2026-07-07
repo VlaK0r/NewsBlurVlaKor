@@ -504,6 +504,72 @@ class Test_SetupPremiumHistoryStripe(TestCase):
         self.assertTrue(self.profile.premium_renewal)
 
 
+class Test_SetupPremiumHistoryPaypal(TestCase):
+    """Tests for PayPal subscription handling in setup_premium_history (apps/profile/models.py)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="paypalhisttest", password="password", email="paypalhisttest@test.com"
+        )
+        self.profile = self.user.profile
+        self.profile.paypal_sub_id = "I-SUB123"
+        self.profile.save()
+        self.user.paypal_ids.create(paypal_sub_id="I-SUB123")
+
+    def _paypal_api(self, transaction_time):
+        api = MagicMock()
+
+        def get(path):
+            if path == "/v1/billing/subscriptions/I-SUB123?fields=plan":
+                return {
+                    "status": "ACTIVE",
+                    "plan_id": Profile.plan_to_paypal_plan_id("premium"),
+                }
+            if path.startswith("/v1/billing/subscriptions/I-SUB123/transactions"):
+                return {
+                    "transactions": [
+                        {
+                            "time": transaction_time,
+                            "status": "COMPLETED",
+                            "amount_with_breakdown": {
+                                "gross_amount": {
+                                    "value": "36.00",
+                                },
+                            },
+                        }
+                    ]
+                }
+            raise AssertionError("Unexpected PayPal API path: %s" % path)
+
+        api.get.side_effect = get
+        return api
+
+    @patch("apps.profile.tasks.EmailNewPremium.delay")
+    @patch("apps.profile.models.SchedulePremiumSetup")
+    @patch("apps.reader.models.UserSubscription.queue_new_feeds")
+    @patch.object(Profile, "paypal_api")
+    @patch.object(Profile, "retrieve_paypal_ids")
+    def test_paypal_payment_converts_trial_to_paid(
+        self, mock_paypal_ids, mock_paypal_api, mock_queue_new, mock_schedule_setup, mock_email
+    ):
+        transaction_time = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        mock_paypal_api.return_value = self._paypal_api(transaction_time)
+
+        self.profile.is_premium = True
+        self.profile.is_premium_trial = True
+        self.profile.premium_expire = datetime.datetime.now() + datetime.timedelta(days=30)
+        self.profile.save()
+
+        self.profile.setup_premium_history()
+
+        self.profile.refresh_from_db()
+        self.assertTrue(self.profile.is_premium)
+        self.assertFalse(self.profile.is_premium_trial)
+        self.assertTrue(self.profile.premium_renewal)
+        self.assertEqual(self.profile.active_provider, "paypal")
+        mock_email.assert_called_once_with(user_id=self.user.pk)
+
+
 class Test_StripeIdSync(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
@@ -869,6 +935,25 @@ class Test_PremiumPricingMigration(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("https://paypal/approve-me", mail.outbox[0].body)
 
+    def test_paypal_cancelled_email_uses_resubscribe_url(self):
+        from django.core import mail
+
+        self.profile.active_provider = "paypal"
+        self.profile.save()
+        self.profile.send_premium_pricing_upgrade_email(
+            old_amount=24,
+            renewal_date=datetime.datetime(2026, 8, 1),
+            variant="paypal",
+            force=True,
+            paypal_cancelled=True,
+        )
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("I cancelled the old PayPal subscription", mail.outbox[0].body)
+        self.assertIn("Re-subscribe at the new $36/year rate", mail.outbox[0].body)
+        self.assertIn("https://newsblur.com/?next=premium", mail.outbox[0].body)
+        self.assertNotIn("Approve the new $36/year rate", mail.outbox[0].body)
+
     def test_preview_sends_both_variants_no_record(self):
         from django.core import mail
 
@@ -981,6 +1066,33 @@ class Test_PremiumPricingMigration(TestCase):
         self.assertFalse(PremiumPricingMigration.objects.filter(user=self.user).exists())
         self.assertEqual(len(mail.outbox), 0)
 
+    @override_settings(PREMIUM_PRICING_PAYPAL_CANCEL_ENABLED=True)
+    @patch.object(Profile, "cancel_premium_paypal", return_value="I-SUB123")
+    @patch.object(Profile, "paypal_price_change_approval_url", return_value=None)
+    def test_live_run_cancels_and_emails_legacy_paypal(self, mock_approval_url, mock_cancel):
+        from django.core import mail
+
+        from apps.profile.models import PremiumPricingMigration
+
+        self.profile.active_provider = "paypal"
+        self.profile.paypal_sub_id = "I-SUB123"
+        self.profile.save()
+        self._add_payment(24, provider="paypal")
+
+        Profile.run_premium_pricing_migration(only_username="pricingmig")
+
+        mock_approval_url.assert_called_once_with("premium")
+        mock_cancel.assert_called_once()
+        self.profile.refresh_from_db()
+        self.assertFalse(self.profile.premium_renewal)
+        row = PremiumPricingMigration.objects.get(user=self.user)
+        self.assertEqual(row.status, "cancelled")
+        self.assertEqual(row.provider, "paypal")
+        self.assertIsNotNone(row.paypal_canceled_date)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("I cancelled the old PayPal subscription", mail.outbox[0].body)
+        self.assertIn("https://newsblur.com/?next=premium", mail.outbox[0].body)
+
     # --- Reconciliation ------------------------------------------------------
 
     def _emailed_row(self, provider="stripe", renewal_offset_days=-1):
@@ -1042,6 +1154,28 @@ class Test_PremiumPricingMigration(TestCase):
     @patch.object(Profile, "send_staff_pricing_would_cancel_email")
     @patch.object(Profile, "cancel_premium_paypal")
     @patch.object(Profile, "paypal_subscription_detail")
+    def test_reconcile_cancels_previous_shadow_paypal_row_when_enabled(
+        self, mock_detail, mock_cancel, mock_staff
+    ):
+        # A row shadowed before cancellation was enabled must still be cancellable later.
+        row = self._emailed_row(provider="paypal")
+        row.status = "would_cancel"
+        row.would_cancel_date = datetime.datetime.now() - datetime.timedelta(days=1)
+        row.save()
+        mock_detail.return_value = self._paypal_detail(plan_id="P-OLD-24", hours_until_billing=5)
+
+        Profile.reconcile_premium_pricing_migration()
+
+        mock_cancel.assert_called_once()
+        mock_staff.assert_not_called()
+        row.refresh_from_db()
+        self.assertEqual(row.status, "cancelled")
+        self.assertIsNotNone(row.paypal_canceled_date)
+
+    @override_settings(PREMIUM_PRICING_PAYPAL_CANCEL_ENABLED=True)
+    @patch.object(Profile, "send_staff_pricing_would_cancel_email")
+    @patch.object(Profile, "cancel_premium_paypal")
+    @patch.object(Profile, "paypal_subscription_detail")
     def test_reconcile_real_cancel_when_enabled(self, mock_detail, mock_cancel, mock_staff):
         # Only when explicitly enabled: imminent non-approver -> actually cancel.
         row = self._emailed_row(provider="paypal")
@@ -1096,6 +1230,124 @@ class Test_PremiumPricingMigration(TestCase):
 
         row.refresh_from_db()
         self.assertEqual(row.status, "upgraded")
+
+    # --- Resubscribes after cancellation (dashboard matrix) ------------------
+
+    def _cancelled_row(self, provider="paypal", canceled_days_ago=2):
+        from apps.profile.models import PremiumPricingMigration
+
+        return PremiumPricingMigration.objects.create(
+            user=self.user,
+            provider=provider,
+            old_amount=24,
+            email_sent_date=datetime.datetime.now() - datetime.timedelta(days=canceled_days_ago + 1),
+            paypal_canceled_date=datetime.datetime.now() - datetime.timedelta(days=canceled_days_ago),
+            status="cancelled",
+        )
+
+    def test_reconcile_records_resubscribe_provider_and_amount(self):
+        row = self._cancelled_row(provider="paypal")
+        self._add_payment(36, days_ago=0, provider="paypal")  # fresh $36 sub after the cancel
+
+        Profile.reconcile_premium_pricing_migration()
+
+        row.refresh_from_db()
+        self.assertEqual(row.status, "cancelled")  # a resubscribe never becomes an "upgrade"
+        self.assertIsNotNone(row.resubscribed_date)
+        self.assertEqual(row.resubscribed_provider, "paypal")
+        self.assertEqual(row.resubscribed_amount, 36)
+
+    def test_reconcile_records_pro_monthly_resubscribe_below_36(self):
+        # A pro-monthly resubscribe ($29/mo on iOS) is below the old $36 floor but must still count.
+        row = self._cancelled_row(provider="paypal")
+        self._add_payment(29, days_ago=0, provider="ios-pro-subscription")
+
+        Profile.reconcile_premium_pricing_migration()
+
+        row.refresh_from_db()
+        self.assertEqual(row.resubscribed_amount, 29)
+        self.assertEqual(row.resubscribed_provider, "ios-pro-subscription")
+
+    def test_reconcile_ignores_old_grandfathered_charge_as_resubscribe(self):
+        # A stale $24 grandfathered charge after the cancel must not be treated as a resubscribe.
+        row = self._cancelled_row(provider="paypal")
+        self._add_payment(24, days_ago=0, provider="paypal")
+
+        Profile.reconcile_premium_pricing_migration()
+
+        row.refresh_from_db()
+        self.assertIsNone(row.resubscribed_date)
+        self.assertIsNone(row.resubscribed_amount)
+
+    def _resubscribed(self, username, origin, dest_provider, amount):
+        from apps.profile.models import PremiumPricingMigration
+
+        user = User.objects.create_user(username=username, password="x", email="%s@t.com" % username)
+        return PremiumPricingMigration.objects.create(
+            user=user,
+            provider=origin,
+            old_amount=24,
+            status="cancelled",
+            resubscribed_date=datetime.datetime.now(),
+            resubscribed_provider=dest_provider,
+            resubscribed_amount=amount,
+        )
+
+    def test_resubscribed_switches_by_origin_dest_tier(self):
+        from apps.profile.models import PremiumPricingMigration
+
+        self.assertEqual(PremiumPricingMigration.resubscribed_switches(), {})
+
+        self._resubscribed("sw_pp_pp", "paypal", "paypal", 36)
+        self._resubscribed("sw_pp_pp2", "paypal", "paypal", 36)
+        self._resubscribed("sw_pp_st", "paypal", "stripe", 36)
+        self._resubscribed("sw_pp_arch", "paypal", "paypal", 99)
+        self._resubscribed("sw_st_ios_pro", "stripe", "ios-pro-subscription", 29)
+
+        switches = PremiumPricingMigration.resubscribed_switches()
+        self.assertEqual(switches["paypal_to_paypal_premium"], 2)
+        self.assertEqual(switches["paypal_to_stripe_premium"], 1)
+        self.assertEqual(switches["paypal_to_paypal_archive"], 1)
+        self.assertEqual(switches["stripe_to_ios_pro"], 1)
+        # Zero-count combos are omitted entirely, not reported as 0.
+        self.assertNotIn("stripe_to_paypal_premium", switches)
+
+    def test_resubscribe_funnel_counts_returned_vs_still_cancelled(self):
+        from apps.profile.models import PremiumPricingMigration
+
+        # 3 paypal cancelled (2 came back, 1 still gone) + 1 stripe cancelled (still gone).
+        self._resubscribed("fn_pp_back1", "paypal", "paypal", 36)
+        self._resubscribed("fn_pp_back2", "paypal", "stripe", 36)
+        for username, origin in [("fn_pp_gone", "paypal"), ("fn_st_gone", "stripe")]:
+            user = User.objects.create_user(username=username, password="x", email="%s@t.com" % username)
+            PremiumPricingMigration.objects.create(
+                user=user, provider=origin, old_amount=24, status="cancelled"
+            )
+
+        funnel = PremiumPricingMigration.resubscribe_funnel()
+        self.assertEqual(funnel["resubscribed_paypal"], 2)
+        self.assertEqual(funnel["not_resubscribed_paypal"], 1)
+        self.assertEqual(funnel["resubscribed_stripe"], 0)
+        self.assertEqual(funnel["not_resubscribed_stripe"], 1)
+
+    def test_upgrades_paypal_counts_paypal_to_paypal_returns(self):
+        # The redefined "PayPal upgrades" = in-place paypal upgrades (legacy IPN => always 0) plus
+        # paypal -> paypal resubscribes. A paypal -> stripe return must NOT count as a PayPal upgrade.
+        from apps.profile.models import PremiumPricingMigration
+
+        self._resubscribed("up_pp_pp", "paypal", "paypal", 36)
+        self._resubscribed("up_pp_st", "paypal", "stripe", 36)
+
+        count = (
+            PremiumPricingMigration.objects.filter(status="upgraded", provider="paypal").count()
+            + PremiumPricingMigration.objects.filter(
+                status="cancelled",
+                provider="paypal",
+                resubscribed_provider="paypal",
+                resubscribed_date__isnull=False,
+            ).count()
+        )
+        self.assertEqual(count, 1)
 
     # --- Redis lock (single-runner across the 3 beat schedulers) -------------
 
@@ -1152,3 +1404,130 @@ class Test_PremiumPricingMigration(TestCase):
         self.assertEqual(result, 0)
         row = PremiumPricingMigration.objects.filter(user=self.user).first()
         self.assertNotEqual(getattr(row, "status", None), "emailed")
+
+    @patch.object(Profile, "paypal_classic_api")
+    @patch.object(Profile, "paypal_api")
+    @patch.object(Profile, "retrieve_paypal_ids")
+    def test_paypal_cancel_falls_back_to_classic_when_rest_missing(
+        self, mock_retrieve, mock_paypal_api, mock_classic_api
+    ):
+        import paypalrestsdk
+
+        self.profile.active_provider = "paypal"
+        self.profile.paypal_sub_id = "I-LEGACY"
+        self.profile.save()
+        self.user.paypal_ids.create(paypal_sub_id="I-LEGACY")
+        rest_api = MagicMock()
+        rest_api.get.side_effect = paypalrestsdk.ResourceNotFound(MagicMock())
+        mock_paypal_api.return_value = rest_api
+        classic_api = MagicMock()
+        mock_classic_api.return_value = classic_api
+
+        result = self.profile.cancel_premium_paypal()
+
+        self.assertEqual(result, "I-LEGACY")
+        classic_api.manage_recurring_payments_profile_status.assert_called_once()
+        args, kwargs = classic_api.manage_recurring_payments_profile_status.call_args
+        self.assertEqual(args[:2], ("I-LEGACY", "Cancel"))
+        self.assertIn("note", kwargs)
+
+
+class Test_RefundLatestStripePayment(TestCase):
+    """A full Stripe refund must flag the original charge's history row as
+    refunded so it stops extending premium_expire in setup_premium_history
+    (apps/profile/models.py)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="refundtest", password="password", email="refundtest@test.com"
+        )
+        self.profile = self.user.profile
+        self.profile.stripe_id = "cus_refund123"
+        self.profile.save()
+
+    def _charge(self, amount_cents=3600, charge_id="ch_refund_test"):
+        return MagicMock(id=charge_id, amount=amount_cents)
+
+    @patch("stripe.Refund.create")
+    @patch("stripe.Charge.list")
+    @patch("stripe.Customer.retrieve")
+    def test_full_refund_flags_original_charge_as_refunded(self, mock_customer, mock_charges, mock_refund):
+        mock_customer.return_value = MagicMock(id="cus_refund123")
+        mock_charges.return_value = MagicMock(data=[self._charge(amount_cents=3600)])
+
+        original = PaymentHistory.objects.create(
+            user=self.user,
+            payment_date=datetime.datetime.now() - datetime.timedelta(days=30),
+            payment_amount=36,
+            payment_provider="stripe",
+        )
+
+        refunded = self.profile.refund_latest_stripe_payment(partial=False)
+
+        self.assertEqual(refunded, 36)
+        mock_refund.assert_called_once()
+        # The original positive charge is now flagged refunded...
+        original.refresh_from_db()
+        self.assertTrue(original.refunded)
+        # ...and the refund is recorded as a separate negative row.
+        refund_row = PaymentHistory.objects.get(user=self.user, payment_amount=-36)
+        self.assertTrue(refund_row.refunded)
+
+    @patch.object(Profile, "retrieve_stripe_ids")
+    @patch.object(Profile, "retrieve_paypal_ids")
+    @patch("stripe.Refund.create")
+    @patch("stripe.Charge.list")
+    @patch("stripe.Customer.retrieve")
+    def test_full_refund_does_not_reextend_premium_expire(
+        self, mock_customer, mock_charges, mock_refund, mock_paypal_ids, mock_stripe_ids
+    ):
+        """After a full refund, a setup_premium_history recompute (as the Stripe
+        refund webhook triggers) must not push premium_expire back out to the
+        original charge date + 365 days."""
+        mock_customer.return_value = MagicMock(id="cus_refund123")
+        mock_charges.return_value = MagicMock(data=[self._charge(amount_cents=3600)])
+
+        payment_date = datetime.datetime.now() - datetime.timedelta(days=30)
+        PaymentHistory.objects.create(
+            user=self.user,
+            payment_date=payment_date,
+            payment_amount=36,
+            payment_provider="stripe",
+        )
+        # Premium is currently paid ~11 months into the future.
+        self.profile.premium_expire = payment_date + datetime.timedelta(days=365)
+        self.profile.save()
+
+        self.profile.refund_latest_stripe_payment(partial=False)
+
+        # Support gives a one-month grace period by expiring today.
+        today = datetime.datetime.now()
+        self.profile.premium_expire = today
+        self.profile.save()
+
+        # The refund webhook recompute must leave the grace date in place.
+        self.profile.setup_premium_history()
+
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.premium_expire.date(), today.date())
+
+    @patch("stripe.Refund.create")
+    @patch("stripe.Charge.list")
+    @patch("stripe.Customer.retrieve")
+    def test_partial_refund_leaves_original_charge_active(self, mock_customer, mock_charges, mock_refund):
+        """A partial refund keeps premium active, so the original charge must
+        stay unrefunded and continue to count toward premium_expire."""
+        mock_customer.return_value = MagicMock(id="cus_refund123")
+        mock_charges.return_value = MagicMock(data=[self._charge(amount_cents=3600)])
+
+        original = PaymentHistory.objects.create(
+            user=self.user,
+            payment_date=datetime.datetime.now() - datetime.timedelta(days=30),
+            payment_amount=36,
+            payment_provider="stripe",
+        )
+
+        self.profile.refund_latest_stripe_payment(partial=True)
+
+        original.refresh_from_db()
+        self.assertIsNot(original.refunded, True)

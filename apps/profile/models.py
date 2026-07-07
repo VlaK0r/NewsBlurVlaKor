@@ -49,6 +49,8 @@ from utils import json_functions as json
 from utils import log as logging
 from utils.feed_functions import chunks
 from utils.user_functions import generate_secret_token
+from vendor.paypalapi.exceptions import PayPalAPIResponseError
+from vendor.paypalapi.interface import PayPalInterface
 from vendor.timezones.fields import TimeZoneField
 
 
@@ -1570,11 +1572,12 @@ class Profile(models.Model):
             % (total_paypal_payments, total_stripe_payments, len(payment_history), self.premium_expire),
         )
 
+        has_current_paid_period = self.premium_expire and self.premium_expire > datetime.datetime.now()
+        has_recent_paid_payment = recent_payments_count > 0
         if (
             set_premium_expire
-            and not self.is_premium
-            and self.premium_expire
-            and self.premium_expire > datetime.datetime.now()
+            and has_current_paid_period
+            and (not self.is_premium or (self.is_premium_trial and has_recent_paid_payment))
         ):
             self.activate_premium()
 
@@ -1892,6 +1895,23 @@ class Profile(models.Model):
             stripe.Refund.create(charge=stripe_payments[0].id)
             self.cancel_premium_stripe()
             refunded = stripe_payments[0].amount / 100
+            # Flag the original charge's history row as refunded so it stops
+            # extending premium_expire in setup_premium_history (which only skips
+            # rows where refunded=True). The refund itself is recorded as a
+            # separate negative row below. apps/profile/models.py
+            original_payment = (
+                PaymentHistory.objects.filter(
+                    user=self.user,
+                    payment_provider="stripe",
+                    payment_amount__gt=0,
+                )
+                .exclude(refunded=True)
+                .order_by("-payment_date")
+                .first()
+            )
+            if original_payment:
+                original_payment.refunded = True
+                original_payment.save()
 
         PaymentHistory.objects.create(
             user=self.user,
@@ -2222,7 +2242,9 @@ class Profile(models.Model):
             try:
                 paypal_subscription = paypal_api.get(f"/v1/billing/subscriptions/{paypal_id}")
             except paypalrestsdk.ResourceNotFound:
-                logging.user(self.user, f"~FRCouldn't find paypal payments: {paypal_id}")
+                logging.user(self.user, f"~FRCouldn't find REST paypal subscription: {paypal_id}")
+                if self.cancel_premium_paypal_classic(paypal_id, today=today):
+                    return paypal_id
                 continue
             if paypal_subscription["status"] not in ["ACTIVE", "APPROVED", "APPROVAL_PENDING"]:
                 logging.user(self.user, "~FRUser ~SBalready~SN canceled Paypal subscription: %s" % paypal_id)
@@ -2240,6 +2262,45 @@ class Profile(models.Model):
             logging.user(self.user, "~FRCanceling Paypal subscription: %s" % paypal_id)
             return paypal_id
 
+        return True
+
+    def paypal_classic_api(self):
+        username = getattr(settings, "PAYPAL_API_USERNAME", None)
+        password = getattr(settings, "PAYPAL_API_PASSWORD", None)
+        signature = getattr(settings, "PAYPAL_API_SIGNATURE", None)
+        if not (username and password and signature):
+            logging.user(self.user, "~FRCouldn't load classic PayPal API credentials")
+            return None
+
+        environment = "SANDBOX" if getattr(settings, "PAYPAL_TEST", False) or settings.DEBUG else "PRODUCTION"
+        return PayPalInterface(
+            API_ENVIRONMENT=environment,
+            API_USERNAME=username,
+            API_PASSWORD=password,
+            API_SIGNATURE=signature,
+        )
+
+    def cancel_premium_paypal_classic(self, paypal_id, today=None):
+        paypal_api = self.paypal_classic_api()
+        if not paypal_api:
+            return False
+
+        today = today or datetime.datetime.now().strftime("%B %d, %Y")
+        try:
+            paypal_api.manage_recurring_payments_profile_status(
+                paypal_id,
+                "Cancel",
+                note=f"Cancelled on {today}",
+            )
+        except PayPalAPIResponseError as e:
+            logging.user(
+                self.user,
+                "~FRCouldn't cancel classic PayPal subscription %s: %s %s"
+                % (paypal_id, e.error_code, e.message),
+            )
+            return False
+
+        logging.user(self.user, "~FRCanceling classic Paypal subscription: %s" % paypal_id)
         return True
 
     def cancel_premium_stripe(self, force=False):
@@ -3721,12 +3782,21 @@ class Profile(models.Model):
         return payment.payment_amount if payment else None
 
     def send_premium_pricing_upgrade_email(
-        self, old_amount=None, renewal_date=None, approval_url=None, variant=None, force=False, preview=False
+        self,
+        old_amount=None,
+        renewal_date=None,
+        approval_url=None,
+        variant=None,
+        force=False,
+        preview=False,
+        paypal_cancelled=False,
     ):
         """Email a grandfathered premium subscriber before their renewal moves to $36. Stripe
         users get the "automatic" variant; PayPal users get the "approve the new rate" variant
-        with a one-click approval link. In preview mode, both variants are sent (with sample
-        data) and nothing is recorded, so it is safe to show to a test user."""
+        with a one-click approval link when PayPal provides one. Legacy PayPal subscriptions that
+        cannot be revised use the same PayPal template with cancellation/resubscribe copy. In
+        preview mode, both variants are sent (with sample data) and nothing is recorded, so it is
+        safe to show to a test user."""
         if not self.user.email:
             logging.user(
                 self.user, "~FM~SB~FRNot~FM sending pricing upgrade email (no email): %s" % self.user
@@ -3759,19 +3829,22 @@ class Profile(models.Model):
             if v == "paypal" and not v_approval_url:
                 if preview:
                     v_approval_url = "https://www.paypal.com/"
-                else:
+                elif not paypal_cancelled:
                     logging.user(self.user, "~FRNo PayPal approval URL for pricing upgrade email, skipping")
                     continue
+            resubscribe_url = "https://newsblur.com/?next=premium"
             data = dict(
                 user=user,
                 old_amount=old_amount,
                 new_amount=36,
                 renewal_date=renewal_date,
                 approval_url=v_approval_url,
+                paypal_cancelled=paypal_cancelled,
+                resubscribe_url=resubscribe_url,
             )
             text = render_to_string("mail/email_premium_pricing_upgrade_%s.txt" % v, data)
             html = render_to_string("mail/email_premium_pricing_upgrade_%s.xhtml" % v, data)
-            subject = "After years at the old price, NewsBlur Premium is moving to $36"
+            subject = "After years at the old price, NewsBlur Premium is moving to $36/year"
             if preview:
                 subject = "[%s preview] %s" % (v, subject)
             msg = EmailMultiAlternatives(
@@ -3882,6 +3955,7 @@ class Profile(models.Model):
                     row.renewal_date_at_send = profile.premium_expire
 
                     approval_url = None
+                    paypal_cancelled = False
                     if provider == "stripe":
                         switched = profile.switch_stripe_subscription("premium", proration_behavior="none")
                         if not switched:
@@ -3891,17 +3965,27 @@ class Profile(models.Model):
                     else:  # paypal
                         approval_url = profile.paypal_price_change_approval_url("premium")
                         if not approval_url:
-                            logging.user(profile.user, "~FRPayPal approval URL failed; not emailing")
-                            continue
+                            if not getattr(settings, "PREMIUM_PRICING_PAYPAL_CANCEL_ENABLED", False):
+                                logging.user(profile.user, "~FRPayPal approval URL failed; not emailing")
+                                continue
+                            cancelled_paypal_sub_id = profile.cancel_premium_paypal()
+                            if not isinstance(cancelled_paypal_sub_id, str):
+                                logging.user(profile.user, "~FRPayPal cancellation failed; not emailing")
+                                continue
+                            profile.premium_renewal = False
+                            profile.save(update_fields=["premium_renewal"])
+                            row.paypal_canceled_date = now
+                            paypal_cancelled = True
 
                     profile.send_premium_pricing_upgrade_email(
                         old_amount=old_amount,
                         renewal_date=profile.premium_expire,
                         approval_url=approval_url,
                         variant=provider,
+                        paypal_cancelled=paypal_cancelled,
                     )
                     row.email_sent_date = now
-                    row.status = "emailed"
+                    row.status = "cancelled" if paypal_cancelled else "emailed"
                     row.save()
                     processed += 1
                 except Exception as e:
@@ -3958,8 +4042,12 @@ class Profile(models.Model):
         now_utc = datetime.datetime.utcnow()
         target_paypal_plan = Profile.plan_to_paypal_plan_id("premium")
 
-        emailed = PremiumPricingMigration.objects.filter(status="emailed").select_related("user")
-        for row in emailed:
+        rows = list(
+            PremiumPricingMigration.objects.filter(status__in=["emailed", "would_cancel"]).select_related(
+                "user"
+            )
+        )
+        for row in rows:
             # Isolate each row so one failure (PayPal API, email render) can't abort reconciliation.
             try:
                 profile = row.user.profile
@@ -3998,11 +4086,13 @@ class Profile(models.Model):
                         if next_billing is not None and next_billing <= now_utc + datetime.timedelta(
                             hours=paypal_cancel_window_hours
                         ):
+                            row_changed = False
                             if getattr(settings, "PREMIUM_PRICING_PAYPAL_CANCEL_ENABLED", False):
                                 profile.cancel_premium_paypal()
                                 row.paypal_canceled_date = now
                                 row.status = "cancelled"
-                            else:
+                                row_changed = True
+                            elif row.status != "would_cancel":
                                 # Shadow mode (default): never touch PayPal. Email staff that we
                                 # WOULD have cancelled this user, with their full payment history, so
                                 # we can verify targeting before enabling real cancellations. Their
@@ -4012,7 +4102,9 @@ class Profile(models.Model):
                                 )
                                 row.would_cancel_date = now
                                 row.status = "would_cancel"
-                            row.save()
+                                row_changed = True
+                            if row_changed:
+                                row.save()
                             continue
                         # Not approved, but the charge isn't imminent yet: wait for a later run.
                         continue
@@ -4035,7 +4127,9 @@ class Profile(models.Model):
         ).select_related("user")
         for row in cancelled:
             since = row.paypal_canceled_date or row.email_sent_date
-            resub = PaymentHistory.objects.filter(user=row.user, payment_amount__gte=36).exclude(
+            # >= 29 (not 36) so a pro-monthly resubscribe ($29/mo on iOS) still counts; the old
+            # grandfathered rates were $12/$24, so 29 cleanly excludes a stale grandfathered charge.
+            resub = PaymentHistory.objects.filter(user=row.user, payment_amount__gte=29).exclude(
                 refunded=True
             )
             if since:
@@ -4044,6 +4138,7 @@ class Profile(models.Model):
             if resub:
                 row.resubscribed_date = resub.payment_date
                 row.resubscribed_provider = resub.payment_provider
+                row.resubscribed_amount = resub.payment_amount
                 row.save()
 
         if lock and lock != "skip":
@@ -4051,7 +4146,7 @@ class Profile(models.Model):
                 lock.release()
             except Exception:
                 pass
-        return emailed.count()
+        return len(rows)
 
     def autologin_url(self, next=None):
         return reverse("autologin", kwargs={"username": self.user.username, "secret": self.secret_token}) + (
@@ -4744,12 +4839,18 @@ class PremiumPricingMigration(models.Model):
     would_cancel_date = models.DateTimeField(
         blank=True, null=True
     )  # shadow mode: staff notified, not canceled
-    resubscribed_date = models.DateTimeField(blank=True, null=True)  # later $36 sub via any provider
+    resubscribed_date = models.DateTimeField(blank=True, null=True)  # later paid sub via any provider
     resubscribed_provider = models.CharField(max_length=24, blank=True, null=True)
+    resubscribed_amount = models.IntegerField(blank=True, null=True)  # tier inferred from amount/provider
     # pending|emailed|upgraded|cancelled|would_cancel (would_cancel = shadow mode, staff notified only)
     status = models.CharField(max_length=16, default="pending")
     status_changed_date = models.DateTimeField(auto_now=True)
     created_date = models.DateTimeField(auto_now_add=True)
+
+    # Origin providers for the resubscribe switch breakdown: a grandfathered sub is only ever billed
+    # via Stripe or PayPal, though it can resubscribe on any provider
+    # (apps/monitor/views/newsblur_users.py).
+    SWITCH_ORIGINS = ["paypal", "stripe"]
 
     class Meta:
         indexes = [models.Index(fields=["status"]), models.Index(fields=["provider"])]
@@ -4762,6 +4863,76 @@ class PremiumPricingMigration(models.Model):
             self.provider,
             self.status,
         )
+
+    @staticmethod
+    def resub_provider_bucket(provider):
+        """Map a resubscribe's PaymentHistory.payment_provider to a destination bucket
+        (paypal/stripe/ios/android), or None if it isn't a recognized paid subscription provider
+        (apps/profile/models.py)."""
+        provider = provider or ""
+        if provider == "paypal":
+            return "paypal"
+        if provider == "stripe":
+            return "stripe"
+        if provider.startswith("ios"):
+            return "ios"
+        if provider.startswith("android"):
+            return "android"
+        return None
+
+    @staticmethod
+    def resub_tier_bucket(provider, amount):
+        """Map a resubscribe (provider + amount) to premium/archive/pro. Mobile providers encode the
+        tier in their name (e.g. ios-pro-subscription, android-archive); Stripe/PayPal only tell us
+        the amount, so the tier falls out of the price: $36 premium, $99 archive, $299/yr or $29/mo
+        pro (apps/profile/models.py)."""
+        provider = provider or ""
+        amount = amount or 0
+        if "pro" in provider or amount >= 299 or amount == 29:
+            return "pro"
+        if "archive" in provider or amount == 99:
+            return "archive"
+        return "premium"
+
+    @classmethod
+    def resubscribed_switches(cls):
+        """Origin-provider -> destination-provider x tier counts for cancelled subscribers who came
+        back with a fresh paid subscription, keyed '<origin>_to_<dest>_<tier>' (e.g.
+        'paypal_to_stripe_premium'). Only switches that actually happened are returned -- zero-count
+        combos are omitted -- so the dashboard shows real moves instead of a wall of zeros. A
+        resubscribe keeps the row's status="cancelled" (it never becomes an upgrade), so this is the
+        only place the cancel-then-return outcome is broken down
+        (apps/monitor/views/newsblur_users.py)."""
+        switches = {}
+        rows = cls.objects.filter(status="cancelled", resubscribed_date__isnull=False).only(
+            "provider", "resubscribed_provider", "resubscribed_amount"
+        )
+        for row in rows:
+            origin = row.provider if row.provider in cls.SWITCH_ORIGINS else None
+            dest = cls.resub_provider_bucket(row.resubscribed_provider)
+            if not origin or not dest:
+                continue
+            tier = cls.resub_tier_bucket(row.resubscribed_provider, row.resubscribed_amount)
+            key = "%s_to_%s_%s" % (origin, dest, tier)
+            switches[key] = switches.get(key, 0) + 1
+        return switches
+
+    @classmethod
+    def resubscribe_funnel(cls):
+        """Per-origin cancel-then-return funnel: of the subscribers we cancelled (PayPal
+        non-approvers are forcibly cancelled), how many have come back on a fresh paid sub vs are
+        still gone. Keyed 'resubscribed_<origin>' and 'not_resubscribed_<origin>', so the dashboard
+        can chart the resubscribe rate against the forced cancellations -- the total cancelled per
+        origin is already exposed as premium_pricing_cancellations_<origin>
+        (apps/monitor/views/newsblur_users.py)."""
+        funnel = {}
+        for origin in cls.SWITCH_ORIGINS:
+            cancelled = cls.objects.filter(status="cancelled", provider=origin)
+            total = cancelled.count()
+            resubscribed = cancelled.filter(resubscribed_date__isnull=False).count()
+            funnel["resubscribed_%s" % origin] = resubscribed
+            funnel["not_resubscribed_%s" % origin] = total - resubscribed
+        return funnel
 
 
 class PaymentHistory(models.Model):
