@@ -840,7 +840,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 25
       },
       "id": 105,
       "panels": [],
@@ -919,7 +919,7 @@
         "h": 10,
         "w": 8,
         "x": 0,
-        "y": 18
+        "y": 26
       },
       "id": 97,
       "options": {
@@ -1050,7 +1050,7 @@
         "h": 10,
         "w": 8,
         "x": 8,
-        "y": 18
+        "y": 26
       },
       "id": 106,
       "options": {
@@ -1178,7 +1178,7 @@
         "h": 10,
         "w": 8,
         "x": 16,
-        "y": 18
+        "y": 26
       },
       "id": 103,
       "options": {
@@ -1311,7 +1311,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 36
       },
       "id": 101,
       "options": {
@@ -1411,7 +1411,7 @@
         "h": 5,
         "w": 8,
         "x": 0,
-        "y": 36
+        "y": 44
       },
       "id": 99,
       "options": {
@@ -1540,7 +1540,7 @@
         "h": 5,
         "w": 8,
         "x": 8,
-        "y": 36
+        "y": 44
       },
       "id": 86,
       "options": {
@@ -1678,7 +1678,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 41
+        "y": 49
       },
       "id": 90,
       "panels": [],
@@ -1780,7 +1780,7 @@
         "h": 7,
         "w": 18,
         "x": 0,
-        "y": 42
+        "y": 50
       },
       "id": 88,
       "options": {
@@ -1977,7 +1977,7 @@
         "h": 7,
         "w": 6,
         "x": 18,
-        "y": 42
+        "y": 50
       },
       "id": 93,
       "options": {
@@ -2173,7 +2173,7 @@
         "h": 7,
         "w": 18,
         "x": 0,
-        "y": 49
+        "y": 57
       },
       "id": 91,
       "options": {
@@ -2370,7 +2370,7 @@
         "h": 7,
         "w": 6,
         "x": 18,
-        "y": 49
+        "y": 57
       },
       "id": 92,
       "options": {
@@ -2490,7 +2490,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 64
       },
       "id": 20,
       "panels": [],
@@ -2568,7 +2568,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 57
+        "y": 65
       },
       "id": 2,
       "options": {
@@ -2668,7 +2668,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 57
+        "y": 65
       },
       "id": 6,
       "options": {
@@ -2812,7 +2812,7 @@
         "h": 26,
         "w": 24,
         "x": 0,
-        "y": 65
+        "y": 73
       },
       "id": 84,
       "options": {
@@ -2950,7 +2950,7 @@
         "h": 16,
         "w": 24,
         "x": 0,
-        "y": 89
+        "y": 97
       },
       "id": 85,
       "options": {
@@ -2996,7 +2996,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 99
+        "y": 107
       },
       "id": 4,
       "panels": [],
@@ -3045,7 +3045,7 @@
         "h": 21,
         "w": 24,
         "x": 0,
-        "y": 92
+        "y": 100
       },
       "id": 10,
       "options": {
@@ -3143,7 +3143,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 113
+        "y": 121
       },
       "id": 48,
       "options": {
@@ -3241,7 +3241,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 120
+        "y": 128
       },
       "id": 272,
       "options": {
@@ -3339,7 +3339,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 120
+        "y": 128
       },
       "id": 273,
       "options": {
@@ -3435,9 +3435,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
-        "y": 128
+        "y": 136
       },
       "id": 274,
       "options": {
@@ -3533,9 +3533,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 128
+        "w": 8,
+        "x": 8,
+        "y": 136
       },
       "id": 275,
       "options": {
@@ -3572,6 +3572,105 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "U1-fPO3Mk"
+      },
+      "description": "Unread-cache rebuilds as a percentage of observed feed-state checks, grouped by reader source. This normalizes rebuild volume against reader work so traffic changes do not look like a cache-health regression.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 1,
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 136
+      },
+      "id": 321,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "9.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "U1-fPO3Mk"
+          },
+          "exemplar": true,
+          "expr": "sum by (source) (rate(newsblur_unread_cache_rebuilt_feeds_total[$__rate_interval])) / sum by (source) (rate(newsblur_unread_cache_feed_state_total[$__rate_interval]))",
+          "interval": "",
+          "intervalFactor": 4,
+          "legendFormat": "{{source}}",
+          "queryType": "randomWalk",
+          "refId": "A"
+        }
+      ],
+      "title": "Reader Unread Cache Rebuild Percentage",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "datasource": {
         "type": "datasource",
@@ -3581,7 +3680,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 136
+        "y": 144
       },
       "id": 42,
       "panels": [],
@@ -3658,7 +3757,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 137
+        "y": 145
       },
       "id": 33,
       "options": {
@@ -3754,7 +3853,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 137
+        "y": 145
       },
       "id": 28,
       "options": {
@@ -3867,7 +3966,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 145
+        "y": 153
       },
       "id": 30,
       "options": {
@@ -3965,7 +4064,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 145
+        "y": 153
       },
       "id": 32,
       "options": {
@@ -4061,7 +4160,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 153
+        "y": 161
       },
       "id": 12,
       "options": {
@@ -4157,7 +4256,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 153
+        "y": 161
       },
       "id": 26,
       "options": {
@@ -4199,7 +4298,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 161
+        "y": 169
       },
       "id": 16,
       "panels": [],
@@ -4275,7 +4374,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 162
+        "y": 170
       },
       "id": 8,
       "options": {
@@ -4367,7 +4466,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 162
+        "y": 170
       },
       "id": 232,
       "options": {
@@ -4459,7 +4558,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 162
+        "y": 170
       },
       "id": 233,
       "options": {
@@ -4576,7 +4675,7 @@
         "h": 7,
         "w": 5,
         "x": 0,
-        "y": 170
+        "y": 178
       },
       "id": 35,
       "options": {
@@ -4668,7 +4767,7 @@
         "h": 7,
         "w": 5,
         "x": 5,
-        "y": 170
+        "y": 178
       },
       "id": 18,
       "options": {
@@ -4760,7 +4859,7 @@
         "h": 7,
         "w": 5,
         "x": 10,
-        "y": 170
+        "y": 178
       },
       "id": 14,
       "options": {
@@ -4852,7 +4951,7 @@
         "h": 7,
         "w": 5,
         "x": 15,
-        "y": 170
+        "y": 178
       },
       "id": 24,
       "options": {
@@ -4945,7 +5044,7 @@
         "h": 7,
         "w": 4,
         "x": 20,
-        "y": 170
+        "y": 178
       },
       "id": 148,
       "options": {
@@ -4985,7 +5084,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 177
+        "y": 185
       },
       "id": 50,
       "panels": [],
@@ -5061,7 +5160,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 178
+        "y": 186
       },
       "id": 52,
       "options": {
@@ -5153,7 +5252,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 178
+        "y": 186
       },
       "id": 54,
       "options": {
@@ -5245,7 +5344,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 186
+        "y": 194
       },
       "id": 60,
       "options": {
@@ -5337,7 +5436,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 186
+        "y": 194
       },
       "id": 56,
       "options": {
@@ -5429,7 +5528,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 186
+        "y": 194
       },
       "id": 134,
       "options": {
@@ -5465,7 +5564,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 194
+        "y": 202
       },
       "id": 248,
       "panels": [],
@@ -5519,7 +5618,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 195
+        "y": 203
       },
       "id": 262,
       "options": {
@@ -5583,7 +5682,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 195
+        "y": 203
       },
       "id": 222,
       "options": {
@@ -5647,7 +5746,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 195
+        "y": 203
       },
       "id": 223,
       "options": {
@@ -5738,7 +5837,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 201
+        "y": 209
       },
       "id": 224,
       "options": {
@@ -5787,7 +5886,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 209
+        "y": 217
       },
       "id": 62,
       "panels": [],
@@ -5863,7 +5962,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 210
+        "y": 218
       },
       "id": 80,
       "options": {
@@ -5955,7 +6054,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 210
+        "y": 218
       },
       "id": 116,
       "options": {
@@ -6044,7 +6143,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 218
+        "y": 226
       },
       "id": 75,
       "options": {
@@ -6140,7 +6239,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 218
+        "y": 226
       },
       "id": 136,
       "options": {
@@ -6230,7 +6329,7 @@
         "h": 7,
         "w": 6,
         "x": 0,
-        "y": 226
+        "y": 234
       },
       "id": 114,
       "options": {
@@ -6322,7 +6421,7 @@
         "h": 7,
         "w": 6,
         "x": 6,
-        "y": 226
+        "y": 234
       },
       "id": 78,
       "options": {
@@ -6414,7 +6513,7 @@
         "h": 7,
         "w": 6,
         "x": 12,
-        "y": 226
+        "y": 234
       },
       "id": 120,
       "options": {
@@ -6503,7 +6602,7 @@
         "h": 7,
         "w": 6,
         "x": 18,
-        "y": 226
+        "y": 234
       },
       "id": 118,
       "options": {
@@ -6593,7 +6692,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 233
+        "y": 241
       },
       "id": 130,
       "options": {
@@ -6682,7 +6781,7 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 233
+        "y": 241
       },
       "id": 128,
       "options": {
@@ -6773,7 +6872,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 233
+        "y": 241
       },
       "id": 126,
       "options": {
@@ -6862,7 +6961,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 233
+        "y": 241
       },
       "id": 122,
       "options": {
@@ -6955,7 +7054,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 241
+        "y": 249
       },
       "id": 66,
       "options": {
@@ -7118,7 +7217,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 241
+        "y": 249
       },
       "id": 110,
       "options": {
@@ -7266,7 +7365,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 249
+        "y": 257
       },
       "id": 71,
       "options": {
@@ -7414,7 +7513,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 249
+        "y": 257
       },
       "id": 111,
       "options": {
@@ -7562,7 +7661,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 257
+        "y": 265
       },
       "id": 72,
       "options": {
@@ -7696,7 +7795,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 257
+        "y": 265
       },
       "id": 112,
       "options": {
@@ -7841,7 +7940,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 265
+        "y": 273
       },
       "id": 73,
       "options": {
@@ -7940,7 +8039,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 265
+        "y": 273
       },
       "id": 64,
       "options": {
@@ -8031,7 +8130,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 271
+        "y": 279
       },
       "id": 138,
       "options": {
@@ -8070,7 +8169,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 279
+        "y": 287
       },
       "id": 68,
       "panels": [],
@@ -8147,7 +8246,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 280
+        "y": 288
       },
       "id": 70,
       "options": {
@@ -8240,7 +8339,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 280
+        "y": 288
       },
       "id": 76,
       "options": {
@@ -8332,7 +8431,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 285
+        "y": 293
       },
       "id": 146,
       "options": {
@@ -8422,7 +8521,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 285
+        "y": 293
       },
       "id": 144,
       "options": {
@@ -8511,7 +8610,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 293
+        "y": 301
       },
       "id": 142,
       "options": {
@@ -8600,7 +8699,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 301
+        "y": 309
       },
       "id": 140,
       "options": {
@@ -8640,7 +8739,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 317
+        "y": 325
       },
       "id": 40,
       "panels": [],
@@ -8715,9 +8814,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
-        "y": 318
+        "y": 326
       },
       "id": 108,
       "options": {
@@ -8806,9 +8905,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 318
+        "w": 8,
+        "x": 8,
+        "y": 326
       },
       "id": 95,
       "options": {
@@ -8837,6 +8936,99 @@
         }
       ],
       "title": "Scrape duration for Django Metrics",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "U1-fPO3Mk"
+      },
+      "description": "Samples collected from each Django metrics target on every scrape. Each target aggregates metrics from multiple application workers, so a worker-count or metric-cardinality increase raises both samples scraped and scrape duration without necessarily changing reader request latency.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 326
+      },
+      "id": 322,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "U1-fPO3Mk"
+          },
+          "exemplar": true,
+          "expr": "scrape_samples_scraped{job=\"django\"}",
+          "interval": "",
+          "intervalFactor": 3,
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Django Metrics Samples per Scrape",
       "type": "timeseries"
     },
     {
@@ -8878,7 +9070,7 @@
         "h": 43,
         "w": 24,
         "x": 0,
-        "y": 326
+        "y": 334
       },
       "id": 37,
       "options": {
@@ -8923,7 +9115,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 370
+        "y": 378
       },
       "id": 149,
       "panels": [],
@@ -9000,7 +9192,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 371
+        "y": 379
       },
       "id": 150,
       "options": {
@@ -9093,7 +9285,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 371
+        "y": 379
       },
       "id": 151,
       "options": {
@@ -9186,7 +9378,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 371
+        "y": 379
       },
       "id": 152,
       "options": {
@@ -9279,7 +9471,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 379
+        "y": 387
       },
       "id": 153,
       "options": {
@@ -9372,7 +9564,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 379
+        "y": 387
       },
       "id": 154,
       "options": {
@@ -9465,7 +9657,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 379
+        "y": 387
       },
       "id": 155,
       "options": {
@@ -9558,7 +9750,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 387
+        "y": 395
       },
       "id": 156,
       "options": {
@@ -9651,7 +9843,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 387
+        "y": 395
       },
       "id": 157,
       "options": {
@@ -9744,7 +9936,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 387
+        "y": 395
       },
       "id": 158,
       "options": {
@@ -9837,7 +10029,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 395
+        "y": 403
       },
       "id": 159,
       "options": {
@@ -9930,7 +10122,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 395
+        "y": 403
       },
       "id": 160,
       "options": {
@@ -9972,7 +10164,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 403
+        "y": 411
       },
       "id": 234,
       "panels": [],
@@ -10049,7 +10241,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 404
+        "y": 412
       },
       "id": 235,
       "options": {
@@ -10178,7 +10370,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 404
+        "y": 412
       },
       "id": 236,
       "options": {
@@ -10307,7 +10499,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 412
+        "y": 420
       },
       "id": 237,
       "options": {
@@ -10436,7 +10628,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 412
+        "y": 420
       },
       "id": 238,
       "options": {
@@ -10510,7 +10702,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 421
+        "y": 429
       },
       "id": 294,
       "panels": [],
@@ -10578,7 +10770,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 422
+        "y": 430
       },
       "id": 295,
       "options": {
@@ -10674,7 +10866,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 422
+        "y": 430
       },
       "id": 296,
       "options": {
@@ -10715,7 +10907,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 430
+        "y": 438
       },
       "id": 244,
       "panels": [],
@@ -10792,7 +10984,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 431
+        "y": 439
       },
       "id": 245,
       "options": {
@@ -10909,7 +11101,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 431
+        "y": 439
       },
       "id": 246,
       "options": {
@@ -11026,7 +11218,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 431
+        "y": 439
       },
       "id": 247,
       "options": {
@@ -11100,7 +11292,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 439
+        "y": 447
       },
       "id": 200,
       "panels": [],
@@ -11149,7 +11341,7 @@
         "h": 5,
         "w": 4,
         "x": 0,
-        "y": 440
+        "y": 448
       },
       "id": 201,
       "options": {
@@ -11231,7 +11423,7 @@
         "h": 5,
         "w": 4,
         "x": 4,
-        "y": 440
+        "y": 448
       },
       "id": 202,
       "options": {
@@ -11313,7 +11505,7 @@
         "h": 5,
         "w": 4,
         "x": 8,
-        "y": 440
+        "y": 448
       },
       "id": 203,
       "options": {
@@ -11382,7 +11574,7 @@
         "h": 5,
         "w": 4,
         "x": 12,
-        "y": 440
+        "y": 448
       },
       "id": 204,
       "options": {
@@ -11427,75 +11619,6 @@
         "type": "prometheus",
         "uid": "U1-fPO3Mk"
       },
-      "description": "Number of LLM API calls in the last 7 days",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 4,
-        "x": 16,
-        "y": 440
-      },
-      "id": 208,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "expr": "llm_costs{metric=\"requests\",period=\"weekly\",provider!~\".+\",feature!~\".+\"}",
-          "instant": true,
-          "legendFormat": "Total",
-          "refId": "A"
-        },
-        {
-          "expr": "llm_costs{metric=\"requests\",provider=~\".+\",period=\"weekly\"}",
-          "instant": true,
-          "legendFormat": "{{provider}}",
-          "refId": "B"
-        },
-        {
-          "expr": "llm_costs{metric=\"requests\",feature=~\".+\",period=\"weekly\"}",
-          "instant": true,
-          "legendFormat": "{{feature}}",
-          "refId": "C"
-        }
-      ],
-      "title": "This Week's Requests",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "U1-fPO3Mk"
-      },
       "description": "Number of LLM API calls in the last 30 days",
       "fieldConfig": {
         "defaults": {
@@ -11520,7 +11643,7 @@
         "h": 5,
         "w": 4,
         "x": 20,
-        "y": 440
+        "y": 448
       },
       "id": 209,
       "options": {
@@ -11620,7 +11743,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 445
+        "y": 453
       },
       "id": 205,
       "options": {
@@ -11707,7 +11830,7 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 445
+        "y": 453
       },
       "id": 206,
       "options": {
@@ -11794,7 +11917,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 445
+        "y": 453
       },
       "id": 210,
       "options": {
@@ -11880,7 +12003,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 445
+        "y": 453
       },
       "id": 207,
       "options": {
@@ -11913,7 +12036,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 453
+        "y": 461
       },
       "id": 283,
       "panels": [],
@@ -12011,7 +12134,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 454
+        "y": 462
       },
       "id": 290,
       "options": {
@@ -12102,7 +12225,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 454
+        "y": 462
       },
       "id": 291,
       "options": {
@@ -12204,7 +12327,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 454
+        "y": 462
       },
       "id": 292,
       "options": {
@@ -12301,7 +12424,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 462
+        "y": 470
       },
       "id": 293,
       "options": {
@@ -12449,503 +12572,12 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 470
+        "y": 478
       },
       "id": 161,
       "panels": [],
       "title": "Trending Feeds",
       "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "U1-fPO3Mk"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto",
-            "inspect": true
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Value"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Seconds Read"
-              },
-              {
-                "id": "unit",
-                "value": "s"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "rank"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Rank"
-              },
-              {
-                "id": "custom.width",
-                "value": 60
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "feed_title"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Feed"
-              },
-              {
-                "id": "custom.width",
-                "value": 200
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "story_title"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Story Title"
-              },
-              {
-                "id": "custom.width",
-                "value": 300
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "feed_id"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Feed ID"
-              },
-              {
-                "id": "custom.width",
-                "value": 100
-              },
-              {
-                "id": "links",
-                "value": [
-                  {
-                    "title": "View Feed",
-                    "url": "https://www.newsblur.com/site/${__value.text}",
-                    "targetBlank": true
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "story_hash"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Story Hash"
-              },
-              {
-                "id": "custom.width",
-                "value": 150
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "story_date"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Story Date"
-              },
-              {
-                "id": "custom.width",
-                "value": 130
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "reader_count"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Readers"
-              },
-              {
-                "id": "custom.width",
-                "value": 80
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 471
-      },
-      "id": 162,
-      "options": {
-        "footer": {
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "Rank",
-            "desc": false
-          }
-        ]
-      },
-      "pluginVersion": "9.0.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "U1-fPO3Mk"
-          },
-          "exemplar": false,
-          "expr": "trending{metric=\"top_story\",days=\"$days\"}",
-          "format": "table",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ],
-      "title": "Top Stories by Read Time",
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "days": true,
-              "instance": true,
-              "job": true,
-              "metric": true
-            },
-            "indexByName": {
-              "rank": 0,
-              "feed_title": 1,
-              "story_title": 2,
-              "Value": 3,
-              "reader_count": 4,
-              "story_date": 5,
-              "feed_id": 6,
-              "story_hash": 7
-            },
-            "renameByName": {}
-          }
-        }
-      ],
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "U1-fPO3Mk"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto",
-            "inspect": true
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Value"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Avg Read Time"
-              },
-              {
-                "id": "unit",
-                "value": "s"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "rank"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Rank"
-              },
-              {
-                "id": "custom.width",
-                "value": 60
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "feed_title"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Feed"
-              },
-              {
-                "id": "custom.width",
-                "value": 200
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "story_title"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Story Title"
-              },
-              {
-                "id": "custom.width",
-                "value": 300
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "feed_id"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Feed ID"
-              },
-              {
-                "id": "custom.width",
-                "value": 100
-              },
-              {
-                "id": "links",
-                "value": [
-                  {
-                    "title": "View Feed",
-                    "url": "https://www.newsblur.com/site/${__value.text}",
-                    "targetBlank": true
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "story_hash"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Story Hash"
-              },
-              {
-                "id": "custom.width",
-                "value": 150
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "story_date"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Story Date"
-              },
-              {
-                "id": "custom.width",
-                "value": 130
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "reader_count"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Readers"
-              },
-              {
-                "id": "custom.width",
-                "value": 80
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "total_seconds"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Total Time"
-              },
-              {
-                "id": "unit",
-                "value": "s"
-              },
-              {
-                "id": "custom.width",
-                "value": 100
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 481
-      },
-      "id": 208,
-      "options": {
-        "footer": {
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "Rank",
-            "desc": false
-          }
-        ]
-      },
-      "pluginVersion": "9.0.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "U1-fPO3Mk"
-          },
-          "exemplar": false,
-          "expr": "trending{metric=\"long_read\",days=\"$days\"}",
-          "format": "table",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ],
-      "title": "Long Reads (\u22653 Readers by Avg Time)",
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "days": true,
-              "instance": true,
-              "job": true,
-              "metric": true
-            },
-            "indexByName": {
-              "rank": 0,
-              "feed_title": 1,
-              "story_title": 2,
-              "Value": 3,
-              "reader_count": 4,
-              "total_seconds": 5,
-              "story_date": 6,
-              "feed_id": 7,
-              "story_hash": 8
-            },
-            "renameByName": {}
-          }
-        }
-      ],
-      "type": "table"
     },
     {
       "datasource": {
@@ -12983,7 +12615,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 501
+        "y": 479
       },
       "id": 163,
       "options": {
@@ -13053,7 +12685,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 501
+        "y": 479
       },
       "id": 164,
       "options": {
@@ -13123,7 +12755,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 501
+        "y": 479
       },
       "id": 165,
       "options": {
@@ -13214,7 +12846,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 509
+        "y": 487
       },
       "id": 166,
       "options": {
@@ -13302,7 +12934,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 509
+        "y": 487
       },
       "id": 167,
       "options": {
@@ -13369,7 +13001,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 517
+        "y": 495
       },
       "id": 168,
       "options": {
@@ -13439,7 +13071,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 517
+        "y": 495
       },
       "id": 169,
       "options": {
@@ -13479,202 +13111,12 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 525
+        "y": 503
       },
       "id": 171,
       "panels": [],
       "title": "Trending Subscriptions",
       "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "U1-fPO3Mk"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto",
-            "inspect": true
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "rank"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Rank"
-              },
-              {
-                "id": "custom.width",
-                "value": 60
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "feed_title"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Feed"
-              },
-              {
-                "id": "custom.width",
-                "value": 300
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Value"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Score"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "new_subscriptions"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "New Subs"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "total_subscribers"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Total Subs"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "feed_id"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "URL"
-              },
-              {
-                "id": "custom.width",
-                "value": 120
-              },
-              {
-                "id": "links",
-                "value": [
-                  {
-                    "title": "View Feed",
-                    "url": "https://www.newsblur.com/site/${__value.text}",
-                    "targetBlank": true
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 491
-      },
-      "id": 172,
-      "options": {
-        "footer": {
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "Rank",
-            "desc": false
-          }
-        ]
-      },
-      "pluginVersion": "9.0.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "U1-fPO3Mk"
-          },
-          "exemplar": false,
-          "expr": "trending_subscriptions{metric=\"trending_feed\",days=\"$days\"}",
-          "format": "table",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ],
-      "title": "Top Trending Feeds by Subscriptions",
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "days": true,
-              "instance": true,
-              "job": true,
-              "metric": true,
-              "subscriptions_today": true
-            },
-            "indexByName": {
-              "rank": 0,
-              "feed_title": 1,
-              "new_subscriptions": 2,
-              "Value": 3,
-              "total_subscribers": 4,
-              "feed_id": 5
-            },
-            "renameByName": {}
-          }
-        }
-      ],
-      "type": "table"
     },
     {
       "datasource": {
@@ -13712,7 +13154,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 526
+        "y": 504
       },
       "id": 173,
       "options": {
@@ -13782,7 +13224,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 526
+        "y": 504
       },
       "id": 174,
       "options": {
@@ -13874,7 +13316,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 526
+        "y": 504
       },
       "id": 175,
       "options": {
@@ -13915,7 +13357,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 577
+        "y": 555
       },
       "id": 176,
       "panels": [],
@@ -13992,7 +13434,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 578
+        "y": 556
       },
       "id": 177,
       "options": {
@@ -14084,7 +13526,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 578
+        "y": 556
       },
       "id": 178,
       "options": {
@@ -14372,7 +13814,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 586
+        "y": 564
       },
       "id": 211,
       "options": {
@@ -14450,7 +13892,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 598
+        "y": 576
       },
       "id": 212,
       "panels": [],
@@ -14519,7 +13961,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 599
+        "y": 577
       },
       "id": 213,
       "options": {
@@ -14618,7 +14060,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 607
+        "y": 585
       },
       "id": 216,
       "options": {
@@ -14655,7 +14097,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 615
+        "y": 593
       },
       "id": 218,
       "panels": [],
@@ -14720,7 +14162,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 616
+        "y": 594
       },
       "id": 219,
       "options": {
@@ -14757,7 +14199,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 624
+        "y": 602
       },
       "id": 266,
       "panels": [],
@@ -14826,7 +14268,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 625
+        "y": 603
       },
       "id": 267,
       "options": {
@@ -14920,7 +14362,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 625
+        "y": 603
       },
       "id": 268,
       "options": {
@@ -14958,7 +14400,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 633
+        "y": 611
       },
       "id": 239,
       "panels": [],
@@ -15026,7 +14468,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 634
+        "y": 612
       },
       "id": 240,
       "options": {
@@ -15155,7 +14597,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 634
+        "y": 612
       },
       "id": 241,
       "options": {
@@ -15284,7 +14726,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 634
+        "y": 612
       },
       "id": 242,
       "options": {
@@ -15413,7 +14855,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 642
+        "y": 620
       },
       "id": 243,
       "options": {
@@ -15542,7 +14984,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 642
+        "y": 620
       },
       "id": 270,
       "options": {
@@ -15659,7 +15101,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 642
+        "y": 620
       },
       "id": 271,
       "options": {
@@ -15709,7 +15151,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 544
+        "y": 522
       },
       "id": 249,
       "panels": [],
@@ -15744,7 +15186,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 545
+        "y": 523
       },
       "id": 250,
       "options": {
@@ -15806,7 +15248,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 545
+        "y": 523
       },
       "id": 251,
       "options": {
@@ -15868,7 +15310,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 545
+        "y": 523
       },
       "id": 252,
       "options": {
@@ -15930,7 +15372,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 553
+        "y": 531
       },
       "id": 253,
       "options": {
@@ -15992,7 +15434,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 553
+        "y": 531
       },
       "id": 254,
       "options": {
@@ -16054,7 +15496,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 553
+        "y": 531
       },
       "id": 255,
       "options": {
@@ -16146,7 +15588,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 561
+        "y": 539
       },
       "id": 256,
       "options": {
@@ -16257,7 +15699,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 561
+        "y": 539
       },
       "id": 257,
       "options": {
@@ -16316,7 +15758,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 569
+        "y": 547
       },
       "id": 258,
       "options": {
@@ -16378,7 +15820,7 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 569
+        "y": 547
       },
       "id": 259,
       "options": {
@@ -16440,7 +15882,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 569
+        "y": 547
       },
       "id": 260,
       "options": {
@@ -16502,7 +15944,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 569
+        "y": 547
       },
       "id": 261,
       "options": {
@@ -16546,7 +15988,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 643
+        "y": 621
       },
       "id": 276,
       "panels": [],
@@ -16589,7 +16031,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 644
+        "y": 622
       },
       "id": 277,
       "options": {
@@ -16653,7 +16095,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 644
+        "y": 622
       },
       "id": 278,
       "options": {
@@ -16705,7 +16147,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 652
+        "y": 630
       },
       "id": 279,
       "panels": [],
@@ -16782,7 +16224,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 653
+        "y": 631
       },
       "id": 280,
       "options": {
@@ -16935,7 +16377,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 653
+        "y": 631
       },
       "id": 281,
       "options": {
@@ -17064,7 +16506,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 653
+        "y": 631
       },
       "id": 282,
       "options": {
@@ -17213,7 +16655,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 661
+        "y": 17
       },
       "id": 297,
       "options": {
@@ -17356,7 +16798,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 661
+        "y": 17
       },
       "id": 320,
       "options": {

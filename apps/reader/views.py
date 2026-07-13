@@ -59,6 +59,7 @@ from apps.analyzer.models import (
     MClassifierText,
     MClassifierTitle,
     MClassifierUrl,
+    apply_classifier_author_regex,
     apply_classifier_authors,
     apply_classifier_feeds,
     apply_classifier_tags,
@@ -2158,12 +2159,17 @@ def folder_rss_feed(request, user_id, secret_token, unread_filter, folder_slug):
         )
         story_content = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F]", "", story_content)
         story_title = "%s%s" % (("%s: " % feed_title) if feed_title else "", story["story_title"])
+        internal_story_url = "https://%s/site/%s/%s/" % (
+            domain,
+            story["story_feed_id"],
+            story["guid_hash"],
+        )
         story_data = {
             "title": story_title,
-            "link": story["story_permalink"],
+            "link": story["story_permalink"] or internal_story_url,
             "description": story_content,
             "categories": story["story_tags"],
-            "unique_id": "https://%s/site/%s/%s/" % (domain, story["story_feed_id"], story["guid_hash"]),
+            "unique_id": internal_story_url,
             "pubdate": localtime_for_timezone(story["story_date"], user.profile.timezone),
         }
         if story["story_authors"]:
@@ -3310,7 +3316,7 @@ def mark_story_hashes_as_read(request):
             try:
                 seconds = int(seconds)
                 if seconds >= RTrendingStory.MIN_READ_TIME_SECONDS:
-                    RTrendingStory.add_read_time(story_hash, seconds)
+                    RTrendingStory.add_read_time(story_hash, seconds, user_id=request.user.pk)
                     # Log read time with feed/story titles
                     try:
                         feed_id = int(story_hash.split(":")[0])
@@ -5025,6 +5031,7 @@ def _mark_story_as_starred(request):
                 continue
 
             created = True
+            RTrendingStory.record_quality_action(story.story_hash, request.user.pk)
             MActivity.new_starred_story(
                 user_id=request.user.pk,
                 story_title=story.story_title,
@@ -5515,10 +5522,10 @@ def trending_feeds(request):
 @json.json_view
 def load_trending_stories(request):
     """
-    Load stories from the permanent trending lists (Well-Read Stories or Long Reads).
+    Load stories from the permanent trending lists.
 
     GET Parameters:
-        trending_type: "well_read" or "long_reads"
+        trending_type: "well_read", "long_reads", or "good_reads"
         page: Page number (default 1)
         limit: Stories per page (default 12)
         order: "newest" or "oldest" (default "newest")
@@ -5526,6 +5533,8 @@ def load_trending_stories(request):
     """
     user = get_user(request)
     trending_type = request.GET.get("trending_type", "well_read")
+    if trending_type not in ("well_read", "long_reads", "good_reads"):
+        trending_type = "well_read"
     page = max(int(request.GET.get("page", 1)), 1)
     limit = min(int(request.GET.get("limit", 12)), 100)
     order = request.GET.get("order", "newest")
@@ -5536,7 +5545,11 @@ def load_trending_stories(request):
 
     user_id = user.pk if user.is_authenticated else None
 
-    if trending_type == "long_reads":
+    if trending_type == "good_reads":
+        story_hashes = RTrendingStory.get_good_read_story_hashes(
+            offset=offset, limit=limit, order=order, read_filter=read_filter, user_id=user_id
+        )
+    elif trending_type == "long_reads":
         story_hashes = RTrendingStory.get_long_read_story_hashes(
             offset=offset, limit=limit, order=order, read_filter=read_filter, user_id=user_id
         )
@@ -5575,31 +5588,32 @@ def load_trending_stories(request):
     unsub_feeds = Feed.objects.filter(pk__in=unsub_feed_ids)
     unsub_feeds = [feed.canonical(include_favicon=False) for feed in unsub_feeds]
 
-    # Load classifiers for feeds the user has trained
-    trained_feed_ids = [sub.feed_id for sub in usersubs if sub.is_trained]
-    found_trained_feed_ids = list(set(trained_feed_ids) & set(story_feed_ids))
+    # apps/reader/views.py: Load classifiers for every returned feed, including unsubscribed feeds.
+    classic_classifier_feed_ids = story_feed_ids
     has_scoped = user.profile.is_archive and user.profile.has_scoped_classifiers
     folder_feed_ids = None
 
-    if found_trained_feed_ids or has_scoped:
-        if found_trained_feed_ids:
+    if classic_classifier_feed_ids or has_scoped:
+        if classic_classifier_feed_ids:
             classifier_feeds = list(
-                MClassifierFeed.objects(user_id=user.pk, feed_id__in=found_trained_feed_ids, social_user_id=0)
+                MClassifierFeed.objects(
+                    user_id=user.pk, feed_id__in=classic_classifier_feed_ids, social_user_id=0
+                )
             )
             classifier_authors = list(
-                MClassifierAuthor.objects(user_id=user.pk, feed_id__in=found_trained_feed_ids)
+                MClassifierAuthor.objects(user_id=user.pk, feed_id__in=classic_classifier_feed_ids)
             )
             classifier_titles = list(
-                MClassifierTitle.objects(user_id=user.pk, feed_id__in=found_trained_feed_ids)
+                MClassifierTitle.objects(user_id=user.pk, feed_id__in=classic_classifier_feed_ids)
             )
             classifier_tags = list(
-                MClassifierTag.objects(user_id=user.pk, feed_id__in=found_trained_feed_ids)
+                MClassifierTag.objects(user_id=user.pk, feed_id__in=classic_classifier_feed_ids)
             )
             classifier_texts = list(
-                MClassifierText.objects(user_id=user.pk, feed_id__in=found_trained_feed_ids)
+                MClassifierText.objects(user_id=user.pk, feed_id__in=classic_classifier_feed_ids)
             )
             classifier_urls = list(
-                MClassifierUrl.objects(user_id=user.pk, feed_id__in=found_trained_feed_ids)
+                MClassifierUrl.objects(user_id=user.pk, feed_id__in=classic_classifier_feed_ids)
             )
         else:
             classifier_feeds = []
@@ -5686,6 +5700,11 @@ def load_trending_stories(request):
         story["intelligence"] = {
             "feed": apply_classifier_feeds(classifier_feeds, story["story_feed_id"]),
             "author": apply_classifier_authors(classifier_authors, story, folder_feed_ids=folder_feed_ids),
+            "author_regex": (
+                apply_classifier_author_regex(classifier_authors, story, folder_feed_ids=folder_feed_ids)
+                if user_is_pro
+                else 0
+            ),
             "tags": apply_classifier_tags(classifier_tags, story, folder_feed_ids=folder_feed_ids),
             "title": apply_classifier_titles(classifier_titles, story, folder_feed_ids=folder_feed_ids),
             "title_regex": (
@@ -5719,7 +5738,12 @@ def load_trending_stories(request):
         story["prompt_classifiers"] = prompt_data["details"].get(story["story_hash"], [])
         story["score"] = UserSubscription.score_story(story["intelligence"])
 
-    type_label = "long reads" if trending_type == "long_reads" else "widely-read"
+    type_labels = {
+        "well_read": "widely-read",
+        "long_reads": "long reads",
+        "good_reads": "good reads",
+    }
+    type_label = type_labels[trending_type]
     logging.user(request, "~FCLoading ~SB%s~SN %s stories (p. %s)" % (len(stories), type_label, page))
 
     return {

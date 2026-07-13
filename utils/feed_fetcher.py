@@ -161,6 +161,17 @@ FEED_OK, FEED_SAME, FEED_ERRPARSE, FEED_ERRHTTP, FEED_ERREXC = list(range(5))
 NO_UNDERSCORE_ADDRESSES = ["jwz"]
 
 
+def feed_image_url(image):
+    if isinstance(image, str):
+        return image.strip()
+    if isinstance(image, dict):
+        for key in ("href", "url"):
+            value = image.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
+
+
 def fetch_url_with_scrapingbee(url):
     """Fetch a URL using ScrapingBee without requiring a Feed object.
     Used for feed discovery when direct requests are blocked.
@@ -312,6 +323,14 @@ class FetchFeed:
                     "   ***> [%-30s] ~FRYouTube API quota exceeded: %s" % (self.feed.log_title[:30], e)
                 )
                 self.feed.save_feed_history(429, "YouTube API quota exceeded")
+                self.feed = self.feed.save()
+                return FEED_ERRHTTP, None
+            except requests.RequestException as e:
+                logging.debug(
+                    "   ***> [%-30s] ~FRYouTube API request failed: %s"
+                    % (self.feed.log_title[:30], e)
+                )
+                self.feed.save_feed_history(503, "YouTube API request failed", e)
                 self.feed = self.feed.save()
                 return FEED_ERRHTTP, None
             if not youtube_feed:
@@ -628,6 +647,7 @@ class FetchFeed:
                 UnsafeUrlError,
                 TypeError,
                 ValueError,
+                IndexError,
                 KeyError,
                 EOFError,
                 MemoryError,
@@ -657,6 +677,7 @@ class FetchFeed:
                 UnsafeUrlError,
                 TypeError,
                 ValueError,
+                IndexError,
                 KeyError,
                 EOFError,
                 MemoryError,
@@ -972,6 +993,10 @@ class ProcessFeed:
             self.feed = saved_feed
             self.feed_id = self.feed.pk
 
+    def load_existing_stories(self, story_hashes):
+        stories = MStory.objects(story_hash__in=story_hashes).order_by()
+        return {story.story_hash: story for story in stories}
+
     def process(self):
         """Downloads and parses a feed."""
         start = time.time()
@@ -1110,14 +1135,7 @@ class ProcessFeed:
                 )
             )
 
-        existing_stories = dict(
-            (s.story_hash, s)
-            for s in MStory.objects(
-                story_hash__in=story_hashes,
-                # story_date__gte=start_date,
-                # story_feed_id=self.feed.pk
-            )
-        )
+        existing_stories = self.load_existing_stories(story_hashes)
         # if len(existing_stories) == 0:
         #     existing_stories = dict((s.story_hash, s) for s in MStory.objects(
         #         story_date__gte=start_date,
@@ -1214,14 +1232,17 @@ class ProcessFeed:
             # 302 and 307: Temporary redirect: ignore
             # 301 and 308: Permanent redirect: save it (after 10 tries)
             if self.fpf.status == 301 or self.fpf.status == 308:
-                if self.fpf.href.endswith("feedburner.com/atom.xml"):
+                redirect_address = self.fpf.get("href")
+                if not redirect_address:
+                    return FEED_ERRHTTP, ret_values
+                if redirect_address.endswith("feedburner.com/atom.xml"):
                     return FEED_ERRHTTP, ret_values
                 redirects, non_redirects = self.feed.count_redirects_in_history("feed")
                 self.feed.save_feed_history(
                     self.fpf.status, "HTTP Redirect (%d to go)" % (10 - len(redirects))
                 )
                 if len(redirects) >= 10 or len(non_redirects) == 0:
-                    address = self.fpf.href
+                    address = redirect_address
                     if self.options["force"] and address:
                         address = qurl(address, remove=["_"])
                     self.feed.feed_address = strip_underscore_from_feed_address(address)
@@ -1649,8 +1670,8 @@ class FeedFetcherWorker:
             declared_icon_url = ""
             declared_logo_url = ""
             if fetched_feed and hasattr(fetched_feed, "feed"):
-                declared_icon_url = (fetched_feed.feed.get("icon") or "").strip()
-                declared_logo_url = (fetched_feed.feed.get("logo") or "").strip()
+                declared_icon_url = feed_image_url(fetched_feed.feed.get("icon"))
+                declared_logo_url = feed_image_url(fetched_feed.feed.get("logo"))
 
             if (
                 (self.options["force"])

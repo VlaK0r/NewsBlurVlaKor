@@ -29,8 +29,11 @@ def normalize_url_for_safety(url):
 
 
 def validate_public_url(url):
-    url = normalize_url_for_safety(url)
-    parsed = urlparse(url)
+    try:
+        url = normalize_url_for_safety(url)
+        parsed = urlparse(url)
+    except ValueError as e:
+        raise UnsafeUrlError("Invalid URL.") from e
 
     if parsed.scheme not in HTTP_SCHEMES:
         raise UnsafeUrlError("Only http and https URLs are allowed.")
@@ -116,7 +119,7 @@ def _resolve_hostname(hostname, port):
 
     try:
         infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
-    except socket.gaierror as e:
+    except (socket.gaierror, UnicodeError) as e:
         raise UnsafeUrlError("Could not resolve URL hostname.") from e
 
     addresses = set()

@@ -10,6 +10,7 @@ import hashlib
 import heapq
 import re
 import time
+import uuid
 from operator import itemgetter
 from pprint import pprint
 
@@ -1386,14 +1387,17 @@ class UserSubscription(models.Model):
         if len(feed_keys) <= batch_size:
             r.sunionstore(key, *feed_keys)
         else:
-            temp_key = "%s:trim_temp" % key
+            temp_key = "%s:trim_temp:%s" % (key, uuid.uuid4().hex)
             for i in range(0, len(feed_keys), batch_size):
                 batch = feed_keys[i : i + batch_size]
                 if i == 0:
                     r.sunionstore(temp_key, *batch)
                 else:
                     r.sunionstore(temp_key, temp_key, *batch)
-            r.rename(temp_key, key)
+            if r.exists(temp_key):
+                r.rename(temp_key, key)
+            else:
+                r.delete(key)
         new_count = r.scard(key)
 
         missing_rs = []
@@ -2022,6 +2026,7 @@ class UserSubscription(models.Model):
 
         max_score = max(
             scores["author"],
+            scores.get("author_regex", 0),
             scores["tags"],
             scores["title"],
             scores.get("title_regex", 0),
@@ -2032,6 +2037,7 @@ class UserSubscription(models.Model):
         )
         min_score = min(
             scores["author"],
+            scores.get("author_regex", 0),
             scores["tags"],
             scores["title"],
             scores.get("title_regex", 0),

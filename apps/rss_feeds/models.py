@@ -75,6 +75,7 @@ from utils.url_safety import UnsafeUrlError, safe_requests_get, validate_public_
 from vendor.timezones.utilities import localtime_for_timezone
 
 ENTRY_NEW, ENTRY_UPDATED, ENTRY_SAME, ENTRY_ERR = list(range(4))
+MAX_STORY_CONTENT_BYTES = 10 * 1024 * 1024
 
 
 class Feed(models.Model):
@@ -1711,7 +1712,7 @@ class Feed(models.Model):
         from utils.webfeed_fetcher import WebFeedFetcher
 
         # Only fetch if at least one archive subscriber exists
-        if self.archive_subscribers <= 0:
+        if not self.archive_subscribers or self.archive_subscribers <= 0:
             logging.debug(
                 "   ---> [%-30s] ~FYWeb Feed: Skipping fetch, no archive subscribers" % (self.log_title[:30],)
             )
@@ -1820,6 +1821,9 @@ class Feed(models.Model):
                     s.save()
                     ret_values["new"] += 1
                     s.publish_to_subscribers()
+                except NotUniqueError:
+                    ret_values["same"] += 1
+                    continue
                 except (IntegrityError, OperationError) as e:
                     ret_values["error"] += 1
                     if settings.DEBUG:
@@ -1827,6 +1831,7 @@ class Feed(models.Model):
                             "   ---> [%-30s] ~SN~FRIntegrityError on new story: %s - %s"
                             % (self.feed_title[:30], story.get("guid"), e)
                         )
+                    continue
                 if self.is_google_news_feed and s:
                     s.fetch_og_image()
                     if s.image_urls:
@@ -3637,6 +3642,24 @@ class MStory(mongo.Document):
         story_content_type_max = MStory._fields["story_content_type"].max_length
         self.story_hash = self.feed_guid_hash
 
+        if self.story_content:
+            story_content_bytes = smart_bytes(self.story_content)
+            if len(story_content_bytes) > MAX_STORY_CONTENT_BYTES:
+                truncated_bytes = story_content_bytes[:MAX_STORY_CONTENT_BYTES]
+                try:
+                    self.story_content = truncated_bytes.decode("utf-8")
+                except UnicodeDecodeError as error:
+                    boundary_end = MAX_STORY_CONTENT_BYTES
+                    while (
+                        boundary_end < len(story_content_bytes)
+                        and story_content_bytes[boundary_end] & 0xC0 == 0x80
+                    ):
+                        boundary_end += 1
+                    boundary_character = story_content_bytes[error.start:boundary_end]
+                    prefix_bytes = story_content_bytes[: MAX_STORY_CONTENT_BYTES - len(boundary_character)]
+                    self.story_content = prefix_bytes.decode("utf-8", errors="ignore")
+                    self.story_content += boundary_character.decode("utf-8")
+
         self.extract_image_urls()
 
         if self.story_content:
@@ -4909,10 +4932,16 @@ class MFetchHistory(mongo.Document):
     def add(cls, feed_id, fetch_type, date=None, message=None, code=None, exception=None):
         if not date:
             date = datetime.datetime.now()
+        if message is not None:
+            message = smart_str(message)[:4096]
+        primary_objects = cls.objects.read_preference(pymongo.ReadPreference.PRIMARY)
         try:
-            fetch_history = cls.objects.read_preference(pymongo.ReadPreference.PRIMARY).get(feed_id=feed_id)
+            fetch_history = primary_objects.get(feed_id=feed_id)
         except cls.DoesNotExist:
-            fetch_history = cls.objects.create(feed_id=feed_id)
+            try:
+                fetch_history = cls.objects.create(feed_id=feed_id)
+            except NotUniqueError:
+                fetch_history = primary_objects.get(feed_id=feed_id)
 
         if fetch_type == "feed":
             history = fetch_history.feed_fetch_history or []

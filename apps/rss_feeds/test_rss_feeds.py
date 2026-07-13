@@ -553,6 +553,17 @@ class Test_PublicUrlSafety(TestCase):
         with self.assertRaises(UnsafeUrlError):
             validate_public_url("http://224.0.0.1/feed.xml")
 
+    @patch("utils.url_safety.socket.getaddrinfo")
+    def test_validate_public_url__rejects_invalid_idna_hostname(self, mock_getaddrinfo):
+        mock_getaddrinfo.side_effect = UnicodeError("encoding with 'idna' codec failed")
+
+        with self.assertRaisesRegex(UnsafeUrlError, "Could not resolve URL hostname"):
+            validate_public_url("http://%s.example.com/feed.xml" % ("a" * 64))
+
+    def test_validate_public_url__rejects_malformed_ipv6_url(self):
+        with self.assertRaisesRegex(UnsafeUrlError, "Invalid URL"):
+            validate_public_url("http://[invalid/feed.xml")
+
     @patch("utils.url_safety.requests.request")
     @patch(
         "utils.url_safety.socket.getaddrinfo",
@@ -573,8 +584,143 @@ class Test_PublicUrlSafety(TestCase):
         mock_request.assert_called_once()
 
 
+class Test_ProcessFeedQueries(TestCase):
+    @patch("utils.feed_fetcher.MStory.objects")
+    def test_existing_story_lookup_disables_default_ordering(self, mock_objects):
+        from utils.feed_fetcher import ProcessFeed
+
+        queryset = MagicMock()
+        queryset.order_by.return_value = []
+        mock_objects.return_value = queryset
+
+        process_feed = ProcessFeed(1, None, {})
+        existing_stories = process_feed.load_existing_stories(["1:abcdef"])
+
+        self.assertEqual(existing_stories, {})
+        mock_objects.assert_called_once_with(story_hash__in=["1:abcdef"])
+        queryset.order_by.assert_called_once_with()
+
+    def test_structured_feed_image_metadata_extracts_href(self):
+        from utils.feed_fetcher import feed_image_url
+
+        self.assertEqual(
+            feed_image_url({"href": " https://example.com/icon.png "}),
+            "https://example.com/icon.png",
+        )
+        self.assertEqual(
+            feed_image_url({"url": "https://example.com/logo.png"}),
+            "https://example.com/logo.png",
+        )
+        self.assertEqual(feed_image_url({"unexpected": "value"}), "")
+
+
+class Test_CeleryWorkerSettings(TestCase):
+    def test_worker_recycles_children_above_memory_limit(self):
+        self.assertEqual(settings.CELERY_WORKER_MAX_MEMORY_PER_CHILD, 750 * 1024)
+
+    @patch("newsblur_web.settings.os.unlink")
+    @patch("newsblur_web.settings.os.path.isfile", return_value=True)
+    @patch("newsblur_web.settings.os.listdir", return_value=["counter_123.db"])
+    @patch("newsblur_web.settings.os.makedirs")
+    def test_prometheus_startup_preserves_other_process_metrics(
+        self, mock_makedirs, mock_listdir, mock_isfile, mock_unlink
+    ):
+        from newsblur_web.settings import initialize_prometheus_aggregation_stats
+
+        initialize_prometheus_aggregation_stats()
+
+        mock_unlink.assert_not_called()
+
+
+class Test_ProcessFeedRedirects(TestCase):
+    def test_redirect_without_href_returns_http_error(self):
+        import feedparser
+
+        from utils.feed_fetcher import FEED_ERRHTTP, ProcessFeed
+
+        process_feed = ProcessFeed.__new__(ProcessFeed)
+        process_feed.feed = MagicMock()
+        process_feed.feed_entries = []
+        process_feed.fpf = feedparser.FeedParserDict(status=301, bozo=False)
+        process_feed.options = {"force": False, "verbose": False}
+
+        status, _ = process_feed.verify_feed_integrity()
+
+        self.assertEqual(status, FEED_ERRHTTP)
+
+
 class Test_FeedSave(TestCase):
     """Tests for Feed.save edge cases."""
+
+    @patch("apps.rss_feeds.models.MStory")
+    def test_duplicate_new_story_insert_is_treated_as_concurrent_success(self, mock_story_class):
+        from mongoengine.queryset import NotUniqueError
+
+        feed = Feed(
+            pk=1,
+            feed_address="https://news.google.com/rss/search?q=example",
+            feed_title="Example Google News feed",
+        )
+        story = {
+            "story_hash": "1:abcdef",
+            "story_content": "<p>Story content</p>",
+            "published": datetime.datetime.utcnow(),
+            "title": "Concurrent story",
+            "author": "Author",
+            "guid": "concurrent-story-guid",
+        }
+        saved_story = mock_story_class.return_value
+        saved_story.save.side_effect = NotUniqueError("duplicate story hash")
+
+        with patch.object(feed, "_exists_story", return_value=(None, False)), patch.object(
+            feed, "get_tags", return_value=[]
+        ), patch.object(feed, "get_permalink", return_value="https://example.com/story"):
+            result = feed.add_update_stories([story], {})
+
+        self.assertEqual(result, {"new": 0, "updated": 0, "same": 1, "error": 0})
+        saved_story.publish_to_subscribers.assert_not_called()
+
+    @patch("apps.rss_feeds.models.MStory")
+    def test_failed_new_story_insert_skips_google_news_followup(self, mock_story_class):
+        from mongoengine.queryset import NotUniqueError, OperationError
+
+        feed = Feed(
+            pk=1,
+            feed_address="https://news.google.com/rss/search?q=example",
+            feed_title="Example Google News feed",
+        )
+        story = {
+            "story_hash": "1:abcdef",
+            "story_content": "<p>Story content</p>",
+            "published": datetime.datetime.utcnow(),
+            "title": "Failed story",
+            "author": "Author",
+            "guid": "failed-story-guid",
+        }
+        saved_story = mock_story_class.return_value
+        saved_story.save.side_effect = [OperationError("initial save failed"), NotUniqueError("retry")]
+
+        with patch.object(feed, "_exists_story", return_value=(None, False)), patch.object(
+            feed, "get_tags", return_value=[]
+        ), patch.object(feed, "get_permalink", return_value="https://example.com/story"):
+            result = feed.add_update_stories([story], {})
+
+        self.assertEqual(result, {"new": 0, "updated": 0, "same": 0, "error": 1})
+        saved_story.save.assert_called_once_with()
+        saved_story.fetch_og_image.assert_not_called()
+
+
+    @patch("utils.webfeed_fetcher.WebFeedFetcher")
+    def test_update_webfeed_treats_null_archive_subscribers_as_zero(self, mock_fetcher):
+        feed = Feed(
+            feed_address="webfeed:https://example.com",
+            feed_link="https://example.com",
+            feed_title="Example web feed",
+            archive_subscribers=None,
+        )
+
+        self.assertIs(feed.update_webfeed(), feed)
+        mock_fetcher.assert_not_called()
 
     def test_save__force_update_without_pk(self):
         """save(force_update=True) with no pk should not raise ValueError."""
@@ -582,6 +728,71 @@ class Test_FeedSave(TestCase):
         # Should not raise ValueError: Cannot force an update in save() with no primary key
         feed.save(force_update=True)
         self.assertIsNone(feed.pk)
+
+
+class Test_FetchHistoryRaces(TestCase):
+    @patch("apps.rss_feeds.models.MFetchHistory.objects")
+    def test_add_caps_oversized_history_messages(self, mock_objects):
+        from apps.rss_feeds.models import MFetchHistory
+
+        history = MagicMock(
+            feed_fetch_history=[],
+            page_fetch_history=[],
+            push_history=[],
+            raw_feed_history=[],
+        )
+        mock_objects.read_preference.return_value.get.return_value = history
+
+        with patch.object(MFetchHistory, "feed", return_value={}):
+            MFetchHistory.add(123, "feed", code=500, message="x" * 10000)
+
+        self.assertEqual(len(history.feed_fetch_history[0][2]), 4096)
+        history.save.assert_called_once_with()
+
+    @patch("apps.rss_feeds.models.MFetchHistory.objects")
+    def test_add_reloads_history_after_concurrent_creation(self, mock_objects):
+        from mongoengine.queryset import NotUniqueError
+
+        from apps.rss_feeds.models import MFetchHistory
+
+        history = MagicMock(
+            feed_fetch_history=[],
+            page_fetch_history=[],
+            push_history=[],
+            raw_feed_history=[],
+        )
+        primary_objects = mock_objects.read_preference.return_value
+        primary_objects.get.side_effect = [MFetchHistory.DoesNotExist, history]
+        mock_objects.create.side_effect = NotUniqueError("concurrent fetch history")
+
+        with patch.object(MFetchHistory, "feed", return_value={}):
+            MFetchHistory.add(123, "feed", code=200, message="OK")
+
+        self.assertEqual(primary_objects.get.call_count, 2)
+        history.save.assert_called_once_with()
+
+
+class Test_FeedParserFailures(TestCase):
+    @patch("utils.feed_fetcher.validate_public_url")
+    @patch("utils.feed_fetcher.safe_requests_get")
+    @patch("utils.feed_fetcher.feedparser.parse")
+    def test_malformed_xml_index_error_becomes_feed_error(self, mock_parse, mock_get, mock_validate):
+        from utils.feed_fetcher import FEED_ERRHTTP, FetchFeed
+
+        feed = Feed.objects.create(
+            feed_address="https://my.atlassian.com/download/feeds/jira-servicedesk.rss",
+            feed_link="https://my.atlassian.com/",
+            feed_title="Atlassian downloads",
+        )
+        mock_get.side_effect = requests.ConnectionError("feed request failed")
+        mock_parse.side_effect = IndexError("string index out of range")
+        fetcher = FetchFeed(feed.pk, {})
+
+        with patch.object(fetcher, "fetch_scrapingbee", return_value=(None, None)):
+            result, parsed_feed = fetcher.fetch()
+
+        self.assertEqual(result, FEED_ERRHTTP)
+        self.assertIsNone(parsed_feed)
 
 
 class Test_PremiumSetupResyncPassthrough(TestCase):
@@ -799,6 +1010,28 @@ class Test_TextImporterEncoding(TestCase):
         self.assertIsNotNone(result)
         self.assertIn("développe", result["content"])
 
+    @patch("apps.rss_feeds.text_importer.safe_requests_get")
+    def test_fetch_manually_strips_invalid_xml_characters(self, mock_get):
+        from apps.rss_feeds.text_importer import TextImporter
+
+        html_bytes = (
+            b"<html><head><title>Test</title></head><body><article>"
+            b'<p><a href="/invalid\x01path">Readable article link</a></p>'
+            b"</article></body></html>"
+        )
+        mock_get.return_value = self._make_mock_response(html_bytes, "utf-8")
+
+        story = MagicMock()
+        story.story_permalink = "http://example.com/article"
+        story.story_content_z = None
+        story.image_urls = []
+
+        importer = TextImporter(story=story, story_url="http://example.com/article")
+        result = importer.fetch_manually(skip_save=True, return_document=True)
+
+        self.assertIsNotNone(result)
+        self.assertNotIn("\x01", result["content"])
+
 
 class Test_YouTubeFavicons(TestCase):
     """Tests for YouTube favicon lookup and caching."""
@@ -933,6 +1166,11 @@ class Test_YouTubeQuota(TestCase):
         ' "publishedAt": "2026-06-10T17:00:22Z", "thumbnails": {}},'
         ' "contentDetails": {"duration": "PT3M20S"}}]}'
     )
+    CONTROL_CHARACTER_VIDEOS_JSON = (
+        '{"items": [{"id": "vid1", "snippet": {"title": "Video One",'
+        ' "description": "A\\u0001video", "publishedAt": "2026-06-10T17:00:22Z",'
+        ' "thumbnails": {}}, "contentDetails": {"duration": "PT3M20S"}}]}'
+    )
     CHANNELS_JSON = (
         '{"items": [{"snippet": {"title": "Resolved Channel", "description": "Channel description"},'
         ' "contentDetails": {"relatedPlaylists": {"uploads": "UUresolved"}}}]}'
@@ -982,6 +1220,22 @@ class Test_YouTubeQuota(TestCase):
         urls = [call.args[0] for call in mock_get.call_args_list]
         self.assertTrue(all("/channels?" not in url for url in urls), urls)
         self.assertIn("playlistId=UUabc123", urls[0])
+
+    @patch("utils.youtube_fetcher.requests.get")
+    def test_video_metadata_strips_xml_control_characters(self, mock_get):
+        from utils.youtube_fetcher import YoutubeFetcher
+
+        mock_get.side_effect = self._route(
+            [
+                ("/playlistItems?", self.PLAYLIST_ITEMS_JSON),
+                ("/videos?", self.CONTROL_CHARACTER_VIDEOS_JSON),
+            ]
+        )
+
+        rss = YoutubeFetcher(self.feed).fetch()
+
+        self.assertIn("Avideo", rss)
+        self.assertNotIn("\x01", rss)
 
     @patch("utils.youtube_fetcher.requests.get")
     def test_channel_feed_resolves_channel_when_no_cached_title(self, mock_get):
@@ -1069,6 +1323,25 @@ class Test_YouTubeQuota(TestCase):
 
         self.assertEqual(ret_code, feed_fetcher.FEED_ERRHTTP)
         mock_history.assert_called_once_with(429, "YouTube API quota exceeded")
+
+    @patch("apps.rss_feeds.models.Feed.save")
+    @patch("apps.rss_feeds.models.Feed.save_feed_history")
+    @patch("utils.feed_fetcher.validate_public_url")
+    @patch("utils.feed_fetcher.YoutubeFetcher")
+    def test_fetch_feed_records_youtube_request_error_in_fetch_history(
+        self, mock_fetcher_cls, mock_validate, mock_history, mock_save
+    ):
+        """Transient YouTube transport failures should not escape the feed fetcher."""
+        from utils import feed_fetcher
+
+        error = requests.ConnectionError("Connection reset by peer")
+        mock_fetcher_cls.return_value.fetch.side_effect = error
+
+        ffeed = feed_fetcher.FetchFeed(self.feed.pk, {})
+        ret_code, _ = ffeed.fetch()
+
+        self.assertEqual(ret_code, feed_fetcher.FEED_ERRHTTP)
+        mock_history.assert_called_once_with(503, "YouTube API request failed", error)
 
     @patch("apps.rss_feeds.models.Feed.save")
     @patch("apps.rss_feeds.models.Feed.save_feed_history")
@@ -1213,6 +1486,28 @@ class Test_StoryImageInjection(TestCase):
         content = smart_str(zlib.decompress(story.story_content_z))
         self.assertTrue(content.startswith('<img src="https://example.com/hero.jpg">'))
         self.assertIn("<p>Story body without image.</p>", content)
+
+    @patch("mongoengine.Document.save")
+    @patch.object(MStory, "sync_redis")
+    @patch.object(MStory, "extract_image_urls")
+    def test_save_truncates_story_content_to_ten_megabytes(
+        self, mock_extract_images, mock_sync_redis, mock_document_save
+    ):
+        max_content_bytes = 10 * 1024 * 1024
+        story = MStory(
+            story_feed_id=1,
+            story_guid="oversized-story-content",
+            story_title="Oversized story",
+            story_permalink="https://example.com/oversized",
+            story_date=datetime.datetime.utcnow(),
+            story_content="a" * (max_content_bytes - 1) + "éé",
+        )
+
+        story.save()
+
+        content = story.story_content_str
+        self.assertLessEqual(len(content.encode("utf-8")), max_content_bytes)
+        self.assertTrue(content.endswith("é"))
 
     def test_prepend_image_replaces_previously_prepended_image(self):
         story = MStory(
