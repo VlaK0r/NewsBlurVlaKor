@@ -1,5 +1,7 @@
 import datetime
 import socket
+import subprocess
+import sys
 import zlib
 from unittest.mock import MagicMock, patch
 
@@ -618,18 +620,37 @@ class Test_CeleryWorkerSettings(TestCase):
     def test_worker_recycles_children_above_memory_limit(self):
         self.assertEqual(settings.CELERY_WORKER_MAX_MEMORY_PER_CHILD, 750 * 1024)
 
-    @patch("newsblur_web.settings.os.unlink")
-    @patch("newsblur_web.settings.os.path.isfile", return_value=True)
-    @patch("newsblur_web.settings.os.listdir", return_value=["counter_123.db"])
-    @patch("newsblur_web.settings.os.makedirs")
-    def test_prometheus_startup_preserves_other_process_metrics(
-        self, mock_makedirs, mock_listdir, mock_isfile, mock_unlink
-    ):
-        from newsblur_web.settings import initialize_prometheus_aggregation_stats
+    def test_bare_django_process_keeps_prometheus_metrics_in_memory(self):
+        """A Celery child must not enable Prometheus multiprocess mode.
 
-        initialize_prometheus_aggregation_stats()
+        Multiprocess mode (newsblur_web/settings.py setting
+        PROMETHEUS_MULTIPROC_DIR) makes every Django process write pid-named
+        metric files into .prom_cache. Celery recycles children constantly and
+        task servers are never scraped, so those files accumulate forever:
+        162,000 on one task server. Only Gunicorn, which sets the env var in
+        config/gunicorn_conf.py, should get file-backed metrics.
+        """
+        probe = (
+            "import os;"
+            "os.environ.pop('PROMETHEUS_MULTIPROC_DIR', None);"
+            "os.environ['DJANGO_SETTINGS_MODULE'] = 'newsblur_web.settings';"
+            "import django;"
+            "django.setup();"
+            "assert 'PROMETHEUS_MULTIPROC_DIR' not in os.environ, 'settings.py enabled multiprocess mode';"
+            "from prometheus_client import values;"
+            "print(values.ValueClass.__name__)"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", probe],
+            capture_output=True,
+            text=True,
+            cwd=settings.NEWSBLUR_DIR,
+            timeout=120,
+        )
 
-        mock_unlink.assert_not_called()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # settings.py prints a startup banner, so only the last line is the probe's answer.
+        self.assertEqual(result.stdout.strip().splitlines()[-1], "MutexValue")
 
 
 class Test_ProcessFeedRedirects(TestCase):
@@ -708,7 +729,6 @@ class Test_FeedSave(TestCase):
         self.assertEqual(result, {"new": 0, "updated": 0, "same": 0, "error": 1})
         saved_story.save.assert_called_once_with()
         saved_story.fetch_og_image.assert_not_called()
-
 
     @patch("utils.webfeed_fetcher.WebFeedFetcher")
     def test_update_webfeed_treats_null_archive_subscribers_as_zero(self, mock_fetcher):

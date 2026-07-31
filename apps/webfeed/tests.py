@@ -6,12 +6,13 @@ from django.test import TestCase
 from django.test.client import Client
 from django.urls import reverse
 
-from apps.webfeed.models import MWebFeedConfig
+from apps.webfeed.models import MWebFeedConfig, is_degenerate_container_xpath
 from apps.webfeed.prompts import get_analysis_messages
 from apps.webfeed.tasks import (
     choose_better_attempt,
     extract_image_url,
     extract_preview_stories,
+    filter_degenerate_variants,
     parse_variants_json,
     rank_variants_by_previews,
 )
@@ -487,3 +488,183 @@ class Test_WebFeedAnalyzeRedirectsRealFeeds(TestCase):
         self.assertEqual(data["code"], 1)
         # A real web page keeps the page-monitoring flow.
         mock_task.assert_called_once()
+
+
+class Test_DegenerateContainerXPaths(TestCase):
+    """A container XPath pinned to specific item ids can only ever re-match the
+    analysis-time items, so the feed never finds a new story. See
+    is_degenerate_container_xpath in apps/webfeed/models.py."""
+
+    def test_hardcoded_item_ids_are_degenerate(self):
+        # The exact pattern that froze a production AbeBooks web feed.
+        xpath = (
+            "//li[@data-test-id='listing-item-32438580283' or "
+            "@data-test-id='listing-item-32414887644' or "
+            "@data-test-id='listing-item-32297928829' or "
+            "@data-test-id='listing-item-32283704996']"
+        )
+        self.assertTrue(is_degenerate_container_xpath(xpath))
+
+    def test_single_item_id_is_degenerate(self):
+        self.assertTrue(is_degenerate_container_xpath("//div[@id='post-84721']"))
+
+    def test_long_or_chain_is_degenerate(self):
+        xpath = "//li[@data-name='alpha' or @data-name='beta' or " "@data-name='gamma' or @data-name='delta']"
+        self.assertTrue(is_degenerate_container_xpath(xpath))
+
+    def test_generic_containers_are_fine(self):
+        for xpath in [
+            "//li[contains(@class, 'result-item')]",
+            "//div[contains(@class, 'post')]",
+            "//li[contains(@class, 'result-item') or @data-srp-item-role='listing']"
+            " | //ul[@id='srp-search-results-list']/li",
+            "//li[starts-with(@data-test-id, 'listing-item-')]",
+            "//article",
+        ]:
+            self.assertFalse(is_degenerate_container_xpath(xpath), xpath)
+
+    def test_empty_is_not_degenerate(self):
+        self.assertFalse(is_degenerate_container_xpath(""))
+        self.assertFalse(is_degenerate_container_xpath(None))
+
+    def test_filter_drops_only_degenerate_variants(self):
+        variants = [
+            {"story_container": "//li[contains(@class, 'result-item')]", "title": ".//a/text()"},
+            {"story_container": "//li[@data-test-id='listing-item-32438580283']", "title": ".//a/text()"},
+        ]
+        kept = filter_degenerate_variants(variants)
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0]["story_container"], "//li[contains(@class, 'result-item')]")
+
+
+class Test_WebFeedNotifiesSubscribers(TestCase):
+    """New webfeed stories must run the same subscriber notification steps as the
+    regular fetch pipeline, or unread counts never update until the user opens the
+    feed by hand. See Feed.update_webfeed in apps/rss_feeds/models.py."""
+
+    def make_feed(self):
+        from apps.rss_feeds.models import Feed
+
+        return Feed(
+            pk=101,
+            feed_title="AbeBooks search",
+            feed_address="webfeed:https://example.com/search",
+            archive_subscribers=1,
+        )
+
+    @patch("utils.feed_fetcher.FeedFetcherWorker")
+    @patch("utils.feed_fetcher.ProcessFeed")
+    @patch("utils.webfeed_fetcher.WebFeedFetcher")
+    def test_new_stories_notify_subscribers(self, MockFetcher, MockProcess, MockWorker):
+        feed = self.make_feed()
+        MockFetcher.return_value.fetch.return_value = MagicMock()
+        MockProcess.return_value.process.return_value = (0, {"new": 3, "updated": 0, "same": 9})
+
+        feed.update_webfeed()
+
+        worker = MockWorker.return_value
+        worker.publish_to_subscribers.assert_called_once_with(feed, 3)
+        worker.count_unreads_for_subscribers.assert_called_once_with(feed, new_story_count=3)
+
+    @patch("utils.feed_fetcher.FeedFetcherWorker")
+    @patch("utils.feed_fetcher.ProcessFeed")
+    @patch("utils.webfeed_fetcher.WebFeedFetcher")
+    def test_no_new_stories_skips_notification(self, MockFetcher, MockProcess, MockWorker):
+        feed = self.make_feed()
+        MockFetcher.return_value.fetch.return_value = MagicMock()
+        MockProcess.return_value.process.return_value = (0, {"new": 0, "updated": 2, "same": 10})
+
+        feed.update_webfeed()
+
+        MockWorker.assert_not_called()
+
+    @patch("utils.feed_fetcher.FeedFetcherWorker")
+    @patch("utils.feed_fetcher.ProcessFeed")
+    @patch("utils.webfeed_fetcher.WebFeedFetcher")
+    def test_failed_fetch_skips_processing(self, MockFetcher, MockProcess, MockWorker):
+        feed = self.make_feed()
+        MockFetcher.return_value.fetch.return_value = None
+
+        feed.update_webfeed()
+
+        MockProcess.assert_not_called()
+        MockWorker.assert_not_called()
+
+
+class Test_HashedUtilityClassXPaths(TestCase):
+    """AbeBooks' hashed atomic-CSS classes (d_fc, d_fa, d_hr) churn on every site
+    rebuild, so containers matched on them die at the next deploy. The July 19
+    analyses produced d_hr containers that never extracted a story."""
+
+    def test_hashed_atomic_class_is_degenerate(self):
+        self.assertTrue(is_degenerate_container_xpath("//li[contains(@class, 'd_hr')]"))
+        self.assertTrue(is_degenerate_container_xpath("//li[contains(@class, 'd_fc')]"))
+        self.assertTrue(is_degenerate_container_xpath("//ul[@id='srp-results']/li[contains(@class, 'a_b1')]"))
+
+    def test_semantic_tokens_are_fine(self):
+        for xpath in [
+            "//li[contains(@class, 'result-item')]",
+            "//div[contains(@class, 'story_card')]",
+            "//article[contains(@class, 'post')]",
+        ]:
+            self.assertFalse(is_degenerate_container_xpath(xpath), xpath)
+
+
+class Test_EmptySearchResults(TestCase):
+    """A results page that says the search matched nothing is a healthy feed with
+    zero stories: it must not count toward reanalysis or flag exception 590."""
+
+    def make_fetcher(self, html):
+        from apps.rss_feeds.models import Feed
+
+        feed = Feed(
+            pk=202,
+            feed_title="Empty search",
+            feed_address="webfeed:https://example.com/search?q=rare",
+            archive_subscribers=1,
+        )
+        config = MagicMock()
+        config.story_container_xpath = "//li[contains(@class, 'result-item')]"
+        with patch.object(MWebFeedConfig, "get_config", return_value=config):
+            fetcher = WebFeedFetcher(feed)
+        fetcher.config = config
+        fetcher._fetch_html = lambda: html
+        return fetcher, config, feed
+
+    def test_no_results_page_records_success_not_failure(self):
+        html = "<html><body><h2>No exact matches</h2><p>Try a new search.</p></body></html>"
+        fetcher, config, feed = self.make_fetcher(html)
+        feed.has_feed_exception = True
+        feed.exception_code = 590
+        with patch.object(type(feed), "save") as mock_save:
+            result = fetcher.fetch()
+        self.assertIsNone(result)
+        config.record_success.assert_called_once()
+        config.record_failure.assert_not_called()
+        self.assertFalse(feed.has_feed_exception)
+        mock_save.assert_called_once()
+
+    def test_zero_extraction_without_marker_still_counts_as_failure(self):
+        html = "<html><body><div class='totally-different-markup'>listings here</div></body></html>"
+        fetcher, config, feed = self.make_fetcher(html)
+        config.needs_reanalysis = False
+        result = fetcher.fetch()
+        self.assertIsNone(result)
+        config.record_failure.assert_called_once()
+        config.record_success.assert_not_called()
+
+
+class Test_InitialFetchIsForced(TestCase):
+    """The first fetch after subscribing must bypass the per-domain fetch budget:
+    a deferred initial fetch leaves a brand-new feed empty for an hour or more on
+    a saturated domain, which reads as a broken subscription."""
+
+    @patch("apps.webfeed.tasks.redis.Redis")
+    @patch("apps.webfeed.tasks.User")
+    def test_fetch_webfeed_forces_update(self, MockUser, MockRedis):
+        from apps.webfeed.tasks import FetchWebFeed
+
+        feed = MagicMock()
+        with patch("apps.rss_feeds.models.Feed.get_by_id", return_value=feed):
+            FetchWebFeed(feed_id=101, user_id=1)
+        feed.update.assert_called_once_with(force=True)

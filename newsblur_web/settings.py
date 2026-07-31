@@ -304,6 +304,34 @@ SUBSCRIBER_EXPIRE = 7
 # servers. On your local, you should probably set this to 10-15 minutes
 PRO_MINUTES_BETWEEN_FETCHES = 5
 
+# DOMAIN_FETCHES_PER_MINUTE caps how many feeds on a single domain can be fetched
+# per minute across ALL task servers combined; feeds over budget are silently
+# deferred, not errored. See utils/domain_fetch_limiter.py. Production data
+# (July 2026) shows 99.75% of hosts stay under 1 fetch/minute, so this only
+# touches the handful of hottest domains. 30/minute is one fetch every 2
+# seconds, gentle for any single site.
+DOMAIN_FETCHES_PER_MINUTE = 30
+
+# Multi-tenant hosts that serve thousands of distinct legitimate feeds get raised
+# budgets: their volume is breadth, not hammering. Values chosen from measured
+# production rates (utils/domain_fetch_limiter.py has the methodology).
+DOMAIN_FETCHES_PER_MINUTE_OVERRIDES = {
+    # 10,600+ distinct channels/hour; actual traffic goes to the YouTube Data API
+    # at googleapis.com (utils/youtube_fetcher.py), which has its own quota.
+    "youtube.com": 500,
+    # Google's feed CDN, 6,900+ distinct feeds/hour, built to be crawled.
+    "feeds.feedburner.com": 200,
+    "feeds2.feedburner.com": 60,
+    # Mostly Pro users' 5-minute search feeds (measured 293/min); 60/min still
+    # cycles every search roughly every 45 minutes.
+    "news.google.com": 60,
+    # Matches REDDIT_API_REQUESTS_PER_MINUTE in utils/reddit_fetcher.py. The OAuth
+    # budget there remains the true gate on API calls; this just converts overflow
+    # into silent deferral instead of 429s in fetch history.
+    "reddit.com": 95,
+    "old.reddit.com": 95,
+}
+
 ROOT_URLCONF = "newsblur_web.urls"
 INTERNAL_IPS = ("127.0.0.1",)
 LOGGING_LOG_SQL = True
@@ -531,6 +559,8 @@ PREMIUM_PRICING_MIGRATION_ENABLED = True
 # When True, legacy PayPal subscriptions that cannot be revised to $36 are cancelled before
 # renewal and the subscriber receives the PayPal pricing migration email.
 PREMIUM_PRICING_PAYPAL_CANCEL_ENABLED = True
+
+PREMIUM_PRICING_PAYPAL_CANCEL_MAX_DORMANT_DAYS = 30
 
 CELERY_BEAT_SCHEDULE = {
     "task-feeds": {
@@ -797,13 +827,13 @@ os.environ["AWS_SECRET_ACCESS_KEY"] = AWS_SECRET_ACCESS_KEY
 os.environ["HF_HOME"] = "/srv/newsblur/docker/volumes/discover"
 
 
-def initialize_prometheus_aggregation_stats():
-    prom_folder = "/srv/newsblur/.prom_cache"
-    os.makedirs(prom_folder, mode=0o777, exist_ok=True)
-    os.environ["PROMETHEUS_MULTIPROC_DIR"] = prom_folder
-
-
-initialize_prometheus_aggregation_stats()
+# Prometheus multiprocess mode is enabled only under Gunicorn, which sets
+# PROMETHEUS_MULTIPROC_DIR in config/gunicorn_conf.py before Django loads.
+# Setting it here would enable it for every Django process: Celery children
+# (recycled by CELERY_WORKER_MAX_MEMORY_PER_CHILD) each wrote a counter and
+# histogram file into .prom_cache that nothing ever scraped or deleted, which
+# grew to 162,000 files on a task server. Without the env var,
+# prometheus_client keeps metrics in memory and writes no files.
 
 if DEBUG:
     template_loaders = [

@@ -627,7 +627,13 @@ class RTrendingStory:
         content_hashes.update(well_read_hashes)
         stories = {
             story.story_hash: story
-            for story in MStory.objects(story_hash__in=list(content_hashes)).only(
+            # rtrending.py: Clear MStory's default -story_date ordering. This lookup is keyed
+            # into a dict by story_hash, so the sort is pure waste, and with no index backing
+            # story_hash__in sorted by story_date, Mongo does a blocking in-memory sort that
+            # blew past its 32MB limit once these lists grew large enough.
+            for story in MStory.objects(story_hash__in=list(content_hashes))
+            .order_by()
+            .only(
                 "story_hash",
                 "story_date",
                 "story_title",
@@ -770,9 +776,9 @@ class RTrendingStory:
 
         stories = {
             story.story_hash: story
-            for story in MStory.objects(story_hash__in=story_hashes).order_by().only(
-                "story_hash", "story_feed_id", "story_title", "story_tags"
-            )
+            for story in MStory.objects(story_hash__in=story_hashes)
+            .order_by()
+            .only("story_hash", "story_feed_id", "story_title", "story_tags")
         }
         feed_ids = {story.story_feed_id for story in stories.values()}
         feeds = {

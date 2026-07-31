@@ -1163,9 +1163,7 @@ class Test_Scoring(BriefingTestCase):
     @patch("apps.briefing.scoring._get_feed_trending_times")
     @patch("apps.briefing.scoring._get_trending_scores")
     @patch("apps.briefing.scoring.redis.Redis")
-    def test_select_excludes_super_disliked_title(
-        self, mock_redis_cls, mock_trending, mock_feed_trending
-    ):
+    def test_select_excludes_super_disliked_title(self, mock_redis_cls, mock_trending, mock_feed_trending):
         """Stories matching a super-disliked title classifier (score <= -2) must be
         excluded from the briefing even when their trending signals are high."""
         from apps.briefing.scoring import select_briefing_stories
@@ -1694,7 +1692,7 @@ class Test_Views(BriefingTestCase):
         mock_pipe.execute.return_value = [False]
 
         story = self.make_story(self.feed, "Story With Changes", content="<p>Old content.</p>")
-        story.story_content = '<p>Updated <ins>new</ins><del>old</del> content.</p>'
+        story.story_content = "<p>Updated <ins>new</ins><del>old</del> content.</p>"
         story.story_latest_content = "<p>Updated new content.</p>"
         story.save()
         self.make_briefing(curated_hashes=[story.story_hash])
@@ -1743,6 +1741,55 @@ class Test_Views(BriefingTestCase):
         data = json.decode(response.content)
         self.assertIn("preferences", data)
         self.assertIn("frequency", data["preferences"])
+
+    @patch("apps.briefing.views.redis.Redis")
+    def test_load_includes_user_profiles_key(self, mock_redis_cls):
+        # tests.py: The client reads data.user_profiles to resolve briefing sharers
+        # and commenters into avatars. The key must always be present (empty is fine).
+        mock_r = MagicMock()
+        mock_redis_cls.return_value = mock_r
+        mock_pipe = MagicMock()
+        mock_r.pipeline.return_value = mock_pipe
+        mock_pipe.execute.return_value = [False]
+
+        story = self.make_story(self.feed, "Plain Story")
+        self.make_briefing(curated_hashes=[story.story_hash])
+
+        response = self.client.get(reverse("load-briefing-stories"))
+        data = json.decode(response.content)
+        self.assertIn("user_profiles", data)
+        self.assertIsInstance(data["user_profiles"], list)
+
+    @patch("apps.briefing.views.MSharedStory.stories_with_comments_and_profiles")
+    @patch("apps.briefing.views.redis.Redis")
+    def test_load_attaches_social_arrays_to_stories(self, mock_redis_cls, mock_social):
+        # tests.py: Reproduces the render_shares_friends crash. _story_to_dict/format_story
+        # sets the denormalized share_count but never shared_by_friends, so the client read
+        # undefined.length. The endpoint must run stories_with_comments_and_profiles so the
+        # story dict carries shared_by_friends and the response carries the sharer profile.
+        mock_r = MagicMock()
+        mock_redis_cls.return_value = mock_r
+        mock_pipe = MagicMock()
+        mock_r.pipeline.return_value = mock_pipe
+        mock_pipe.execute.return_value = [False]
+
+        def fake_attach(stories, user_id, check_all=False):
+            for s in stories:
+                s["shared_by_friends"] = [42]
+                s["friend_shares"] = []
+            return stories, [{"user_id": 42, "username": "sharer"}]
+
+        mock_social.side_effect = fake_attach
+
+        story = self.make_story(self.feed, "Shared Story")
+        self.make_briefing(curated_hashes=[story.story_hash])
+
+        response = self.client.get(reverse("load-briefing-stories"))
+        data = json.decode(response.content)
+
+        rendered_story = data["briefings"][0]["curated_stories"][0]
+        self.assertEqual(rendered_story["shared_by_friends"], [42])
+        self.assertEqual(data["user_profiles"], [{"user_id": 42, "username": "sharer"}])
 
     # --- briefing_preferences ---
 

@@ -43,7 +43,12 @@ from django.utils.encoding import DjangoUnicodeDecodeError, smart_bytes, smart_s
 from mongoengine.errors import ValidationError
 from mongoengine.queryset import NotUniqueError, OperationError, Q
 
-from apps.rss_feeds.tasks import IndexDiscoverStories, PushFeeds, ScheduleCountTagsForUser, UpdateFeeds
+from apps.rss_feeds.tasks import (
+    IndexDiscoverStories,
+    PushFeeds,
+    ScheduleCountTagsForUser,
+    UpdateFeeds,
+)
 from apps.rss_feeds.text_importer import TextImporter
 from apps.search.models import DiscoverStory, SearchFeed, SearchStory
 from apps.statistics.rstats import RStats
@@ -1669,6 +1674,27 @@ class Feed(models.Model):
             if self.feed_address != original_feed_address or self.feed_link != original_feed_link:
                 self.save(update_fields=["feed_address", "feed_link"])
 
+        # Per-domain fetch budget shared across all task servers, modeled on the
+        # Reddit API budget in utils/reddit_fetcher.py. When a domain's per-minute
+        # budget is spent, silently defer this fetch (no fetch history, no exception)
+        # instead of hammering the site: one Pro user's 1,100 abebooks.com web feeds
+        # at Pro speed added up to ~175,000 fetches/day against a single domain.
+        # Forced fetches (user-initiated refresh) still count against the budget but
+        # are never deferred. See utils/domain_fetch_limiter.py.
+        if not self.is_newsletter:
+            from utils import domain_fetch_limiter
+
+            allowed, defer_sec = domain_fetch_limiter.reserve_fetch_slot(self.feed_address)
+            if not allowed and not options.get("force"):
+                logging.debug(
+                    "   ---> [%-30s] ~FY~SBDomain fetch budget spent~SN~FY, deferring %s min: %s"
+                    % (self.log_title[:30], defer_sec // 60, self.feed_address)
+                )
+                self.set_next_scheduled_update(delay_fetch_sec=defer_sec)
+                r.zrem("tasked_feeds", original_feed_id)
+                r.zrem("error_feeds", original_feed_id)
+                return self
+
         if self.is_newsletter:
             feed = self.update_newsletter_icon()
             if not feed.fetched_once:
@@ -1722,10 +1748,27 @@ class Feed(models.Model):
         fpf = fetcher.fetch()
 
         if fpf:
-            from utils.feed_fetcher import ProcessFeed
+            from utils.feed_fetcher import FeedFetcherWorker, ProcessFeed
+            from utils.feed_functions import TimeoutError
 
-            processor = ProcessFeed(self.pk, fpf, {"verbose": False, "updates_off": False, "force": True})
-            processor.process()
+            options = {"verbose": False, "updates_off": False, "force": True, "compute_scores": True}
+            processor = ProcessFeed(self.pk, fpf, options)
+            ret_feed, ret_entries = processor.process()
+
+            # The regular fetch pipeline notifies subscribers after processing
+            # (process_feed_wrapper in utils/feed_fetcher.py); web feeds bypass that
+            # dispatcher, so without these calls new webfeed stories never set
+            # needs_unread_recalc (sidebar counts stay stale until the user opens
+            # the feed by hand) and never publish to the real-time pubsub.
+            if ret_entries and ret_entries.get("new"):
+                worker = FeedFetcherWorker(options)
+                worker.publish_to_subscribers(self, ret_entries["new"])
+                try:
+                    worker.count_unreads_for_subscribers(self, new_story_count=ret_entries["new"])
+                except TimeoutError:
+                    logging.debug(
+                        "   ---> [%-30s] ~FRWeb Feed: unread count took too long" % (self.log_title[:30],)
+                    )
 
         return self
 
@@ -3655,7 +3698,7 @@ class MStory(mongo.Document):
                         and story_content_bytes[boundary_end] & 0xC0 == 0x80
                     ):
                         boundary_end += 1
-                    boundary_character = story_content_bytes[error.start:boundary_end]
+                    boundary_character = story_content_bytes[error.start : boundary_end]
                     prefix_bytes = story_content_bytes[: MAX_STORY_CONTENT_BYTES - len(boundary_character)]
                     self.story_content = prefix_bytes.decode("utf-8", errors="ignore")
                     self.story_content += boundary_character.decode("utf-8")

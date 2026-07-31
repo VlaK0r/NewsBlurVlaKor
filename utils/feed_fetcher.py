@@ -73,7 +73,12 @@ from utils.feed_functions import (
 )
 from utils.json_fetcher import JSONFetcher
 from utils.reddit_fetcher import RedditFetcher
-from utils.story_functions import extract_story_date, linkify, pre_process_story, strip_tags
+from utils.story_functions import (
+    extract_story_date,
+    linkify,
+    pre_process_story,
+    strip_tags,
+)
 from utils.twitter_fetcher import TwitterFetcher
 from utils.url_safety import UnsafeUrlError, safe_requests_get, validate_public_url
 from utils.youtube_fetcher import YoutubeFetcher, YoutubeQuotaError
@@ -327,8 +332,7 @@ class FetchFeed:
                 return FEED_ERRHTTP, None
             except requests.RequestException as e:
                 logging.debug(
-                    "   ***> [%-30s] ~FRYouTube API request failed: %s"
-                    % (self.feed.log_title[:30], e)
+                    "   ***> [%-30s] ~FRYouTube API request failed: %s" % (self.feed.log_title[:30], e)
                 )
                 self.feed.save_feed_history(503, "YouTube API request failed", e)
                 self.feed = self.feed.save()
@@ -1998,10 +2002,13 @@ class FeedFetcherWorker:
         if not user_subs.count():
             return
 
-        for sub in user_subs:
-            if not sub.needs_unread_recalc:
-                sub.needs_unread_recalc = True
-                sub.save()
+        # Set the recalc flag with an atomic UPDATE instead of full-model saves: a
+        # save() writes back every field from an instance read moments earlier, so
+        # one landing just after a user's mark_feed_read (apps/reader/models.py)
+        # reverts their mark_read_date wholesale and resurrects read stories as
+        # unread. The queryset stays unevaluated here, so calculate_feed_scores
+        # below also runs on instances fetched after the flag update, not before.
+        user_subs.filter(needs_unread_recalc=False).update(needs_unread_recalc=True)
 
         if self.options["compute_scores"]:
             r = redis.Redis(connection_pool=settings.REDIS_STORY_HASH_POOL)

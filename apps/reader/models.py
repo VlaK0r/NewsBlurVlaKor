@@ -536,9 +536,7 @@ class UserSubscription(models.Model):
             cached_count = r.zcard(unread_page_cache_key)
 
             if cached_count < page_end:
-                cached_hashes = {
-                    story_hash_cache_member(h) for h in r.zrange(unread_page_cache_key, 0, -1)
-                }
+                cached_hashes = {story_hash_cache_member(h) for h in r.zrange(unread_page_cache_key, 0, -1)}
                 needed_count = page_end - cached_count
                 candidate_limit = page_end
                 candidate_hashes = []
@@ -1427,9 +1425,20 @@ class UserSubscription(models.Model):
             % (old_count - new_total, old_count, new_count, missing_count),
         )
 
-    def mark_feed_read(self, cutoff_date=None):
+    def mark_feed_read(self, cutoff_date=None, force=False):
+        # Zero badge counts can't always be trusted: they go stale whenever a
+        # recount is missed (the webfeed notify bug left thousands of subs with
+        # zero badges over weeks of unread stories), and skipping on stale zeros
+        # makes an explicit mark-read a silent no-op -- the un-advanced cutoff
+        # then resurfaces all those stories as unread at the next recount. User
+        # actions (mark_all_as_read, mark_feed_as_read in apps/reader/views.py)
+        # pass force=True to advance the cutoff regardless of what the badges
+        # claim. Internal recount-driven calls (calculate_feed_scores) keep the
+        # skip: they run right after computing a zero, and forcing there would
+        # cement a wrong zero from a racing recount by marking everything read.
         if (
-            self.unread_count_negative == 0
+            not force
+            and self.unread_count_negative == 0
             and self.unread_count_neutral == 0
             and self.unread_count_positive == 0
             and not self.needs_unread_recalc
@@ -1987,8 +1996,16 @@ class UserSubscription(models.Model):
             update_fields.append("is_trained")
         if len(update_fields):
             update_dict = {field: getattr(self, field) for field in update_fields}
-            if not UserSubscription.objects.filter(pk=self.pk).update(**update_dict):
-                return None
+            # Write the counts only if no story was marked read while we were
+            # recomputing: mark_story_ids_as_read and mark_feed_read both advance
+            # last_read_date, and counts computed against the pre-read snapshot
+            # would overwrite the mark-read's zeros with stale numbers -- a badge
+            # with no unread stories behind it. When the write is rejected, leave
+            # the recalc flag set so the next recount runs from fresh state.
+            if not UserSubscription.objects.filter(pk=self.pk, last_read_date=olrd).update(**update_dict):
+                UserSubscription.objects.filter(pk=self.pk).update(needs_unread_recalc=True)
+                self.needs_unread_recalc = True
+                return self
 
         # Clear needs_unread_recalc only if no story was marked read while we were
         # recomputing. mark_story_ids_as_read advances last_read_date (and sets the
@@ -2048,7 +2065,7 @@ class UserSubscription(models.Model):
         )
 
         if min_score <= -2:
-            return -1  # super downvote → negative bucket
+            return min_score  # super downvote wins; keep -2 so clients can tell it from a -1 dislike
         elif max_score > 0:
             return 1
         elif min_score < 0:
@@ -2782,41 +2799,65 @@ class UserSubscriptionFolders(models.Model):
     def delete_feed(self, feed_id, in_folder, commit_delete=True):
         feed_id = int(feed_id)
 
-        def _find_feed_in_folders(old_folders, folder_name="", multiples_found=False, deleted=False):
+        # apps/reader/models.py
+        # Count every placement of the feed and note whether any sits directly in the
+        # folder the client asked us to delete from. A stale, renamed, or duplicated
+        # in_folder used to make this a silent no-op: the feed was neither removed from
+        # the tree nor unsubscribed, so it "came back" on the next load. Instead we
+        # always remove exactly one placement (falling back to the first one found when
+        # the requested folder doesn't match), and only unsubscribe when that was the
+        # feed's last remaining placement.
+        def _count_feed(old_folders, folder_name=""):
+            total = 0
+            in_requested = False
+            for folder in old_folders:
+                if isinstance(folder, int):
+                    if folder == feed_id:
+                        total += 1
+                        if in_folder is not None and in_folder == folder_name:
+                            in_requested = True
+                elif isinstance(folder, dict):
+                    for f_k, f_v in list(folder.items()):
+                        sub_total, sub_in = _count_feed(f_v, f_k)
+                        total += sub_total
+                        in_requested = in_requested or sub_in
+            return total, in_requested
+
+        arranged = self.arranged_folders()
+        total_occurrences, occurrence_in_requested = _count_feed(arranged)
+
+        # Honor the requested folder only when the feed actually lives there; otherwise
+        # remove the first placement anywhere so a mismatched in_folder can't leave the
+        # feed stuck and subscribed.
+        target_folder = in_folder if (in_folder is not None and occurrence_in_requested) else None
+        removal = {"deleted": False}
+
+        def _remove_one(old_folders, folder_name=""):
             new_folders = []
-            for k, folder in enumerate(old_folders):
+            for folder in old_folders:
                 if isinstance(folder, int):
                     if (
                         folder == feed_id
-                        and in_folder is not None
-                        and ((in_folder != folder_name) or (in_folder == folder_name and deleted))
+                        and not removal["deleted"]
+                        and (target_folder is None or target_folder == folder_name)
                     ):
-                        multiples_found = True
+                        removal["deleted"] = True
                         logging.user(
-                            self.user,
-                            "~FB~SBDeleting feed, and a multiple has been found in '%s' / '%s' %s"
-                            % (folder_name, in_folder, "(deleted)" if deleted else ""),
+                            self.user, "~FBDelete feed: %s from folder '%s'" % (feed_id, folder_name)
                         )
-                    if folder == feed_id and (in_folder is None or in_folder == folder_name) and not deleted:
-                        logging.user(
-                            self.user, "~FBDelete feed: %s'th item: %s folders/feeds" % (k, len(old_folders))
-                        )
-                        deleted = True
-                    else:
-                        new_folders.append(folder)
+                        continue
+                    new_folders.append(folder)
                 elif isinstance(folder, dict):
                     for f_k, f_v in list(folder.items()):
-                        nf, multiples_found, deleted = _find_feed_in_folders(
-                            f_v, f_k, multiples_found, deleted
-                        )
-                        new_folders.append({f_k: nf})
+                        new_folders.append({f_k: _remove_one(f_v, f_k)})
+            return new_folders
 
-            return new_folders, multiples_found, deleted
-
-        user_sub_folders = self.arranged_folders()
-        user_sub_folders, multiples_found, deleted = _find_feed_in_folders(user_sub_folders)
+        user_sub_folders = _remove_one(arranged)
         self.folders = json.encode(user_sub_folders)
         self.save()
+
+        deleted = removal["deleted"]
+        multiples_found = total_occurrences > 1
 
         if not multiples_found and deleted and commit_delete:
             user_sub = None
