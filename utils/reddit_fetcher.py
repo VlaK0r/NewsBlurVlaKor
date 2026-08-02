@@ -58,7 +58,7 @@ COMMENT_SORTS = {"top", "best", "new", "old", "controversial", "qa", "confidence
 DEFAULT_COMMENT_SORT = "new"
 MAX_COMMENTS = 100
 
-USER_AGENT = "NewsBlur/1.0 (+https://www.newsblur.com)"
+USER_AGENT = "NewsBlur/1.0 (+https://nb.vlakor.ru)"
 
 
 class RedditFetcher:
