@@ -840,7 +840,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 25
+    "y": 31
    },
    "id": 105,
    "panels": [],
@@ -919,7 +919,7 @@
     "h": 10,
     "w": 8,
     "x": 0,
-    "y": 26
+    "y": 32
    },
    "id": 97,
    "options": {
@@ -1050,7 +1050,7 @@
     "h": 10,
     "w": 8,
     "x": 8,
-    "y": 26
+    "y": 32
    },
    "id": 106,
    "options": {
@@ -1178,7 +1178,7 @@
     "h": 10,
     "w": 8,
     "x": 16,
-    "y": 26
+    "y": 32
    },
    "id": 103,
    "options": {
@@ -1261,7 +1261,7 @@
     "h": 9,
     "w": 24,
     "x": 0,
-    "y": 36
+    "y": 42
    },
    "targets": [
     {
@@ -1375,7 +1375,7 @@
     "h": 9,
     "w": 12,
     "x": 0,
-    "y": 45
+    "y": 51
    },
    "targets": [
     {
@@ -1473,7 +1473,7 @@
     "h": 9,
     "w": 12,
     "x": 12,
-    "y": 45
+    "y": 51
    },
    "targets": [
     {
@@ -1562,7 +1562,7 @@
     "h": 8,
     "w": 24,
     "x": 0,
-    "y": 54
+    "y": 60
    },
    "targets": [
     {
@@ -1698,7 +1698,7 @@
     "h": 5,
     "w": 8,
     "x": 0,
-    "y": 62
+    "y": 68
    },
    "id": 99,
    "options": {
@@ -1827,7 +1827,7 @@
     "h": 5,
     "w": 8,
     "x": 8,
-    "y": 62
+    "y": 68
    },
    "id": 86,
    "options": {
@@ -1965,7 +1965,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 67
+    "y": 73
    },
    "id": 90,
    "panels": [],
@@ -2067,7 +2067,7 @@
     "h": 7,
     "w": 18,
     "x": 0,
-    "y": 68
+    "y": 74
    },
    "id": 88,
    "options": {
@@ -2264,7 +2264,7 @@
     "h": 7,
     "w": 6,
     "x": 18,
-    "y": 68
+    "y": 74
    },
    "id": 93,
    "options": {
@@ -2460,7 +2460,7 @@
     "h": 7,
     "w": 18,
     "x": 0,
-    "y": 75
+    "y": 81
    },
    "id": 91,
    "options": {
@@ -2657,7 +2657,7 @@
     "h": 7,
     "w": 6,
     "x": 18,
-    "y": 75
+    "y": 81
    },
    "id": 92,
    "options": {
@@ -2777,7 +2777,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 82
+    "y": 88
    },
    "id": 20,
    "panels": [],
@@ -2855,7 +2855,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 83
+    "y": 89
    },
    "id": 2,
    "options": {
@@ -2955,7 +2955,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 83
+    "y": 89
    },
    "id": 6,
    "options": {
@@ -3099,7 +3099,7 @@
     "h": 26,
     "w": 24,
     "x": 0,
-    "y": 91
+    "y": 97
    },
    "id": 84,
    "options": {
@@ -3237,7 +3237,7 @@
     "h": 16,
     "w": 24,
     "x": 0,
-    "y": 115
+    "y": 121
    },
    "id": 85,
    "options": {
@@ -3283,7 +3283,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 125
+    "y": 131
    },
    "id": 4,
    "panels": [],
@@ -3332,7 +3332,7 @@
     "h": 21,
     "w": 24,
     "x": 0,
-    "y": 118
+    "y": 124
    },
    "id": 10,
    "options": {
@@ -3430,7 +3430,7 @@
     "h": 7,
     "w": 24,
     "x": 0,
-    "y": 139
+    "y": 145
    },
    "id": 48,
    "options": {
@@ -3528,7 +3528,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 146
+    "y": 152
    },
    "id": 272,
    "options": {
@@ -3626,7 +3626,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 146
+    "y": 152
    },
    "id": 273,
    "options": {
@@ -3724,7 +3724,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 154
+    "y": 160
    },
    "id": 274,
    "options": {
@@ -3822,7 +3822,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 154
+    "y": 160
    },
    "id": 275,
    "options": {
@@ -3921,7 +3921,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 154
+    "y": 160
    },
    "id": 321,
    "options": {
@@ -3967,7 +3967,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 162
+    "y": 168
    },
    "id": 42,
    "panels": [],
@@ -4044,7 +4044,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 163
+    "y": 169
    },
    "id": 33,
    "options": {
@@ -4140,7 +4140,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 163
+    "y": 169
    },
    "id": 28,
    "options": {
@@ -4253,7 +4253,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 171
+    "y": 177
    },
    "id": 30,
    "options": {
@@ -4351,7 +4351,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 171
+    "y": 177
    },
    "id": 32,
    "options": {
@@ -4447,7 +4447,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 179
+    "y": 185
    },
    "id": 12,
    "options": {
@@ -4543,7 +4543,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 179
+    "y": 185
    },
    "id": 26,
    "options": {
@@ -4585,7 +4585,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 187
+    "y": 193
    },
    "id": 16,
    "panels": [],
@@ -4661,7 +4661,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 188
+    "y": 194
    },
    "id": 8,
    "options": {
@@ -4753,7 +4753,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 188
+    "y": 194
    },
    "id": 232,
    "options": {
@@ -4845,7 +4845,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 188
+    "y": 194
    },
    "id": 233,
    "options": {
@@ -4962,7 +4962,7 @@
     "h": 7,
     "w": 5,
     "x": 0,
-    "y": 196
+    "y": 202
    },
    "id": 35,
    "options": {
@@ -5054,7 +5054,7 @@
     "h": 7,
     "w": 5,
     "x": 5,
-    "y": 196
+    "y": 202
    },
    "id": 18,
    "options": {
@@ -5146,7 +5146,7 @@
     "h": 7,
     "w": 5,
     "x": 10,
-    "y": 196
+    "y": 202
    },
    "id": 14,
    "options": {
@@ -5238,7 +5238,7 @@
     "h": 7,
     "w": 5,
     "x": 15,
-    "y": 196
+    "y": 202
    },
    "id": 24,
    "options": {
@@ -5331,7 +5331,7 @@
     "h": 7,
     "w": 4,
     "x": 20,
-    "y": 196
+    "y": 202
    },
    "id": 148,
    "options": {
@@ -5371,7 +5371,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 203
+    "y": 209
    },
    "id": 50,
    "panels": [],
@@ -5447,7 +5447,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 204
+    "y": 210
    },
    "id": 52,
    "options": {
@@ -5539,7 +5539,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 204
+    "y": 210
    },
    "id": 54,
    "options": {
@@ -5631,7 +5631,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 212
+    "y": 218
    },
    "id": 60,
    "options": {
@@ -5723,7 +5723,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 212
+    "y": 218
    },
    "id": 56,
    "options": {
@@ -5815,7 +5815,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 212
+    "y": 218
    },
    "id": 134,
    "options": {
@@ -5851,7 +5851,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 220
+    "y": 226
    },
    "id": 248,
    "panels": [],
@@ -5905,7 +5905,7 @@
     "h": 6,
     "w": 8,
     "x": 0,
-    "y": 221
+    "y": 227
    },
    "id": 262,
    "options": {
@@ -5969,7 +5969,7 @@
     "h": 6,
     "w": 8,
     "x": 8,
-    "y": 221
+    "y": 227
    },
    "id": 222,
    "options": {
@@ -6033,7 +6033,7 @@
     "h": 6,
     "w": 8,
     "x": 16,
-    "y": 221
+    "y": 227
    },
    "id": 223,
    "options": {
@@ -6124,7 +6124,7 @@
     "h": 8,
     "w": 24,
     "x": 0,
-    "y": 227
+    "y": 233
    },
    "id": 224,
    "options": {
@@ -6173,7 +6173,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 235
+    "y": 241
    },
    "id": 62,
    "panels": [],
@@ -6249,7 +6249,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 236
+    "y": 242
    },
    "id": 80,
    "options": {
@@ -6341,7 +6341,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 236
+    "y": 242
    },
    "id": 116,
    "options": {
@@ -6430,7 +6430,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 244
+    "y": 250
    },
    "id": 75,
    "options": {
@@ -6526,7 +6526,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 244
+    "y": 250
    },
    "id": 136,
    "options": {
@@ -6616,7 +6616,7 @@
     "h": 7,
     "w": 6,
     "x": 0,
-    "y": 252
+    "y": 258
    },
    "id": 114,
    "options": {
@@ -6708,7 +6708,7 @@
     "h": 7,
     "w": 6,
     "x": 6,
-    "y": 252
+    "y": 258
    },
    "id": 78,
    "options": {
@@ -6800,7 +6800,7 @@
     "h": 7,
     "w": 6,
     "x": 12,
-    "y": 252
+    "y": 258
    },
    "id": 120,
    "options": {
@@ -6889,7 +6889,7 @@
     "h": 7,
     "w": 6,
     "x": 18,
-    "y": 252
+    "y": 258
    },
    "id": 118,
    "options": {
@@ -6979,7 +6979,7 @@
     "h": 8,
     "w": 6,
     "x": 0,
-    "y": 259
+    "y": 265
    },
    "id": 130,
    "options": {
@@ -7068,7 +7068,7 @@
     "h": 8,
     "w": 6,
     "x": 6,
-    "y": 259
+    "y": 265
    },
    "id": 128,
    "options": {
@@ -7159,7 +7159,7 @@
     "h": 8,
     "w": 6,
     "x": 12,
-    "y": 259
+    "y": 265
    },
    "id": 126,
    "options": {
@@ -7248,7 +7248,7 @@
     "h": 8,
     "w": 6,
     "x": 18,
-    "y": 259
+    "y": 265
    },
    "id": 122,
    "options": {
@@ -7341,7 +7341,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 267
+    "y": 273
    },
    "id": 66,
    "options": {
@@ -7504,7 +7504,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 267
+    "y": 273
    },
    "id": 110,
    "options": {
@@ -7652,7 +7652,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 275
+    "y": 281
    },
    "id": 71,
    "options": {
@@ -7800,7 +7800,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 275
+    "y": 281
    },
    "id": 111,
    "options": {
@@ -7948,7 +7948,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 283
+    "y": 289
    },
    "id": 72,
    "options": {
@@ -8082,7 +8082,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 283
+    "y": 289
    },
    "id": 112,
    "options": {
@@ -8227,7 +8227,7 @@
     "h": 6,
     "w": 12,
     "x": 0,
-    "y": 291
+    "y": 297
    },
    "id": 73,
    "options": {
@@ -8326,7 +8326,7 @@
     "h": 6,
     "w": 12,
     "x": 12,
-    "y": 291
+    "y": 297
    },
    "id": 64,
    "options": {
@@ -8417,7 +8417,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 297
+    "y": 303
    },
    "id": 138,
    "options": {
@@ -8456,7 +8456,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 305
+    "y": 311
    },
    "id": 68,
    "panels": [],
@@ -8533,7 +8533,7 @@
     "h": 5,
     "w": 12,
     "x": 0,
-    "y": 306
+    "y": 312
    },
    "id": 70,
    "options": {
@@ -8626,7 +8626,7 @@
     "h": 5,
     "w": 12,
     "x": 12,
-    "y": 306
+    "y": 312
    },
    "id": 76,
    "options": {
@@ -8718,7 +8718,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 311
+    "y": 317
    },
    "id": 146,
    "options": {
@@ -8808,7 +8808,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 311
+    "y": 317
    },
    "id": 144,
    "options": {
@@ -8897,7 +8897,7 @@
     "h": 8,
     "w": 24,
     "x": 0,
-    "y": 319
+    "y": 325
    },
    "id": 142,
    "options": {
@@ -8986,7 +8986,7 @@
     "h": 8,
     "w": 24,
     "x": 0,
-    "y": 327
+    "y": 333
    },
    "id": 140,
    "options": {
@@ -9026,7 +9026,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 343
+    "y": 349
    },
    "id": 40,
    "panels": [],
@@ -9103,7 +9103,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 344
+    "y": 350
    },
    "id": 108,
    "options": {
@@ -9194,7 +9194,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 344
+    "y": 350
    },
    "id": 95,
    "options": {
@@ -9287,7 +9287,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 344
+    "y": 350
    },
    "id": 322,
    "options": {
@@ -9357,7 +9357,7 @@
     "h": 43,
     "w": 24,
     "x": 0,
-    "y": 352
+    "y": 358
    },
    "id": 37,
    "options": {
@@ -9402,7 +9402,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 396
+    "y": 402
    },
    "id": 149,
    "panels": [],
@@ -9479,7 +9479,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 397
+    "y": 403
    },
    "id": 150,
    "options": {
@@ -9572,7 +9572,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 397
+    "y": 403
    },
    "id": 151,
    "options": {
@@ -9665,7 +9665,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 397
+    "y": 403
    },
    "id": 152,
    "options": {
@@ -9758,7 +9758,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 405
+    "y": 411
    },
    "id": 153,
    "options": {
@@ -9851,7 +9851,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 405
+    "y": 411
    },
    "id": 154,
    "options": {
@@ -9944,7 +9944,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 405
+    "y": 411
    },
    "id": 155,
    "options": {
@@ -10037,7 +10037,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 413
+    "y": 419
    },
    "id": 156,
    "options": {
@@ -10130,7 +10130,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 413
+    "y": 419
    },
    "id": 157,
    "options": {
@@ -10223,7 +10223,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 413
+    "y": 419
    },
    "id": 158,
    "options": {
@@ -10316,7 +10316,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 421
+    "y": 427
    },
    "id": 159,
    "options": {
@@ -10409,7 +10409,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 421
+    "y": 427
    },
    "id": 160,
    "options": {
@@ -10451,7 +10451,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 429
+    "y": 435
    },
    "id": 234,
    "panels": [],
@@ -10528,7 +10528,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 430
+    "y": 436
    },
    "id": 235,
    "options": {
@@ -10657,7 +10657,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 430
+    "y": 436
    },
    "id": 236,
    "options": {
@@ -10786,7 +10786,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 438
+    "y": 444
    },
    "id": 237,
    "options": {
@@ -10915,7 +10915,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 438
+    "y": 444
    },
    "id": 238,
    "options": {
@@ -10989,7 +10989,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 447
+    "y": 453
    },
    "id": 294,
    "panels": [],
@@ -11057,7 +11057,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 448
+    "y": 454
    },
    "id": 295,
    "options": {
@@ -11153,7 +11153,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 448
+    "y": 454
    },
    "id": 296,
    "options": {
@@ -11194,7 +11194,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 456
+    "y": 462
    },
    "id": 244,
    "panels": [],
@@ -11271,7 +11271,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 457
+    "y": 463
    },
    "id": 245,
    "options": {
@@ -11388,7 +11388,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 457
+    "y": 463
    },
    "id": 246,
    "options": {
@@ -11505,7 +11505,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 457
+    "y": 463
    },
    "id": 247,
    "options": {
@@ -11579,7 +11579,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 465
+    "y": 471
    },
    "id": 200,
    "panels": [],
@@ -11628,7 +11628,7 @@
     "h": 5,
     "w": 4,
     "x": 0,
-    "y": 466
+    "y": 472
    },
    "id": 201,
    "options": {
@@ -11710,7 +11710,7 @@
     "h": 5,
     "w": 4,
     "x": 4,
-    "y": 466
+    "y": 472
    },
    "id": 202,
    "options": {
@@ -11792,7 +11792,7 @@
     "h": 5,
     "w": 4,
     "x": 8,
-    "y": 466
+    "y": 472
    },
    "id": 203,
    "options": {
@@ -11861,7 +11861,7 @@
     "h": 5,
     "w": 4,
     "x": 12,
-    "y": 466
+    "y": 472
    },
    "id": 204,
    "options": {
@@ -11930,7 +11930,7 @@
     "h": 5,
     "w": 4,
     "x": 20,
-    "y": 466
+    "y": 472
    },
    "id": 209,
    "options": {
@@ -12030,7 +12030,7 @@
     "h": 8,
     "w": 6,
     "x": 0,
-    "y": 471
+    "y": 477
    },
    "id": 205,
    "options": {
@@ -12117,7 +12117,7 @@
     "h": 8,
     "w": 6,
     "x": 6,
-    "y": 471
+    "y": 477
    },
    "id": 206,
    "options": {
@@ -12204,7 +12204,7 @@
     "h": 8,
     "w": 6,
     "x": 12,
-    "y": 471
+    "y": 477
    },
    "id": 210,
    "options": {
@@ -12290,7 +12290,7 @@
     "h": 8,
     "w": 6,
     "x": 18,
-    "y": 471
+    "y": 477
    },
    "id": 207,
    "options": {
@@ -12323,7 +12323,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 479
+    "y": 485
    },
    "id": 283,
    "panels": [],
@@ -12421,7 +12421,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 480
+    "y": 486
    },
    "id": 290,
    "options": {
@@ -12512,7 +12512,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 480
+    "y": 486
    },
    "id": 291,
    "options": {
@@ -12614,7 +12614,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 480
+    "y": 486
    },
    "id": 292,
    "options": {
@@ -12711,7 +12711,7 @@
     "h": 8,
     "w": 24,
     "x": 0,
-    "y": 488
+    "y": 494
    },
    "id": 293,
    "options": {
@@ -12859,7 +12859,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 496
+    "y": 502
    },
    "id": 161,
    "panels": [],
@@ -12902,7 +12902,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 497
+    "y": 503
    },
    "id": 163,
    "options": {
@@ -12972,7 +12972,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 497
+    "y": 503
    },
    "id": 164,
    "options": {
@@ -13042,7 +13042,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 497
+    "y": 503
    },
    "id": 165,
    "options": {
@@ -13133,7 +13133,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 505
+    "y": 511
    },
    "id": 166,
    "options": {
@@ -13221,7 +13221,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 505
+    "y": 511
    },
    "id": 167,
    "options": {
@@ -13288,7 +13288,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 513
+    "y": 519
    },
    "id": 168,
    "options": {
@@ -13358,7 +13358,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 513
+    "y": 519
    },
    "id": 169,
    "options": {
@@ -13497,7 +13497,7 @@
     "h": 8,
     "w": 24,
     "x": 0,
-    "y": 521
+    "y": 527
    },
    "id": 326,
    "options": {
@@ -13559,7 +13559,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 529
+    "y": 535
    },
    "id": 171,
    "panels": [],
@@ -13602,7 +13602,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 530
+    "y": 536
    },
    "id": 173,
    "options": {
@@ -13672,7 +13672,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 530
+    "y": 536
    },
    "id": 174,
    "options": {
@@ -13764,7 +13764,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 530
+    "y": 536
    },
    "id": 175,
    "options": {
@@ -13805,7 +13805,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 581
+    "y": 587
    },
    "id": 176,
    "panels": [],
@@ -13882,7 +13882,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 582
+    "y": 588
    },
    "id": 177,
    "options": {
@@ -13974,7 +13974,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 582
+    "y": 588
    },
    "id": 178,
    "options": {
@@ -14262,7 +14262,7 @@
     "h": 12,
     "w": 24,
     "x": 0,
-    "y": 590
+    "y": 596
    },
    "id": 211,
    "options": {
@@ -14340,7 +14340,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 602
+    "y": 608
    },
    "id": 212,
    "panels": [],
@@ -14409,7 +14409,7 @@
     "h": 8,
     "w": 24,
     "x": 0,
-    "y": 603
+    "y": 609
    },
    "id": 213,
    "options": {
@@ -14508,7 +14508,7 @@
     "h": 8,
     "w": 24,
     "x": 0,
-    "y": 611
+    "y": 617
    },
    "id": 216,
    "options": {
@@ -14545,7 +14545,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 619
+    "y": 625
    },
    "id": 218,
    "panels": [],
@@ -14610,7 +14610,7 @@
     "h": 8,
     "w": 24,
     "x": 0,
-    "y": 620
+    "y": 626
    },
    "id": 219,
    "options": {
@@ -14647,7 +14647,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 628
+    "y": 634
    },
    "id": 266,
    "panels": [],
@@ -14716,7 +14716,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 629
+    "y": 635
    },
    "id": 267,
    "options": {
@@ -14810,7 +14810,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 629
+    "y": 635
    },
    "id": 268,
    "options": {
@@ -14848,7 +14848,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 637
+    "y": 643
    },
    "id": 239,
    "panels": [],
@@ -14916,7 +14916,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 638
+    "y": 644
    },
    "id": 240,
    "options": {
@@ -15045,7 +15045,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 638
+    "y": 644
    },
    "id": 241,
    "options": {
@@ -15174,7 +15174,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 638
+    "y": 644
    },
    "id": 242,
    "options": {
@@ -15303,7 +15303,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 646
+    "y": 652
    },
    "id": 243,
    "options": {
@@ -15432,7 +15432,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 646
+    "y": 652
    },
    "id": 270,
    "options": {
@@ -15549,7 +15549,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 646
+    "y": 652
    },
    "id": 271,
    "options": {
@@ -15599,7 +15599,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 548
+    "y": 554
    },
    "id": 249,
    "panels": [],
@@ -15634,7 +15634,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 549
+    "y": 555
    },
    "id": 250,
    "options": {
@@ -15696,7 +15696,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 549
+    "y": 555
    },
    "id": 251,
    "options": {
@@ -15758,7 +15758,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 549
+    "y": 555
    },
    "id": 252,
    "options": {
@@ -15820,7 +15820,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 557
+    "y": 563
    },
    "id": 253,
    "options": {
@@ -15882,7 +15882,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 557
+    "y": 563
    },
    "id": 254,
    "options": {
@@ -15944,7 +15944,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 557
+    "y": 563
    },
    "id": 255,
    "options": {
@@ -16036,7 +16036,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 565
+    "y": 571
    },
    "id": 256,
    "options": {
@@ -16147,7 +16147,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 565
+    "y": 571
    },
    "id": 257,
    "options": {
@@ -16206,7 +16206,7 @@
     "h": 8,
     "w": 6,
     "x": 0,
-    "y": 573
+    "y": 579
    },
    "id": 258,
    "options": {
@@ -16268,7 +16268,7 @@
     "h": 8,
     "w": 6,
     "x": 6,
-    "y": 573
+    "y": 579
    },
    "id": 259,
    "options": {
@@ -16330,7 +16330,7 @@
     "h": 8,
     "w": 6,
     "x": 12,
-    "y": 573
+    "y": 579
    },
    "id": 260,
    "options": {
@@ -16392,7 +16392,7 @@
     "h": 8,
     "w": 6,
     "x": 18,
-    "y": 573
+    "y": 579
    },
    "id": 261,
    "options": {
@@ -16436,7 +16436,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 647
+    "y": 653
    },
    "id": 276,
    "panels": [],
@@ -16479,7 +16479,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 648
+    "y": 654
    },
    "id": 277,
    "options": {
@@ -16543,7 +16543,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 648
+    "y": 654
    },
    "id": 278,
    "options": {
@@ -16595,7 +16595,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 656
+    "y": 662
    },
    "id": 279,
    "panels": [],
@@ -16672,7 +16672,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 657
+    "y": 663
    },
    "id": 280,
    "options": {
@@ -16825,7 +16825,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 657
+    "y": 663
    },
    "id": 281,
    "options": {
@@ -16954,7 +16954,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 657
+    "y": 663
    },
    "id": 282,
    "options": {
@@ -17047,11 +17047,240 @@
    "type": "timeseries"
   },
   {
+   "id": 342,
+   "type": "row",
+   "title": "Premium Pricing Migration ($12/$24 -> $36)",
+   "collapsed": false,
+   "datasource": {
+    "type": "datasource",
+    "uid": "grafana"
+   },
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 17
+   },
+   "panels": []
+  },
+  {
+   "id": 337,
+   "type": "stat",
+   "title": "Net revenue change (per year)",
+   "description": "Bottom line of the whole $12/$24 -> $36 migration, in yearly dollars, measured against what these subscribers were paying before it started. Upgraded subscribers earn (new rate - old rate); subscribers who were cancelled and came back earn (their new tier's yearly rate - old rate); subscribers who never came back cost their entire old rate. Subscribers still in flight (pending, emailed, skipped as dormant) count as $0 because their price hasn't changed.",
    "datasource": {
     "type": "prometheus",
     "uid": "U1-fPO3Mk"
    },
-   "description": "Outcomes of the grandfathered $12/$24 -> $36 premium pricing migration, split by payment provider so Stripe and PayPal upgrade vs cancellation rates can be compared.",
+   "gridPos": {
+    "h": 4,
+    "w": 8,
+    "x": 0,
+    "y": 18
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "unit": "currencyUSD",
+     "decimals": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 0.01
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "orientation": "auto",
+    "textMode": "auto",
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "U1-fPO3Mk"
+     },
+     "expr": "users{category=\"premium_pricing_revenue_net\"}",
+     "legendFormat": "",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "id": 338,
+   "type": "stat",
+   "title": "Stripe: took the new price",
+   "description": "Share of resolved Stripe subscribers who are now paying $36: upgraded / (upgraded + cancelled). Stripe subscriptions are switched silently, so almost nobody objects. The subscribers still awaiting their first $36 charge are excluded until they resolve, which keeps this from dipping every time a new batch is emailed.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "U1-fPO3Mk"
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 8,
+    "x": 8,
+    "y": 18
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "unit": "percent",
+     "decimals": 1,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 40
+       },
+       {
+        "color": "green",
+        "value": 75
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "orientation": "auto",
+    "textMode": "auto",
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "U1-fPO3Mk"
+     },
+     "expr": "100 * sum(users{category=\"premium_pricing_upgrades_stripe\"}) / clamp_min(sum(users{category=\"premium_pricing_upgrades_stripe\"}) + sum(users{category=\"premium_pricing_cancellations_stripe\"}), 1)",
+     "legendFormat": "",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "id": 339,
+   "type": "stat",
+   "title": "PayPal: came back after cancelling",
+   "description": "Share of force-cancelled PayPal subscribers who returned on a fresh paid subscription: resubscribed / cancelled. Grandfathered PayPal subs are legacy IPN and can't be repriced in place, so the only way back is to resubscribe. This climbs for weeks after each batch as subscribers run out their remaining paid time and decide whether to return.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "U1-fPO3Mk"
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 8,
+    "x": 16,
+    "y": 18
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "unit": "percent",
+     "decimals": 1,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 40
+       },
+       {
+        "color": "green",
+        "value": 75
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "orientation": "auto",
+    "textMode": "auto",
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "U1-fPO3Mk"
+     },
+     "expr": "100 * sum(users{category=\"premium_pricing_resubscribed_paypal\"}) / clamp_min(sum(users{category=\"premium_pricing_cancellations_paypal\"}), 1)",
+     "legendFormat": "",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "id": 340,
+   "type": "timeseries",
+   "title": "Premium Pricing: Bottom Line",
+   "description": "Is the $12/$24 -> $36 migration making or losing money, and how well is each provider converting? The two rates are on the left axis; the yearly dollar impact is on the right. Stripe and PayPal net out separately because they behave nothing alike: Stripe subs are repriced silently, while PayPal subs have to be cancelled and win back. Dollars only move once a subscriber resolves, so in-flight batches sit at $0 until they upgrade or lapse.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "U1-fPO3Mk"
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 22
+   },
    "fieldConfig": {
     "defaults": {
      "color": {
@@ -17062,7 +17291,7 @@
       "axisPlacement": "auto",
       "barAlignment": 0,
       "drawStyle": "line",
-      "fillOpacity": 10,
+      "fillOpacity": 0,
       "gradientMode": "none",
       "hideFrom": {
        "legend": false,
@@ -17070,13 +17299,13 @@
        "viz": false
       },
       "lineInterpolation": "linear",
-      "lineWidth": 1,
+      "lineWidth": 2,
       "pointSize": 5,
       "scaleDistribution": {
        "type": "linear"
       },
       "showPoints": "never",
-      "spanNulls": false,
+      "spanNulls": true,
       "stacking": {
        "group": "A",
        "mode": "none"
@@ -17090,22 +17319,87 @@
       "mode": "absolute",
       "steps": [
        {
-        "color": "green",
+        "color": "text",
         "value": null
        }
       ]
      },
      "unit": "short"
     },
-    "overrides": []
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": ".*%$"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percent"
+       },
+       {
+        "id": "decimals",
+        "value": 1
+       },
+       {
+        "id": "custom.axisPlacement",
+        "value": "left"
+       },
+       {
+        "id": "max",
+        "value": 100
+       },
+       {
+        "id": "min",
+        "value": 0
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": ".*\\$/yr$"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "currencyUSD"
+       },
+       {
+        "id": "decimals",
+        "value": 0
+       },
+       {
+        "id": "custom.axisPlacement",
+        "value": "right"
+       },
+       {
+        "id": "custom.fillOpacity",
+        "value": 8
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Net $/yr"
+      },
+      "properties": [
+       {
+        "id": "custom.lineWidth",
+        "value": 3
+       },
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "green"
+        }
+       }
+      ]
+     }
+    ]
    },
-   "gridPos": {
-    "h": 8,
-    "w": 12,
-    "x": 0,
-    "y": 17
-   },
-   "id": 297,
    "options": {
     "legend": {
      "calcs": [
@@ -17117,18 +17411,17 @@
     },
     "tooltip": {
      "mode": "multi",
-     "sort": "none"
+     "sort": "desc"
     }
    },
-   "pluginVersion": "9.0.0",
    "targets": [
     {
      "datasource": {
       "type": "prometheus",
       "uid": "U1-fPO3Mk"
      },
-     "expr": "users{category=\"premium_pricing_upgrades_stripe\"}",
-     "legendFormat": "Stripe upgrades",
+     "expr": "100 * sum(users{category=\"premium_pricing_upgrades_stripe\"}) / clamp_min(sum(users{category=\"premium_pricing_upgrades_stripe\"}) + sum(users{category=\"premium_pricing_cancellations_stripe\"}), 1)",
+     "legendFormat": "Stripe took the new price %",
      "refId": "A"
     },
     {
@@ -17136,8 +17429,8 @@
       "type": "prometheus",
       "uid": "U1-fPO3Mk"
      },
-     "expr": "users{category=\"premium_pricing_upgrades_paypal\"}",
-     "legendFormat": "PayPal upgrades",
+     "expr": "100 * sum(users{category=\"premium_pricing_resubscribed_paypal\"}) / clamp_min(sum(users{category=\"premium_pricing_cancellations_paypal\"}), 1)",
+     "legendFormat": "PayPal came back %",
      "refId": "B"
     },
     {
@@ -17145,8 +17438,8 @@
       "type": "prometheus",
       "uid": "U1-fPO3Mk"
      },
-     "expr": "users{category=\"premium_pricing_cancellations_stripe\"}",
-     "legendFormat": "Stripe cancellations",
+     "expr": "users{category=\"premium_pricing_revenue_net\"}",
+     "legendFormat": "Net $/yr",
      "refId": "C"
     },
     {
@@ -17154,9 +17447,147 @@
       "type": "prometheus",
       "uid": "U1-fPO3Mk"
      },
-     "expr": "users{category=\"premium_pricing_cancellations_paypal\"}",
-     "legendFormat": "PayPal cancellations",
+     "expr": "users{category=\"premium_pricing_revenue_net_stripe\"}",
+     "legendFormat": "Stripe net $/yr",
      "refId": "D"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "U1-fPO3Mk"
+     },
+     "expr": "users{category=\"premium_pricing_revenue_net_paypal\"}",
+     "legendFormat": "PayPal net $/yr",
+     "refId": "E"
+    }
+   ]
+  },
+  {
+   "id": 341,
+   "type": "timeseries",
+   "title": "Premium Pricing: Numbers",
+   "description": "Every subscriber count behind the bottom line, so any figure above can be traced back to people. 'PayPal untouched' are subscribers we opened a row for but never reached (no approval link could be created and cancelling was off at the time), so they are still on the old rate and won't be retried until their renewal comes around again. 'PayPal skipped (dormant)' were left alone on purpose: too inactive to win back, so cancelling them would only forfeit revenue. The switch series show how the returners came back; only moves that actually happened appear, so there are no zero rows.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "U1-fPO3Mk"
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 22
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "axisLabel": "",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "drawStyle": "line",
+      "fillOpacity": 0,
+      "gradientMode": "none",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "lineInterpolation": "linear",
+      "lineWidth": 2,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "unit": "short"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^premium_pricing_switch_.*"
+      },
+      "properties": [
+       {
+        "id": "custom.lineWidth",
+        "value": 1
+       },
+       {
+        "id": "custom.lineStyle",
+        "value": {
+         "fill": "dash",
+         "dash": [
+          8,
+          4
+         ]
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "legend": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "U1-fPO3Mk"
+     },
+     "expr": "users{category=\"premium_pricing_upgrades_stripe\"}",
+     "legendFormat": "Stripe upgraded",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "U1-fPO3Mk"
+     },
+     "expr": "users{category=\"premium_pricing_cancellations_stripe\"}",
+     "legendFormat": "Stripe cancelled",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "U1-fPO3Mk"
+     },
+     "expr": "users{category=\"premium_pricing_resubscribed_stripe\"}",
+     "legendFormat": "Stripe came back",
+     "refId": "C"
     },
     {
      "datasource": {
@@ -17165,6 +17596,24 @@
      },
      "expr": "users{category=\"premium_pricing_awaiting_charge\"}",
      "legendFormat": "Switched, awaiting charge",
+     "refId": "D"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "U1-fPO3Mk"
+     },
+     "expr": "users{category=\"premium_pricing_cancellations_paypal\"}",
+     "legendFormat": "PayPal cancelled",
+     "refId": "E"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "U1-fPO3Mk"
+     },
+     "expr": "users{category=\"premium_pricing_resubscribed_paypal\"}",
+     "legendFormat": "PayPal came back",
      "refId": "F"
     },
     {
@@ -17172,8 +17621,8 @@
       "type": "prometheus",
       "uid": "U1-fPO3Mk"
      },
-     "expr": "users{category=\"premium_pricing_upgrades_12\"}",
-     "legendFormat": "Upgrades ($12 -> $36)",
+     "expr": "users{category=\"premium_pricing_not_resubscribed_paypal\"}",
+     "legendFormat": "PayPal still gone",
      "refId": "G"
     },
     {
@@ -17181,8 +17630,8 @@
       "type": "prometheus",
       "uid": "U1-fPO3Mk"
      },
-     "expr": "users{category=\"premium_pricing_upgrades_24\"}",
-     "legendFormat": "Upgrades ($24 -> $36)",
+     "expr": "users{category=\"premium_pricing_pending_paypal\"}",
+     "legendFormat": "PayPal untouched",
      "refId": "H"
     },
     {
@@ -17193,95 +17642,6 @@
      "expr": "users{category=\"premium_pricing_skipped_dormant_paypal\"}",
      "legendFormat": "PayPal skipped (dormant)",
      "refId": "I"
-    }
-   ],
-   "title": "Premium Pricing Migration ($12/$24 -> $36)",
-   "type": "timeseries"
-  },
-  {
-   "datasource": {
-    "type": "prometheus",
-    "uid": "U1-fPO3Mk"
-   },
-   "description": "The forced-cancel -> resubscribe funnel for the pricing migration. 'Forcibly cancelled (total)' is everyone we cancelled per origin; 'resubscribed' vs 'not resubscribed' splits them into who came back on a fresh paid sub vs who is still gone, so the resubscribe rate is visible (e.g. PayPal 6 of 21). The origin->destination x tier series (e.g. paypal_to_stripe_premium) break down HOW the returners came back; only switches that actually happened are shown, so there are no zero-count rows. A resubscribe keeps the migration row's status as 'cancelled', so it never shows up in the upgrades series on the panel to the left.",
-   "fieldConfig": {
-    "defaults": {
-     "color": {
-      "mode": "palette-classic"
-     },
-     "custom": {
-      "axisLabel": "",
-      "axisPlacement": "auto",
-      "barAlignment": 0,
-      "drawStyle": "line",
-      "fillOpacity": 10,
-      "gradientMode": "none",
-      "hideFrom": {
-       "legend": false,
-       "tooltip": false,
-       "viz": false
-      },
-      "lineInterpolation": "linear",
-      "lineWidth": 1,
-      "pointSize": 5,
-      "scaleDistribution": {
-       "type": "linear"
-      },
-      "showPoints": "never",
-      "spanNulls": false,
-      "stacking": {
-       "group": "A",
-       "mode": "none"
-      },
-      "thresholdsStyle": {
-       "mode": "off"
-      }
-     },
-     "mappings": [],
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "green",
-        "value": null
-       }
-      ]
-     },
-     "unit": "short"
-    },
-    "overrides": []
-   },
-   "gridPos": {
-    "h": 8,
-    "w": 12,
-    "x": 12,
-    "y": 17
-   },
-   "id": 320,
-   "options": {
-    "legend": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "displayMode": "list",
-     "placement": "bottom",
-     "showLegend": true
-    },
-    "tooltip": {
-     "mode": "multi",
-     "sort": "none"
-    }
-   },
-   "pluginVersion": "9.0.0",
-   "targets": [
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "U1-fPO3Mk"
-     },
-     "expr": "users{category=~\"premium_pricing_switch_.+\"}",
-     "legendFormat": "{{category}}",
-     "refId": "A"
     },
     {
      "datasource": {
@@ -17289,66 +17649,19 @@
       "uid": "U1-fPO3Mk"
      },
      "expr": "users{category=\"premium_pricing_resubscribed_total\"}",
-     "legendFormat": "Total resubscribed",
-     "refId": "B"
+     "legendFormat": "Came back (total)",
+     "refId": "J"
     },
     {
      "datasource": {
       "type": "prometheus",
       "uid": "U1-fPO3Mk"
      },
-     "expr": "users{category=\"premium_pricing_cancellations_paypal\"}",
-     "legendFormat": "PayPal forcibly cancelled (total)",
-     "refId": "C"
-    },
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "U1-fPO3Mk"
-     },
-     "expr": "users{category=\"premium_pricing_resubscribed_paypal\"}",
-     "legendFormat": "PayPal resubscribed",
-     "refId": "D"
-    },
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "U1-fPO3Mk"
-     },
-     "expr": "users{category=\"premium_pricing_not_resubscribed_paypal\"}",
-     "legendFormat": "PayPal not resubscribed",
-     "refId": "E"
-    },
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "U1-fPO3Mk"
-     },
-     "expr": "users{category=\"premium_pricing_cancellations_stripe\"}",
-     "legendFormat": "Stripe cancelled (total)",
-     "refId": "F"
-    },
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "U1-fPO3Mk"
-     },
-     "expr": "users{category=\"premium_pricing_resubscribed_stripe\"}",
-     "legendFormat": "Stripe resubscribed",
-     "refId": "G"
-    },
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "U1-fPO3Mk"
-     },
-     "expr": "users{category=\"premium_pricing_not_resubscribed_stripe\"}",
-     "legendFormat": "Stripe not resubscribed",
-     "refId": "H"
+     "expr": "users{category=~\"premium_pricing_switch_.+\"}",
+     "legendFormat": "{{category}}",
+     "refId": "K"
     }
-   ],
-   "title": "Premium Pricing Resubscribes (forced cancels vs returns)",
-   "type": "timeseries"
+   ]
   },
   {
    "collapsed": false,
@@ -17360,7 +17673,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 665
+    "y": 671
    },
    "id": 327,
    "targets": [
@@ -17387,7 +17700,7 @@
     "h": 4,
     "w": 6,
     "x": 0,
-    "y": 666
+    "y": 672
    },
    "fieldConfig": {
     "defaults": {
@@ -17446,7 +17759,7 @@
     "h": 4,
     "w": 6,
     "x": 6,
-    "y": 666
+    "y": 672
    },
    "fieldConfig": {
     "defaults": {
@@ -17505,7 +17818,7 @@
     "h": 4,
     "w": 6,
     "x": 12,
-    "y": 666
+    "y": 672
    },
    "fieldConfig": {
     "defaults": {
@@ -17564,7 +17877,7 @@
     "h": 4,
     "w": 6,
     "x": 18,
-    "y": 666
+    "y": 672
    },
    "fieldConfig": {
     "defaults": {
@@ -17623,7 +17936,7 @@
     "h": 9,
     "w": 12,
     "x": 0,
-    "y": 670
+    "y": 676
    },
    "fieldConfig": {
     "defaults": {
@@ -17809,7 +18122,7 @@
     "h": 9,
     "w": 12,
     "x": 12,
-    "y": 670
+    "y": 676
    },
    "fieldConfig": {
     "defaults": {
@@ -17995,7 +18308,7 @@
     "h": 9,
     "w": 12,
     "x": 0,
-    "y": 679
+    "y": 685
    },
    "fieldConfig": {
     "defaults": {
@@ -18185,7 +18498,7 @@
     "h": 9,
     "w": 12,
     "x": 12,
-    "y": 679
+    "y": 685
    },
    "fieldConfig": {
     "defaults": {
@@ -18313,7 +18626,7 @@
     "h": 9,
     "w": 12,
     "x": 0,
-    "y": 688
+    "y": 694
    },
    "fieldConfig": {
     "defaults": {
