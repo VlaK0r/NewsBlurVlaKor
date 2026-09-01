@@ -25,7 +25,9 @@ http.client._MAXHEADERS = 10000
 
 import random
 import re
+import ssl
 import xml.sax
+import zlib
 
 import feedparser
 import pymongo
@@ -164,6 +166,28 @@ HIGH_VOLUME_FEED_URLS = ["arxiv.org"]  # Feeds that can handle more stories per 
 FEED_OK, FEED_SAME, FEED_ERRPARSE, FEED_ERRHTTP, FEED_ERREXC = list(range(5))
 
 NO_UNDERSCORE_ADDRESSES = ["jwz"]
+
+# Everything a broken or hostile server can make feedparser (and the urllib/http/ssl
+# stack underneath it) raise while downloading and parsing a feed. These are feed
+# problems, not NewsBlur bugs, so they're logged and recorded in fetch history rather
+# than escalated to the generic handler in FetchFeed's caller, which reports to Sentry.
+# http.client.HTTPException covers InvalidURL, BadStatusLine, IncompleteRead, and
+# LineTooLong; ValueError covers the UnicodeEncodeError feedparser raises on lone
+# surrogates in charrefs and the "Invalid IPv6 URL" from urlsplit. utils/feed_fetcher.py
+FEEDPARSER_FETCH_ERRORS = (
+    UnsafeUrlError,
+    TypeError,
+    ValueError,
+    IndexError,
+    KeyError,
+    EOFError,
+    MemoryError,
+    urllib.error.URLError,
+    http.client.HTTPException,
+    ConnectionResetError,
+    ssl.SSLError,
+    zlib.error,
+)
 
 
 def feed_image_url(image):
@@ -441,7 +465,12 @@ class FetchFeed:
                         "   ---> [%-30s] ~FGApplied encoding correction to forbidden feed"
                         % (self.feed.log_title[:30])
                     )
-                self.fpf = feedparser.parse(processed_forbidden_feed)
+                try:
+                    self.fpf = feedparser.parse(processed_forbidden_feed)
+                except FEEDPARSER_FETCH_ERRORS as e:
+                    logging.debug(
+                        "   ***> [%-30s] ~FRForbidden feed parse error: %s" % (self.feed.log_title[:30], e)
+                    )
 
         if not self.fpf:
             try:
@@ -647,21 +676,7 @@ class FetchFeed:
                 # When feedparser fetches the URL itself, we cannot preprocess the content first
                 # We'll have to rely on feedparser's built-in handling here
                 self.fpf = feedparser.parse(address, agent=self.feed.user_agent, etag=etag, modified=modified)
-            except (
-                UnsafeUrlError,
-                TypeError,
-                ValueError,
-                IndexError,
-                KeyError,
-                EOFError,
-                MemoryError,
-                urllib.error.URLError,
-                http.client.InvalidURL,
-                http.client.BadStatusLine,
-                http.client.IncompleteRead,
-                ConnectionResetError,
-                TimeoutError,
-            ) as e:
+            except FEEDPARSER_FETCH_ERRORS + (TimeoutError,) as e:
                 logging.debug("   ***> [%-30s] ~FRFeed fetch error: %s" % (self.feed.log_title[:30], e))
                 pass
 
@@ -677,20 +692,7 @@ class FetchFeed:
                     validate_public_url(address)
                 # Another direct URL fetch that bypasses our preprocessing
                 self.fpf = feedparser.parse(address, agent=self.feed.user_agent)
-            except (
-                UnsafeUrlError,
-                TypeError,
-                ValueError,
-                IndexError,
-                KeyError,
-                EOFError,
-                MemoryError,
-                urllib.error.URLError,
-                http.client.InvalidURL,
-                http.client.BadStatusLine,
-                http.client.IncompleteRead,
-                ConnectionResetError,
-            ) as e:
+            except FEEDPARSER_FETCH_ERRORS as e:
                 logging.debug("   ***> [%-30s] ~FRFetch failed: %s." % (self.feed.log_title[:30], e))
 
         # ScrapingBee fallback: all normal fetch methods exhausted
@@ -702,7 +704,13 @@ class FetchFeed:
             sb_status, sb_body = self.fetch_scrapingbee()
             if sb_status == 200 and sb_body:
                 processed_body = preprocess_feed_encoding(sb_body)
-                self.fpf = feedparser.parse(processed_body)
+                try:
+                    self.fpf = feedparser.parse(processed_body)
+                except FEEDPARSER_FETCH_ERRORS as e:
+                    logging.debug(
+                        "   ***> [%-30s] ~FRScrapingBee parse error: %s" % (self.feed.log_title[:30], e)
+                    )
+                    self.fpf = None
                 if self.fpf and (
                     self.fpf.entries or getattr(self.fpf.feed, "title", None) or self.fpf.version
                 ):
@@ -1376,7 +1384,13 @@ class ProcessFeed:
         if not self.feed.feed_link_locked:
             new_feed_link = self.fpf.feed.get("link") or self.fpf.feed.get("id") or self.feed.feed_link
             if self.options["force"] and new_feed_link:
-                new_feed_link = qurl(new_feed_link, remove=["_"])
+                try:
+                    new_feed_link = qurl(new_feed_link, remove=["_"])
+                except ValueError:
+                    # Malformed bracketed hosts (an empty or non-IP [...] netloc) make
+                    # urlparse raise, so keep the link exactly as the feed published it,
+                    # matching the clean_address fallback in FetchFeed.fetch.
+                    pass
             if new_feed_link != self.feed.feed_link:
                 logging.debug(
                     "   ---> [%-30s] ~SB~FRFeed's page is different: %s to %s"
@@ -1605,7 +1619,9 @@ class FeedFetcherWorker:
                             )
                         try:
                             self.count_unreads_for_subscribers(
-                                feed, new_story_count=ret_entries.get("new", 0)
+                                feed,
+                                new_story_count=ret_entries.get("new", 0),
+                                new_story_hashes=ret_entries.get("new_story_hashes"),
                             )
                         except TimeoutError:
                             logging.debug(
@@ -1996,7 +2012,7 @@ class FeedFetcherWorker:
         except redis.ConnectionError:
             logging.debug("   ***> [%-30s] ~BMRedis is unavailable for real-time." % (feed.log_title[:30],))
 
-    def count_unreads_for_subscribers(self, feed, new_story_count=0):
+    def count_unreads_for_subscribers(self, feed, new_story_count=0, new_story_hashes=None):
         subscriber_expire = datetime.datetime.now() - datetime.timedelta(days=settings.SUBSCRIBER_EXPIRE)
 
         user_subs = UserSubscription.objects.filter(
@@ -2016,11 +2032,26 @@ class FeedFetcherWorker:
 
         if self.options["compute_scores"]:
             r = redis.Redis(connection_pool=settings.REDIS_STORY_HASH_POOL)
-            stories = MStory.objects(story_feed_id=feed.pk, story_date__gte=feed.unread_cutoff)
+            # Bound the prefetch window to DAYS_OF_UNREAD instead of the feed's own
+            # unread_cutoff. A single archive subscriber drags feed.unread_cutoff back
+            # to DAYS_OF_UNREAD_ARCHIVE (27 years), which made this format the feed's
+            # entire archive on every fetch with new stories — ~18s for a 10k story
+            # feed — when a subscriber's *effective* window (profile unread_cutoff
+            # clamped by mark_read_date) almost never reaches past 30 days. The rare
+            # subscriber whose window is older falls back to a targeted per-user
+            # query inside calculate_feed_scores; see stories_cutoff there.
+            stories_cutoff = max(
+                feed.unread_cutoff,
+                datetime.datetime.utcnow() - datetime.timedelta(days=settings.DAYS_OF_UNREAD),
+            )
+            stories = MStory.objects(story_feed_id=feed.pk, story_date__gte=stories_cutoff)
             stories = Feed.format_stories(stories, feed.pk)
+            # The zF reconciliation must use the same bound: on archive feeds the zF
+            # zset never expires, so an unbounded range would flag every archived
+            # story as "missing" and re-fetch the whole archive from the primary.
             story_hashes = r.zrangebyscore(
                 "zF:%s" % feed.pk,
-                int(feed.unread_cutoff.strftime("%s")),
+                int(stories_cutoff.strftime("%s")),
                 int(time.time() + 60 * 60 * 24),
             )
             missing_story_hashes = set(story_hashes) - set([s["story_hash"] for s in stories])
@@ -2039,7 +2070,13 @@ class FeedFetcherWorker:
                         len(stories),
                     )
                 )
-            cache.set("S:v3:%s" % feed.pk, stories, 60)
+            # S:v4 carries the coverage cutoff alongside the stories so readers can
+            # tell whether the prefetch covers their window. The key is versioned
+            # (v3 -> v4) because the payload changed shape from a bare list to a
+            # dict: during a deploy, old readers keep reading S:v3 (which simply
+            # goes cold and falls back to a targeted query) instead of crashing on
+            # an unexpected dict.
+            cache.set("S:v4:%s" % feed.pk, {"stories": stories, "cutoff": stories_cutoff}, 60)
             logging.debug(
                 "   ---> [%-30s] ~FYComputing scores: ~SB%s stories~SN with ~SB%s subscribers ~SN(%s/%s/%s)"
                 % (
@@ -2051,12 +2088,25 @@ class FeedFetcherWorker:
                     feed.premium_subscribers,
                 )
             )
-            self.calculate_feed_scores_with_stories(user_subs, stories)
+            # Scoring and AI classification are independent of each other, so a slow
+            # scoring pass must not cancel classification. calculate_feed_scores_with_stories
+            # carries its own 10 second limit and blows it routinely on feeds with many
+            # subscribers and many stories. That TimeoutError used to unwind this whole
+            # method, so the classification below was skipped on exactly the busiest
+            # feeds — the ones most likely to have new stories to classify.
+            try:
+                self.calculate_feed_scores_with_stories(user_subs, stories, stories_cutoff)
+            except TimeoutError:
+                logging.debug(
+                    "   ---> [%-30s] ~BR~FRScoring took too long, still classifying" % (feed.log_title[:30],)
+                )
 
             # AI prompt classifiers: classify only new stories for subscribers with prompts
             if new_story_count > 0:
                 try:
-                    self.classify_stories_for_subscribers(feed, stories, new_story_count)
+                    self.classify_stories_for_subscribers(
+                        feed, stories, new_story_count, new_story_hashes=new_story_hashes
+                    )
                 except TimeoutError:
                     logging.debug(
                         "   ---> [%-30s] ~BR~FRAI classification took too long, skipping"
@@ -2069,13 +2119,13 @@ class FeedFetcherWorker:
             )
 
     @timelimit(10)
-    def calculate_feed_scores_with_stories(self, user_subs, stories):
+    def calculate_feed_scores_with_stories(self, user_subs, stories, stories_cutoff=None):
         for sub in user_subs:
             silent = False if getattr(self.options, "verbose", 0) >= 2 else True
-            sub.calculate_feed_scores(silent=silent, stories=stories)
+            sub.calculate_feed_scores(silent=silent, stories=stories, stories_cutoff=stories_cutoff)
 
     @timelimit(30)
-    def classify_stories_for_subscribers(self, feed, stories, new_story_count):
+    def classify_stories_for_subscribers(self, feed, stories, new_story_count, new_story_hashes=None):
         """Classify only new stories with AI prompt classifiers for applicable subscribers.
 
         Only classifies stories that arrived in this fetch (no backlog).
@@ -2088,8 +2138,21 @@ class FeedFetcherWorker:
             return
 
         # Only classify stories that are new from this fetch, not the backlog.
-        # Stories are unsorted from MongoDB, so sort by date and take the newest N.
-        new_stories = sorted(stories, key=lambda s: s.get("story_date", ""), reverse=True)[:new_story_count]
+        # add_update_stories reports exactly which hashes it created; prefer those.
+        # Picking the newest N by date instead misses genuinely new stories whenever
+        # a feed publishes out of order (a story dated behind ones already stored),
+        # which left a large share of stories permanently unclassified.
+        if new_story_hashes:
+            wanted = set(new_story_hashes)
+            new_stories = [story for story in stories if story.get("story_hash") in wanted]
+        else:
+            # Older callers don't report hashes, so fall back to the newest N.
+            new_stories = sorted(stories, key=lambda s: s.get("story_date", ""), reverse=True)[
+                :new_story_count
+            ]
+
+        if not new_stories:
+            return
 
         logging.debug(
             "   ---> [%-30s] ~FC~SBClassifying ~SB%s~SN new stories for ~SB%s~SN prompt users"

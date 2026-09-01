@@ -52,8 +52,12 @@ def _build_section_order(prefs):
     """Build complete section_order list from prefs, falling back to default order."""
     custom_keys = ["custom_%d" % (i + 1) for i in range(len(prefs.custom_section_prompts or []))]
     if prefs.section_order:
-        # views.py: Return stored order, but ensure any new custom keys are appended
+        # views.py: Return stored order, but ensure built-in sections added after the
+        # order was saved (e.g. the global rivers) and any new custom keys are appended
         order = list(prefs.section_order)
+        for key in DEFAULT_SECTION_ORDER:
+            if key not in order:
+                order.append(key)
         for key in custom_keys:
             if key not in order:
                 order.append(key)
@@ -268,6 +272,7 @@ def load_briefing_stories(request):
         from apps.ask_ai.providers import (
             DEFAULT_BRIEFING_MODEL,
             get_briefing_models_for_frontend,
+            resolve_briefing_model_key,
         )
 
         TIME_DISPLAY_MAP = {
@@ -292,7 +297,7 @@ def load_briefing_stories(request):
             "custom_section_prompts": prefs.custom_section_prompts or [],
             "notification_types": _get_briefing_notification_types(user.pk, prefs.briefing_feed_id),
             "briefing_feed_id": prefs.briefing_feed_id,
-            "briefing_model": prefs.briefing_model or DEFAULT_BRIEFING_MODEL,
+            "briefing_model": resolve_briefing_model_key(prefs.briefing_model) or DEFAULT_BRIEFING_MODEL,
             "briefing_models": get_briefing_models_for_frontend(),
         }
 
@@ -364,10 +369,11 @@ def briefing_preferences(request):
 
         briefing_model = request.POST.get("briefing_model")
         if briefing_model is not None:
-            from apps.ask_ai.providers import VALID_BRIEFING_MODELS
+            from apps.ask_ai.providers import resolve_briefing_model_key
 
-            if briefing_model in VALID_BRIEFING_MODELS:
-                prefs.briefing_model = briefing_model
+            resolved_model = resolve_briefing_model_key(briefing_model)
+            if resolved_model:
+                prefs.briefing_model = resolved_model
             elif briefing_model in ("", "default"):
                 prefs.briefing_model = None
 
@@ -431,6 +437,7 @@ def briefing_preferences(request):
     from apps.ask_ai.providers import (
         DEFAULT_BRIEFING_MODEL,
         get_briefing_models_for_frontend,
+        resolve_briefing_model_key,
     )
 
     folders = []
@@ -459,7 +466,7 @@ def briefing_preferences(request):
         "section_order": _build_section_order(prefs),
         "custom_section_prompts": prefs.custom_section_prompts or [],
         "notification_types": _get_briefing_notification_types(user.pk, prefs.briefing_feed_id),
-        "briefing_model": prefs.briefing_model or DEFAULT_BRIEFING_MODEL,
+        "briefing_model": resolve_briefing_model_key(prefs.briefing_model) or DEFAULT_BRIEFING_MODEL,
         "briefing_models": get_briefing_models_for_frontend(),
         "folders": folders,
     }

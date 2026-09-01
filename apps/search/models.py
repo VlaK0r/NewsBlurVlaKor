@@ -20,6 +20,7 @@ import redis
 import urllib3
 from django.conf import settings
 from django.contrib.auth.models import User
+from mongoengine.queryset import NotUniqueError
 from openai import APITimeoutError, OpenAI
 
 from apps.search.projection_matrix import project_vector
@@ -67,7 +68,13 @@ class MUserSearch(mongo.Document):
             user_search = cls.objects.read_preference(pymongo.ReadPreference.PRIMARY).get(user_id=user_id)
         except cls.DoesNotExist:
             if create:
-                user_search = cls.objects.create(user_id=user_id)
+                try:
+                    user_search = cls.objects.create(user_id=user_id)
+                except NotUniqueError:
+                    # A concurrent request created it between the get and the create
+                    user_search = cls.objects.read_preference(pymongo.ReadPreference.PRIMARY).get(
+                        user_id=user_id
+                    )
             else:
                 user_search = None
 
@@ -1435,7 +1442,11 @@ class SearchFeed:
 
         # Part 2: Semantic search (generate embedding for query)
         try:
-            client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            # Hybrid search backs the interactive autocomplete endpoint, and the semantic
+            # half only refines the text results gathered above. Cap the embedding call
+            # instead of using the client defaults (600s read timeout, two retries), which
+            # leave a typeahead request hanging when OpenAI is slow or unreachable.
+            client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=5.0, max_retries=1)
             response = client.embeddings.create(model="text-embedding-3-small", input=text.lower())
 
             # Track embedding cost

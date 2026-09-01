@@ -479,6 +479,18 @@ class Test_Summary(TestCase):
             "classifier_matches": [],
         }
 
+    def test_default_briefing_model_is_luna_with_medium_thinking(self):
+        from apps.ask_ai.providers import (
+            DEFAULT_BRIEFING_MODEL,
+            get_briefing_model_config,
+        )
+
+        model_name, model_config = get_briefing_model_config(None)
+        self.assertEqual(DEFAULT_BRIEFING_MODEL, "openai")
+        self.assertEqual(model_name, "openai")
+        self.assertEqual(model_config["model_id"], "gpt-5.6-luna")
+        self.assertEqual(model_config["thinking_config"], {"reasoning_effort": "medium"})
+
     @patch("apps.briefing.summary.LLMCostTracker")
     @patch("apps.ask_ai.providers.get_briefing_provider")
     def test_summary_returns_html_and_metadata(self, mock_get_provider, mock_cost):
@@ -488,7 +500,7 @@ class Test_Summary(TestCase):
         mock_provider.is_configured.return_value = True
         mock_provider.generate.return_value = '<div class="NB-briefing-summary"><h3 data-section="top_stories">Trending</h3><p>Content</p></div>'
         mock_provider.get_last_usage.return_value = (100, 50)
-        mock_get_provider.return_value = (mock_provider, "claude-haiku")
+        mock_get_provider.return_value = (mock_provider, "gpt-5.6-luna")
 
         feed = Feed.objects.create(
             feed_address="http://summary-test.com/rss",
@@ -505,6 +517,15 @@ class Test_Summary(TestCase):
             self.assertIn("NB-briefing-summary", html)
             self.assertEqual(metadata["input_tokens"], 100)
             self.assertEqual(metadata["output_tokens"], 50)
+            mock_provider.generate.assert_called_once()
+            self.assertEqual(
+                mock_provider.generate.call_args.kwargs["thinking_config"],
+                {"reasoning_effort": "medium"},
+            )
+            mock_cost.record_usage.assert_called_once()
+            self.assertEqual(mock_cost.record_usage.call_args.kwargs["provider"], "openai")
+            self.assertEqual(mock_cost.record_usage.call_args.kwargs["model"], "gpt-5.6-luna")
+            self.assertEqual(mock_cost.record_usage.call_args.kwargs["feature"], "daily_briefing")
         finally:
             MStory.objects(story_hash=story.story_hash).delete()
             feed.delete()
@@ -520,7 +541,7 @@ class Test_Summary(TestCase):
             '```html\n<div class="NB-briefing-summary"><p>Content</p></div>\n```'
         )
         mock_provider.get_last_usage.return_value = (100, 50)
-        mock_get_provider.return_value = (mock_provider, "claude-haiku")
+        mock_get_provider.return_value = (mock_provider, "gpt-5.6-luna")
 
         feed = Feed.objects.create(
             feed_address="http://fence-test.com/rss",
@@ -550,6 +571,7 @@ class Test_Summary(TestCase):
         "apps.ask_ai.providers.BRIEFING_MODELS",
         {"nondefault": {"vendor": "test"}, "haiku": {"vendor": "anthropic"}},
     )
+    @patch("apps.ask_ai.providers.DEFAULT_BRIEFING_MODEL", "haiku")
     def test_summary_provider_fallback(self, mock_get_provider, mock_cost):
         from apps.briefing.summary import generate_briefing_summary
 
@@ -615,7 +637,7 @@ class Test_Summary(TestCase):
         mock_provider = MagicMock()
         mock_provider.is_configured.return_value = True
         mock_provider.generate.side_effect = anthropic.APIConnectionError(request=MagicMock())
-        mock_get_provider.return_value = (mock_provider, "claude-haiku")
+        mock_get_provider.return_value = (mock_provider, "gpt-5.6-luna")
 
         feed = Feed.objects.create(
             feed_address="http://err-test.com/rss",
@@ -644,7 +666,7 @@ class Test_Summary(TestCase):
         mock_provider.is_configured.return_value = True
         mock_provider.generate.return_value = "<div>Result</div>"
         mock_provider.get_last_usage.return_value = (100, 50)
-        mock_get_provider.return_value = (mock_provider, "claude-haiku")
+        mock_get_provider.return_value = (mock_provider, "gpt-5.6-luna")
 
         feed = Feed.objects.create(
             feed_address="http://remap-test.com/rss",
@@ -1381,6 +1403,161 @@ class Test_Scoring(BriefingTestCase):
             self.assertGreater(weight, 0)
 
 
+class Test_GlobalSections(BriefingTestCase):
+    """Tests for apps/briefing/scoring.py:select_global_section_stories."""
+
+    def _patch_fetchers(self, well_read=None, long_reads=None, good_reads=None, global_shared=None):
+        """Patch the four global river fetchers to return fixed story hash lists."""
+        from apps.social.rglobal import RGlobalSharedStory
+        from apps.statistics.rtrending import RTrendingStory
+
+        return (
+            patch.object(RTrendingStory, "get_well_read_story_hashes", return_value=well_read or []),
+            patch.object(RTrendingStory, "get_long_read_story_hashes", return_value=long_reads or []),
+            patch.object(RTrendingStory, "get_good_read_story_hashes", return_value=good_reads or []),
+            patch.object(RGlobalSharedStory, "get_story_hashes", return_value=global_shared or []),
+        )
+
+    def test_selects_from_all_enabled_sections(self):
+        from apps.briefing.scoring import select_global_section_stories
+
+        p1, p2, p3, p4 = self._patch_fetchers(
+            well_read=[self.stories[0].story_hash],
+            long_reads=[self.stories[1].story_hash],
+            good_reads=[self.stories[2].story_hash],
+            global_shared=[self.stories[3].story_hash],
+        )
+        with p1, p2, p3, p4:
+            result = select_global_section_stories(self.user.pk)
+
+        categories = {s["category"] for s in result}
+        self.assertEqual(categories, {"widely_read", "long_reads", "good_reads", "global_shared"})
+        for s in result:
+            self.assertFalse(s["is_read"])
+            self.assertEqual(s["classifier_matches"], [])
+            self.assertGreater(s["content_word_count"], 0)
+
+    def test_respects_stories_per_section_cap(self):
+        from apps.briefing.scoring import select_global_section_stories
+
+        p1, p2, p3, p4 = self._patch_fetchers(well_read=[s.story_hash for s in self.stories])
+        with p1, p2, p3, p4:
+            result = select_global_section_stories(self.user.pk, stories_per_section=2)
+
+        self.assertEqual(len(result), 2)
+        self.assertTrue(all(s["category"] == "widely_read" for s in result))
+
+    def test_excludes_previous_briefing_hashes(self):
+        from apps.briefing.scoring import select_global_section_stories
+
+        p1, p2, p3, p4 = self._patch_fetchers(
+            well_read=[self.stories[0].story_hash, self.stories[1].story_hash]
+        )
+        with p1, p2, p3, p4:
+            result = select_global_section_stories(self.user.pk, exclude_hashes={self.stories[0].story_hash})
+
+        hashes = [s["story_hash"] for s in result]
+        self.assertNotIn(self.stories[0].story_hash, hashes)
+        self.assertIn(self.stories[1].story_hash, hashes)
+
+    def test_dedupes_across_sections_by_order(self):
+        # tests.py: A story in both Widely Read and Good Reads should land only in
+        # the section that comes first in the user's section order.
+        from apps.briefing.scoring import select_global_section_stories
+
+        shared_hash = self.stories[0].story_hash
+        p1, p2, p3, p4 = self._patch_fetchers(well_read=[shared_hash], good_reads=[shared_hash])
+        with p1, p2, p3, p4:
+            result = select_global_section_stories(self.user.pk)
+
+        matching = [s for s in result if s["story_hash"] == shared_hash]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0]["category"], "widely_read")
+
+        # tests.py: Reversed section order flips ownership to good_reads
+        with p1, p2, p3, p4:
+            result = select_global_section_stories(
+                self.user.pk,
+                section_order=["good_reads", "widely_read"],
+            )
+        matching = [s for s in result if s["story_hash"] == shared_hash]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0]["category"], "good_reads")
+
+    def test_disabled_sections_skipped(self):
+        from apps.briefing.scoring import select_global_section_stories
+
+        p1, p2, p3, p4 = self._patch_fetchers(
+            well_read=[self.stories[0].story_hash],
+            good_reads=[self.stories[1].story_hash],
+        )
+        sections = dict(DEFAULT_SECTIONS)
+        sections["widely_read"] = False
+        with p1, p2, p3, p4:
+            result = select_global_section_stories(self.user.pk, active_sections=sections)
+
+        categories = {s["category"] for s in result}
+        self.assertNotIn("widely_read", categories)
+        self.assertIn("good_reads", categories)
+
+    def test_sections_missing_from_saved_prefs_default_enabled(self):
+        # tests.py: A sections dict saved before the global sections existed has no
+        # global keys — they should be treated as enabled, matching the frontend.
+        from apps.briefing.scoring import select_global_section_stories
+
+        legacy_sections = {"top_stories": True, "long_read": False}
+        p1, p2, p3, p4 = self._patch_fetchers(well_read=[self.stories[0].story_hash])
+        with p1, p2, p3, p4:
+            result = select_global_section_stories(self.user.pk, active_sections=legacy_sections)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["category"], "widely_read")
+
+    def test_missing_story_dropped(self):
+        from apps.briefing.scoring import select_global_section_stories
+
+        p1, p2, p3, p4 = self._patch_fetchers(well_read=["999999:deadbeef", self.stories[0].story_hash])
+        with p1, p2, p3, p4:
+            result = select_global_section_stories(self.user.pk)
+
+        hashes = [s["story_hash"] for s in result]
+        self.assertNotIn("999999:deadbeef", hashes)
+        self.assertIn(self.stories[0].story_hash, hashes)
+
+    def test_build_section_order_appends_new_builtin_keys(self):
+        # tests.py: A section_order saved before the global sections existed should
+        # still surface the new keys so they can be toggled and rendered.
+        from apps.briefing.models import GLOBAL_SECTION_KEYS
+        from apps.briefing.views import _build_section_order
+
+        prefs = self.make_prefs(
+            section_order=[
+                "widely_covered",
+                "top_stories",
+                "infrequent",
+                "long_read",
+                "classifier_match",
+                "follow_up",
+            ]
+        )
+        order = _build_section_order(prefs)
+        for key in GLOBAL_SECTION_KEYS:
+            self.assertIn(key, order)
+        # tests.py: Saved ordering is preserved ahead of the appended keys
+        self.assertEqual(order[0], "widely_covered")
+
+    def test_global_section_prompts_in_system_prompt(self):
+        prompt = _build_system_prompt()
+        self.assertIn("widely_read", prompt)
+        self.assertIn("long_reads", prompt)
+        self.assertIn("good_reads", prompt)
+        self.assertIn("global_shared", prompt)
+        self.assertIn("Widely Read on NewsBlur", prompt)
+        self.assertIn("Long Reads on NewsBlur", prompt)
+        self.assertIn("Good Reads on NewsBlur", prompt)
+        self.assertIn("Global Shared Stories", prompt)
+
+
 # ---------------------------------------------------------------------------
 # 3. Test_Models — apps/briefing/models.py
 # ---------------------------------------------------------------------------
@@ -1392,8 +1569,8 @@ class Test_Models(BriefingTestCase):
     # --- Constants ---
 
     def test_valid_section_keys_count(self):
-        # 6 built-in sections + 5 custom sections = 11
-        self.assertEqual(len(VALID_SECTION_KEYS), 11)
+        # 6 built-in personal sections + 4 global sections + 5 custom sections = 15
+        self.assertEqual(len(VALID_SECTION_KEYS), 15)
 
     def test_default_sections_values(self):
         self.assertTrue(DEFAULT_SECTIONS["top_stories"])
@@ -1401,6 +1578,11 @@ class Test_Models(BriefingTestCase):
         self.assertTrue(DEFAULT_SECTIONS["classifier_match"])
         self.assertTrue(DEFAULT_SECTIONS["follow_up"])
         self.assertTrue(DEFAULT_SECTIONS["widely_covered"])
+        # tests.py: Global sections are enabled by default
+        self.assertTrue(DEFAULT_SECTIONS["widely_read"])
+        self.assertTrue(DEFAULT_SECTIONS["long_reads"])
+        self.assertTrue(DEFAULT_SECTIONS["good_reads"])
+        self.assertTrue(DEFAULT_SECTIONS["global_shared"])
         self.assertNotIn("quick_catchup", DEFAULT_SECTIONS)
         self.assertNotIn("contrarian_views", DEFAULT_SECTIONS)
         self.assertNotIn("emerging_topics", DEFAULT_SECTIONS)
@@ -1901,12 +2083,19 @@ class Test_Views(BriefingTestCase):
         prefs = MBriefingPreferences.objects.get(user_id=self.user.pk)
         self.assertEqual(len(prefs.custom_section_prompts), 2)
 
-    @patch("apps.ask_ai.providers.VALID_BRIEFING_MODELS", ["haiku", "sonnet", "gemini"])
     def test_post_briefing_model_valid(self):
+        self.make_prefs()
+        response = self.client.post(reverse("briefing-preferences"), {"briefing_model": "anthropic"})
+        prefs = MBriefingPreferences.objects.get(user_id=self.user.pk)
+        self.assertEqual(prefs.briefing_model, "anthropic")
+
+    def test_post_briefing_model_legacy_key_resolves(self):
+        # Legacy keys ("haiku") from older clients resolve to the cheap tier
+        # ("openai"/Luna), not the Sonnet-class "anthropic" chat tier
         self.make_prefs()
         response = self.client.post(reverse("briefing-preferences"), {"briefing_model": "haiku"})
         prefs = MBriefingPreferences.objects.get(user_id=self.user.pk)
-        self.assertEqual(prefs.briefing_model, "haiku")
+        self.assertEqual(prefs.briefing_model, "openai")
 
     def test_post_briefing_model_default_clears(self):
         self.make_prefs(briefing_model="haiku")
