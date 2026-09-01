@@ -138,9 +138,6 @@ You MUST use the classify_stories function to return your classifications."""
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": f"Please classify these stories: {json.dumps(story_items)}"}
             ],
-            tools=[tool_definition],
-            tool_choice={"type": "function", "function": {"name": "classify_stories"}},
-            max_tokens=1024,
         )
 
         # Record LLM cost
