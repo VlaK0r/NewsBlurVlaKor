@@ -76,6 +76,28 @@ final class Test_StoryImageViewer: XCTestCase {
         XCTAssertTrue(page.probe.scripts.contains { $0.contains("newsblurOpenImageAt") })
     }
 
+    @MainActor func test_stationaryLongPressRequestsActionsWithoutTogglingReaderChrome() {
+        let page = ImageScrollTapPage()
+        let gesture = ImageLongPressGesture()
+        page.beginTouch(gesture)
+        page.longPressImage(gesture)
+        XCTAssertTrue(page.probe.scripts.contains { $0.hasPrefix("newsblurOpenImageAt") && $0.hasSuffix(", true)") })
+        XCTAssertFalse(page.probe.scripts.contains { $0.contains("linkAt") })
+    }
+
+    @MainActor func test_longPressStoppingMomentumDoesNotOpenImage() {
+        let page = ImageScrollTapPage()
+        let gesture = ImageLongPressGesture()
+        page.probe.trackedScroll.simulatedDecelerating = true
+        page.beginTouch(gesture)
+        page.probe.trackedScroll.simulatedDecelerating = false
+        page.longPressImage(gesture)
+        XCTAssertTrue(page.probe.scripts.isEmpty)
+        page.beginTouch(gesture)
+        page.longPressImage(gesture)
+        XCTAssertTrue(page.probe.scripts.contains { $0.hasPrefix("newsblurOpenImageAt") })
+    }
+
     @MainActor func test_imageTapDoesNotAlsoToggleReaderChrome() {
         let page = ImageScrollTapPage()
         page.probe.imageHitResult = true
@@ -160,9 +182,13 @@ final class Test_StoryImageViewer: XCTestCase {
         body["naturalHeight"] = 2400
         body["src"] = "data:image/png;base64," + (try XCTUnwrap(preview.pngData())).base64EncodedString()
         let viewer = StoryImageViewerController(source: try XCTUnwrap(StoryImageSource(body)), preview: preview, origin: .zero)
+        guard !Utilities.usesSystemVerticalBar(viewer.traitCollection) else {
+            throw XCTSkip("Conventional status-bar protection is checked on iPhone and iPad; Duo uses the full display")
+        }
         let canvas = ImageViewerSafeAreaView(frame: CGRect(x: 0, y: 0, width: 1024, height: 768))
         viewer.view = canvas
         viewer.viewDidLoad()
+        XCTAssertFalse(viewer.prefersStatusBarHidden, "Conventional iPhone and iPad images retain their status bar")
         for topInset: CGFloat in [24, 48] {
             canvas.topInset = topInset
             viewer.viewDidLayoutSubviews()
@@ -177,10 +203,108 @@ final class Test_StoryImageViewer: XCTestCase {
         }
     }
 
+    @MainActor func test_duoImagePresentationCoversTheSideRailAndSafeArea() async throws {
+        #if targetEnvironment(macCatalyst)
+        throw XCTSkip("Duo image presentation does not apply to Catalyst")
+        #else
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previousWindow = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        let root = UIViewController()
+        window.rootViewController = root
+        window.makeKeyAndVisible()
+        defer {
+            root.dismiss(animated: false)
+            window.isHidden = true
+            previousWindow?.makeKey()
+        }
+        guard Utilities.usesSystemVerticalBar(window.traitCollection) else {
+            throw XCTSkip("Requires a Duo pose with the system side rail")
+        }
+        let preview = UIGraphicsImageRenderer(size: CGSize(width: 120, height: 80)).image { context in
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 120, height: 80))
+        }
+        var body = payload
+        body["naturalWidth"] = 2400
+        body["naturalHeight"] = 1600
+        body["src"] = "data:image/png;base64," + (try XCTUnwrap(preview.pngData())).base64EncodedString()
+        let viewer = StoryImageViewerController(source: try XCTUnwrap(StoryImageSource(body)), preview: preview, origin: .zero)
+        root.present(viewer, animated: false)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        viewer.view.layoutIfNeeded()
+        let scroll = try XCTUnwrap(viewer.view.subviews.compactMap { $0 as? UIScrollView }.first)
+        let image = try XCTUnwrap(scroll.subviews.compactMap { $0 as? UIImageView }.first)
+        XCTAssertTrue(viewer.prefersStatusBarHidden, "Fullscreen photos must hide Duo's status rail")
+        XCTAssertEqual(scroll.frame, viewer.view.bounds, "Image panning must reach every screen edge, including the cutout")
+        XCTAssertEqual(image.frame.width, viewer.view.bounds.width, accuracy: 0.5,
+                       "A landscape photo must fit the full closed-display width, not stop at the old rail")
+        let close = try XCTUnwrap(viewer.view.subviews.flatMap(\.subviews).compactMap { $0 as? UIButton }
+            .first { $0.accessibilityLabel == "Close image" })
+        XCTAssertTrue(viewer.view.safeAreaLayoutGuide.layoutFrame.contains(close.convert(close.bounds, to: viewer.view)),
+                      "StoryImageViewerController.swift must keep dismissal accessible outside the cutout")
+        #endif
+    }
+
     func test_fittedImageNeverUpscalesAndPreservesAspectRatio() {
         XCTAssertEqual(StoryImageSource.fittedSize(CGSize(width: 120, height: 80), in: CGSize(width: 1024, height: 768)), CGSize(width: 120, height: 80))
         XCTAssertEqual(StoryImageSource.fittedSize(CGSize(width: 2400, height: 1200), in: CGSize(width: 800, height: 600)), CGSize(width: 800, height: 400))
         XCTAssertEqual(StoryImageSource.fittedSize(CGSize(width: 600, height: 2400), in: CGSize(width: 800, height: 600)), CGSize(width: 150, height: 600))
+    }
+
+    func test_hoverTextIsIndependentOfTheAccessibleDescription() throws {
+        var body = payload
+        body["hoverText"] = "  This is the comic’s joke.  "
+        body["showActions"] = true
+        let source = try XCTUnwrap(StoryImageSource(body))
+        XCTAssertEqual(source.title, "An image")
+        XCTAssertEqual(source.hoverText, "This is the comic’s joke.")
+        XCTAssertTrue(source.showActions)
+        body["hoverText"] = " \n "
+        XCTAssertNil(StoryImageSource(body)?.hoverText)
+        XCTAssertNil(StoryImageSource(payload)?.hoverText, "An alt description must not become hover text when the image has no title")
+        XCTAssertEqual(StoryImageSource(payload)?.showActions, false)
+    }
+
+    @MainActor func test_longHoverTextAndActionsLeaveRoomForImageInPortraitAndLandscape() throws {
+        var body = payload
+        body["hoverText"] = String(repeating: "Long comic hover text remains readable. ", count: 80)
+        body["showActions"] = true
+        body["src"] = "data:image/png;base64,AAAA"
+        let viewer = StoryImageViewerController(source: try XCTUnwrap(StoryImageSource(body)), preview: nil, origin: .zero)
+        let canvas = ImageViewerSafeAreaView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        viewer.view = canvas
+        viewer.viewDidLoad()
+        for size in [CGSize(width: 390, height: 844), CGSize(width: 844, height: 390), CGSize(width: 320, height: 568)] {
+            canvas.frame.size = size
+            viewer.viewDidLayoutSubviews()
+            let hover = try XCTUnwrap(canvas.subviews.first { $0.accessibilityIdentifier == "image-hover-disclosure" } as? UIScrollView)
+            let actions = try XCTUnwrap(canvas.subviews.first { $0.accessibilityIdentifier == "image-action-disclosure" } as? UIStackView)
+            let scroll = try XCTUnwrap(canvas.subviews.first { $0.accessibilityIdentifier == "story-image-zoom" } as? UIScrollView)
+            let image = try XCTUnwrap(scroll.subviews.compactMap { $0 as? UIImageView }.first)
+            let imageFrame = image.convert(image.bounds, to: canvas)
+            XCTAssertFalse(hover.isHidden)
+            XCTAssertFalse(actions.isHidden)
+            XCTAssertGreaterThan(hover.contentSize.height, hover.bounds.height, "Long hover text must scroll instead of truncating")
+            XCTAssertLessThanOrEqual(hover.frame.maxY, imageFrame.minY)
+            XCTAssertFalse(actions.frame.intersects(imageFrame))
+            XCTAssertTrue(canvas.bounds.contains(actions.frame))
+            XCTAssertTrue(canvas.bounds.contains(imageFrame))
+            XCTAssertGreaterThan(imageFrame.height, 40)
+            XCTAssertEqual(actions.arrangedSubviews.count, 3)
+        }
+    }
+
+    @MainActor func test_imageWithoutTitleOmitsHoverDisclosure() throws {
+        var body = payload
+        body["showActions"] = true
+        body["src"] = "data:image/png;base64,AAAA"
+        let viewer = StoryImageViewerController(source: try XCTUnwrap(StoryImageSource(body)), preview: nil, origin: .zero)
+        viewer.loadViewIfNeeded()
+        viewer.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        viewer.viewDidLayoutSubviews()
+        XCTAssertTrue(try XCTUnwrap(viewer.view.subviews.first { $0.accessibilityIdentifier == "image-hover-disclosure" }).isHidden)
+        XCTAssertFalse(try XCTUnwrap(viewer.view.subviews.first { $0.accessibilityIdentifier == "image-action-disclosure" }).isHidden)
     }
 
     func test_bridgeRejectsInvalidGeometryAndNonImageSchemes() throws {
@@ -308,7 +432,7 @@ final class Test_StoryImageViewer: XCTestCase {
     override func point(forGesture gestureRecognizer: UIGestureRecognizer!) -> CGPoint {
         CGPoint(x: 100, y: 200)
     }
-    func beginTouch(_ gesture: UITapGestureRecognizer) {
+    func beginTouch(_ gesture: UIGestureRecognizer) {
         let delegate: UIGestureRecognizerDelegate = self
         _ = delegate.gestureRecognizer?(gesture, shouldReceive: ImageScrollTapTouch())
     }
@@ -341,6 +465,11 @@ final class Test_StoryImageViewer: XCTestCase {
 @MainActor private final class ImageScrollTapGesture: UITapGestureRecognizer {
     override var state: UIGestureRecognizer.State { get { .ended } set {} }
     override var numberOfTouches: Int { 1 }
+}
+
+@MainActor private final class ImageLongPressGesture: UILongPressGestureRecognizer {
+    override var state: UIGestureRecognizer.State { get { .began } set {} }
+    override func location(in view: UIView?) -> CGPoint { CGPoint(x: 100, y: 200) }
 }
 
 // StoryImageViewerTests.swift exercises iPad-sized layout and inset changes on the shared simulator.

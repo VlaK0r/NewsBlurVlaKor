@@ -13,6 +13,7 @@ Actions:
     list                  - List available simulators with UDIDs
     boot                  - Boot the specified simulator if it is not already booted
     tap:<x>,<y>           - Tap at coordinates
+    tap:<x>,<y>,<seconds> - Long press at coordinates for the given duration
     text:<text>          - Type into the focused field
     key:<code>           - Send a hardware key code (40 is Return)
     sleep:<seconds>       - Wait for specified seconds
@@ -41,6 +42,7 @@ Environment:
     IOS_SIM_UDID     - Simulator UDID (alternative to --udid flag)
     IOS_BUNDLE_ID    - App bundle identifier (defaults to NewsBlur)
     IOS_APP_PATH     - Path to the built .app for install
+    IOS_SIM_DISPLAY  - Optional simulator screen ID/name for screenshots and video (Duo has two displays)
     IOS_LAUNCH_ARGUMENTS - Optional shell-quoted launch arguments (for UI test fixtures)
     IOS_USE_XCTRACE  - Also record an Instruments trace when set to 1
     IOS_SAMPLE_SECONDS - Maximum CPU profile duration (defaults to 600)
@@ -134,10 +136,16 @@ def do_boot():
 
 
 def do_tap(coords):
-    """Tap at x,y coordinates."""
-    x, y = coords.split(",")
-    print(f"  Tap: ({x}, {y})")
-    run_cmd(f"idb ui tap --udid {UDID} {x} {y}")
+    """run_ios.py supports ordinary taps and deliberate image long presses."""
+    parts = coords.split(",")
+    if len(parts) not in (2, 3):
+        raise ValueError("tap requires x,y[,duration]")
+    x, y = parts[:2]
+    command = ["idb", "ui", "tap", "--udid", UDID, x, y]
+    if len(parts) == 3:
+        command += ["--duration", str(float(parts[2]))]
+    print(f"  Tap: ({x}, {y})" + (f" for {parts[2]}s" if len(parts) == 3 else ""))
+    subprocess.run(command, check=True)
 
 
 def do_sleep(seconds):
@@ -165,8 +173,13 @@ def do_capture(path, cold=False):
     if cold:
         do_terminate()
     video_log = open(os.path.join(path, "video.log"), "w")
+    video_command = ["xcrun", "simctl", "io", UDID, "recordVideo", "--codec=h264"]
+    if display := os.environ.get("IOS_SIM_DISPLAY"):
+        # run_ios.py records the same Duo display selected for screenshots.
+        video_command.extend(["--display", display])
+    video_command.append(os.path.join(path, "scroll.mp4"))
     video = subprocess.Popen(
-        ["xcrun", "simctl", "io", UDID, "recordVideo", "--codec=h264", os.path.join(path, "scroll.mp4")],
+        video_command,
         stdout=video_log, stderr=subprocess.STDOUT
     )
     CAPTURES.append((video, video_log))
@@ -307,7 +320,12 @@ def stop_captures():
 def do_screenshot(path):
     """Take screenshot and save to path."""
     print(f"  Screenshot: {path}")
-    run_cmd(f"xcrun simctl io {UDID} screenshot {path}")
+    # run_ios.py lets Duo captures select the active inner or outer display explicitly.
+    command = ["xcrun", "simctl", "io", UDID, "screenshot"]
+    display = os.environ.get("IOS_SIM_DISPLAY")
+    if display:
+        command.append(f"--display={display}")
+    subprocess.run(command + [path], check=True)
 
 
 def do_launch():

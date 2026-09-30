@@ -157,17 +157,62 @@ final class ReaderUITests: XCTestCase {
         app.launchArguments = ["-newsblur-ui-test-theme", "medium"]
         launch(on: "reader-feed-swift")
         XCTAssertTrue(waitForFixtureStoryTitles())
+        XCTAssertTrue(storyRow("ui-story-swift-1").waitForExistence(timeout: 10),
+                      "ReaderUITests.swift requires the selected fixture feed, not the empty iPad story list")
         app.buttons["Settings"].firstMatch.tap()
         XCTAssertTrue(app.tables["grouped-action-menu"].waitForExistence(timeout: 5))
         attachScreenshot(named: "story-list-settings-grouped")
         app.terminate()
         app.launchArguments = ["-newsblur-ui-test-theme", "sepia"]
         launch(on: "reader-story-swift-1")
+        let selectedStory = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND value == %@", "ui-story-swift-1"),
+            object: currentStoryProbe())
+        XCTAssertEqual(XCTWaiter.wait(for: [selectedStory], timeout: 15), .completed,
+                       "ReaderUITests.swift waits for the requested article before opening its settings")
         let settings = app.buttons["Story settings"]
-        XCTAssertTrue(settings.waitForExistence(timeout: 15))
+        let enabledSettings = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND enabled == true AND hittable == true"),
+            object: settings)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabledSettings], timeout: 5), .completed)
         settings.tap()
         XCTAssertTrue(app.staticTexts["Share on NewsBlur…"].waitForExistence(timeout: 5))
         attachScreenshot(named: "reader-settings-grouped")
+        #endif
+    }
+
+    func test_imageLongPressShowsHoverTextAndActions() throws {
+        #if !targetEnvironment(simulator)
+        throw XCTSkip("Image long press uses isolated simulator fixtures")
+        #else
+        app.launchArguments += ["-newsblur-ui-test-images", "-newsblur-ui-test-animations"]
+        launch(on: "reader-story-swift-1")
+        let articleImage = app.webViews.images["Image viewer landscape fixture"].firstMatch
+        XCTAssertTrue(articleImage.waitForExistence(timeout: 20))
+        articleImage.press(forDuration: 1.2)
+        attachScreenshot(named: "image-long-press")
+        XCTAssertTrue(app.buttons["Close image"].waitForExistence(timeout: 5))
+        let hoverText = app.staticTexts["The mountain looks smaller from the summit. This is the hover text, not the image description."]
+        XCTAssertTrue(hoverText.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(hoverText.frame.maxY, app.images["fullscreen-story-image"].frame.minY)
+        for title in ["Copy Image", "Save Image", "Share Image…"] {
+            XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 5), title)
+            XCTAssertTrue(app.buttons[title].isEnabled, title)
+        }
+        app.buttons["Copy Image"].tap()
+        XCTAssertTrue(app.staticTexts["Image copied"].waitForExistence(timeout: 5))
+        app.buttons["Close image"].tap()
+        XCTAssertTrue(app.buttons["Close image"].waitForNonExistence(timeout: 5))
+        articleImage.tap()
+        XCTAssertTrue(app.buttons["Close image"].waitForExistence(timeout: 5))
+        XCTAssertFalse(hoverText.exists)
+        app.images["fullscreen-story-image"].press(forDuration: 1.2)
+        XCTAssertTrue(hoverText.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Copy Image"].exists)
+        attachScreenshot(named: "preview-long-press-hover-and-actions")
+        app.buttons["Share Image…"].tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].firstMatch.waitForExistence(timeout: 5))
+        attachScreenshot(named: "image-disclosure-share-sheet")
         #endif
     }
 
@@ -366,7 +411,9 @@ final class ReaderUITests: XCTestCase {
         image.doubleTap()
         expectation(for: NSPredicate(format: "value == 'Fitted'"), evaluatedWith: zoom)
         waitForExpectations(timeout: 5)
-        app.buttons["Image actions"].tap()
+        image.press(forDuration: 1.2)
+        XCTAssertFalse(app.scrollViews["image-hover-disclosure"].exists, "An image without a title must not show its alt description as hover text")
+        XCTAssertTrue(app.buttons["Save Image"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Open Link"].exists)
         XCTAssertFalse(app.buttons["Open Image in Browser"].exists)
         app.buttons["Save Image"].tap()
@@ -643,6 +690,8 @@ final class ReaderUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         defer { XCUIDevice.shared.orientation = .portrait }
         launch(on: "reader-feed-swift")
+        XCTAssertTrue(storyRow("ui-story-swift-1").waitForExistence(timeout: 15),
+                      "ReaderUITests.swift requires loaded fixture stories before exercising the footer")
         for orientation in [UIDeviceOrientation.portrait, .landscapeLeft, .portrait] {
             XCUIDevice.shared.orientation = orientation
             let search = app.buttons["Search stories"].firstMatch
@@ -744,7 +793,9 @@ final class ReaderUITests: XCTestCase {
         XCTAssertLessThanOrEqual(feedHeader.maxY, 44.5)
         XCTAssertLessThanOrEqual(storyHeader.maxY, 44.5)
         for expectedList in [stories, feeds] {
-            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.45))
+            // ReaderUITests.swift starts at the actual screen edge; a percentage becomes 9.6pt in landscape and can miss UIKit's edge recognizer.
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.45))
+                .withOffset(CGVector(dx: 2, dy: 0))
             let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.45))
             start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0)
             XCTAssertTrue(expectedList.waitForExistence(timeout: 5))
@@ -1394,6 +1445,9 @@ final class ReaderUITests: XCTestCase {
     }
 
     func test_rotatingFromStoryDetailKeepsStoryVisibleWhenReturningToPortrait() {
+        let originalOrientation = XCUIDevice.shared.orientation
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = originalOrientation }
         launch(on: "reader-feed-swift")
 
         let storyList = fixtureStorySurface()
@@ -1407,10 +1461,13 @@ final class ReaderUITests: XCTestCase {
         XCTAssertTrue(currentStory.waitForExistence(timeout: 10))
         XCTAssertEqual(currentStory.label, "Swift Fixture Story One")
         XCTAssertTrue(isVisibleOnScreen(currentStory), "Story should be visible before rotation: \(debugVisibility(currentStory))")
+        XCTAssertTrue(waitForRenderedFixtureArticle(orientation: .portrait))
         attachScreenshot(named: "portrait-story")
 
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(currentStory.waitForExistence(timeout: 10))
+        XCTAssertEqual(currentStory.label, "Swift Fixture Story One")
+        XCTAssertTrue(waitForRenderedFixtureArticle(orientation: .landscapeLeft))
         attachScreenshot(named: "landscape-story")
 
         XCUIDevice.shared.orientation = .portrait
@@ -1418,7 +1475,93 @@ final class ReaderUITests: XCTestCase {
         XCTAssertTrue(currentStory.waitForExistence(timeout: 10))
         XCTAssertEqual(currentStory.label, "Swift Fixture Story One")
         XCTAssertTrue(isVisibleOnScreen(currentStory), "Story should stay visible after returning to portrait: \(debugVisibility(currentStory))")
+        XCTAssertTrue(waitForRenderedFixtureArticle(orientation: .portrait))
         attachScreenshot(named: "portrait-after-rotate")
+    }
+
+    private func waitForRenderedFixtureArticle(orientation: UIDeviceOrientation) -> Bool {
+        // ReaderUITests.swift scopes readiness to the rendered WKWebView, since the native model probe remains present while an article is blank.
+        let titlePredicate = NSPredicate(format: "label == %@", "Swift Fixture Story One")
+        let bodyPredicate = NSPredicate(format: "label BEGINSWITH %@",
+                                        "The first Swift story should open in the detail reader.")
+        var previousFrames: [CGRect]?
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { [self] _, _ in
+            let appFrame = app.frame
+            guard XCUIDevice.shared.orientation == orientation,
+                  (appFrame.width > appFrame.height) == orientation.isLandscape,
+                  let web = app.webViews.allElementsBoundByIndex.first(where: { $0.isHittable }) else {
+                previousFrames = nil
+                return false
+            }
+            let title = web.descendants(matching: .any).matching(titlePredicate).firstMatch
+            let body = web.staticTexts.matching(bodyPredicate).firstMatch
+            guard title.exists, body.exists, title.isHittable, body.isHittable else {
+                previousFrames = nil
+                return false
+            }
+            let webFrame = web.frame
+            let titleFrame = title.frame
+            let bodyFrame = body.frame
+            let visibleWebFrame = appFrame.intersection(webFrame)
+            guard !visibleWebFrame.isEmpty, !titleFrame.isEmpty, !bodyFrame.isEmpty,
+                  visibleWebFrame.contains(titleFrame), visibleWebFrame.intersects(bodyFrame) else {
+                previousFrames = nil
+                return false
+            }
+            let frames = [appFrame, webFrame, titleFrame, bodyFrame]
+            defer { previousFrames = frames }
+            return previousFrames == frames
+        }, object: nil)
+        let completed = XCTWaiter.wait(for: [ready], timeout: 10) == .completed
+        if !completed {
+            attachScreenshot(named: "article-not-rendered-after-rotation-\(orientation.rawValue)")
+            let diagnostic = XCTAttachment(string: "expectedOrientation=\(orientation.rawValue) actualOrientation=\(XCUIDevice.shared.orientation.rawValue) appFrame=\(app.frame)\n\(app.debugDescription)")
+            diagnostic.name = "article-rotation-readiness"
+            diagnostic.lifetime = .keepAlways
+            add(diagnostic)
+        }
+        return completed
+    }
+
+    func test_conventionalPhoneReaderKeepsOneReadablePaneAcrossRotation() throws {
+        guard UIDevice.current.userInterfaceIdiom == .phone else {
+            throw XCTSkip("Conventional phone navigation is checked on an iPhone simulator")
+        }
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+        launch(on: "reader-feed-swift")
+        XCTAssertTrue(waitForFixtureStoryTitles())
+        let row = storyRow("ui-story-swift-1")
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        tapElementCenter(row)
+        let currentStory = currentStoryProbe()
+        XCTAssertTrue(currentStory.waitForExistence(timeout: 10))
+
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft, .portrait] {
+            XCUIDevice.shared.orientation = orientation
+            let expectedLandscape = orientation == .landscapeLeft
+            let rotation = XCTNSPredicateExpectation(predicate: NSPredicate { [self] _, _ in
+                (app.frame.width > app.frame.height) == expectedLandscape
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [rotation], timeout: 10), .completed)
+            let web = app.webViews.firstMatch
+            XCTAssertTrue(web.waitForExistence(timeout: 10))
+            attachScreenshot(named: "conventional-phone-reader-width-\(orientation.rawValue)")
+            let geometry = XCTAttachment(string: "orientation=\(orientation.rawValue) app=\(app.frame) web=\(web.frame)\n\(app.debugDescription)")
+            geometry.name = "conventional-phone-reader-geometry"
+            geometry.lifetime = .keepAlways
+            add(geometry)
+
+            XCTAssertEqual(currentStory.label, "Swift Fixture Story One")
+            XCTAssertTrue(isVisibleOnScreen(currentStory))
+            // ReaderUITests.swift permits the phone's protected horizontal edges, while rejecting a reader squeezed beside either list.
+            XCTAssertGreaterThanOrEqual(web.frame.width, app.frame.width * 0.8,
+                                        "A conventional phone must retain a readable single reader pane after rotation")
+            XCTAssertFalse(app.tables["feeds-list"].firstMatch.isHittable,
+                           "The feed list must remain below the reader in compact navigation")
+            XCTAssertFalse(fixtureStorySurface().isHittable,
+                           "Story titles must remain below the reader in compact navigation")
+        }
     }
 
     func test_selectingFeedShowsExpectedFixtureStoryRows() {
