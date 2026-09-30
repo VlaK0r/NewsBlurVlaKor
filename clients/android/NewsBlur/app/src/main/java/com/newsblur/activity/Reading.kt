@@ -16,6 +16,7 @@ import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -66,6 +67,7 @@ import com.newsblur.util.StorySplitView
 import com.newsblur.util.UIUtils
 import com.newsblur.util.ViewUtils
 import com.newsblur.util.VolumeKeyNavigation
+import com.newsblur.util.WebViewPrewarm
 import com.newsblur.util.executeAsyncTask
 import com.newsblur.view.ReadingScrollView.ScrollChangeListener
 import com.newsblur.view.readerUsesSystemBackGesture
@@ -236,6 +238,20 @@ abstract class Reading :
     private var pager: ViewPager? = null
     private var readingAdapter: ReadingAdapter? = null
     private var stopLoading = false
+
+    // A reader opening in a tablet split's reader pane starts under a plain cover in the pane's
+    // background color. The system slides this window up into the pane, which nothing here can turn
+    // off, and a plain surface shows no motion. The cover fades away once that slide is over and
+    // the first story has painted.
+    private var fadeInSplitReader = false
+    private var splitReaderEntered = false
+    private var splitReaderStoryPainted = false
+    private var splitReaderCover: View? = null
+
+    // Parked by a feed switch in the story list beside it (park): showing the empty pane's look and
+    // leaving the old feed alone until the next story tapped replaces this reader.
+    private var parked = false
+    private var placeholderLook: View? = null
     private var unreadSearchActive = false
     private var navigationIntentGeneration = 0L
     private var restoredStoryScrollPosRel = 0f
@@ -306,6 +322,10 @@ abstract class Reading :
         // already visible beside the reader in a tablet split (StorySplitView.kt).
         waitingForPreparedEntrance = savedInstanceBundle == null && !isTaskRoot && !StorySplitView.isInSplit(this)
         waitingForInitialArticle = waitingForPreparedEntrance
+        fadeInSplitReader = savedInstanceBundle == null && StorySplitView.isInSplit(this)
+        // A rotation recreates a parked reader (park), which stays parked.
+        parked = savedInstanceBundle?.getBoolean(BUNDLE_PARKED, false) == true
+        if (parked) stopLoading = true
         if (waitingForPreparedEntrance) {
             PendingTransitionUtils.overrideNoEnterTransition(this)
         } else {
@@ -379,11 +399,21 @@ abstract class Reading :
         setupListeners()
         setupObservers()
         setupOnBackPressed()
+        if (parked) fadeToPlaceholder(0L)
+        if (fadeInSplitReader) {
+            splitReaderCover = addPlaceholderLook(withLogo = false)
+            // onEnterAnimationComplete can come late behind a busy main thread, so the slide also
+            // counts as over a moment after this window's first frame.
+            binding.root.doOnPreDraw { binding.root.postDelayed({ onSplitReaderEntered() }, SPLIT_READER_SLIDE_MS) }
+            // A story that never paints (offline, a failed load) still shows its page.
+            binding.root.postDelayed({ revealSplitReader() }, SPLIT_READER_FADE_TIMEOUT_MS)
+        }
         loadActiveStories(true)
     }
 
     override fun onSaveInstanceState(savedInstanceState: Bundle) {
         super.onSaveInstanceState(savedInstanceState)
+        savedInstanceState.putBoolean(BUNDLE_PARKED, parked)
         savedInstanceState.putBoolean(EXTRA_TOOLBAR_HIDDEN, toolbarVisibleFraction == 0f)
         val activeStory = activeReadingStory()
         val pagerStory = pagerReadingStory()
@@ -413,6 +443,8 @@ abstract class Reading :
         super.onResume()
         readerIsPaused = false
         latestReaderRef = WeakReference(this)
+        // A parked reader leaves the reading session, which now belongs to another feed, alone.
+        if (parked) return
         if (syncServiceState.isHousekeepingRunning()) finish()
         // this view shows stories, it is not safe to perform cleanup
         stopLoading = false
@@ -659,6 +691,7 @@ abstract class Reading :
             object : OnBackPressedCallback(enabled = true) {
                 override fun handleOnBackStarted(backEvent: BackEventCompat) {
                     predictiveBackInProgress =
+                        !parked &&
                         supportsPredictiveReaderBack() &&
                         isInteractiveReaderBackEnabled() &&
                         backEvent.swipeEdge == BackEventCompat.EDGE_LEFT
@@ -680,7 +713,10 @@ abstract class Reading :
 
                 override fun handleOnBackPressed() {
                     predictiveBackInProgress = false
-                    finish()
+                    // A parked reader stands in for the empty pane, so Back does what the empty
+                    // pane's does (ReadingPlaceholder.kt): slide the feed list over.
+                    val storyList = if (parked) ItemsList.peekReadingLaunchParent(taskId)?.takeIf { !it.isFinishing } else null
+                    if (storyList != null) storyList.backToFeedList() else finish()
                 }
             },
         )
@@ -702,6 +738,7 @@ abstract class Reading :
     }
 
     private fun setStoryData(incomingBatch: ReadingViewModel.StoryBatch) {
+        if (parked) return
         val sessionReady = dbHelper.isFeedSetReady(fs)
         // Reading.kt may have an exact target before its feed session is ready; never mix in another session's rows.
         val batch = if (sessionReady) incomingBatch else incomingBatch.copy(stories = emptyList(), classifiers = emptyMap(), indexOfLastUnread = -1)
@@ -871,7 +908,14 @@ abstract class Reading :
     }
 
     fun onReaderPageVisualReady(readyStoryHash: String) {
+        WebViewPrewarm.release()
         val activeHash = pager?.currentItem?.let { readingAdapter?.getStory(it)?.storyHash }
+        if (fadeInSplitReader && activeHash == readyStoryHash) {
+            binding.content.doOnPreDraw {
+                splitReaderStoryPainted = true
+                if (splitReaderEntered) revealSplitReader()
+            }
+        }
         if (preparedPageNavigation?.isPreparing == true && activeHash == readyStoryHash) {
             binding.content.doOnPreDraw {
                 val position = pager?.currentItem
@@ -890,6 +934,107 @@ abstract class Reading :
                 "visual_ready active=${activeHash == readyStoryHash} waiting=$waitingForPreparedEntrance elapsed=${SystemClock.uptimeMillis() - preparedEntranceStartedAt}",
             )
         }
+    }
+
+    /**
+     * ItemsList.java is switching to another feed with this reader beside it, so the reader fades to
+     * the empty reader pane's look (ReadingPlaceholder.kt) alongside the feed list's slide, then
+     * stays parked that way (park).
+     */
+    fun fadeToPlaceholder(durationMs: Long) {
+        if (isFinishing || isDestroyed || placeholderLook != null) return
+        val placeholder = addPlaceholderLook() ?: return
+        placeholder.alpha = 0f
+        placeholderLook = placeholder
+        placeholder
+            .animate()
+            .alpha(1f)
+            .setDuration(durationMs)
+            .start()
+    }
+
+    // ReadingPlaceholder.kt's look laid over this reader, catching taps meant for the story beneath.
+    // Without its logo it is only the pane's background.
+    private fun addPlaceholderLook(withLogo: Boolean = true): View? {
+        val content = findViewById<ViewGroup>(android.R.id.content) ?: return null
+        val placeholder = ReadingPlaceholder.inflatePane(layoutInflater, content)
+        if (!withLogo) (placeholder as? ViewGroup)?.removeAllViews()
+        placeholder.isClickable = true
+        content.addView(placeholder, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        // This reader draws under the status bar and ReadingPlaceholder.kt doesn't, so the look
+        // starts below the status bar too, keeping its logo exactly where the real pane's is. A
+        // reader that just opened gets its insets after this, so the margin follows them.
+        ViewCompat.setOnApplyWindowInsetsListener(placeholder) { view, insets ->
+            val statusBarTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+            val params = view.layoutParams as ViewGroup.MarginLayoutParams
+            if (params.topMargin != statusBarTop) {
+                params.topMargin = statusBarTop
+                view.layoutParams = params
+            }
+            insets
+        }
+        ViewCompat.requestApplyInsets(placeholder)
+        return placeholder
+    }
+
+    /**
+     * ItemsList.java parks this reader when the list beside it switches to another feed. The
+     * reading session now belongs to that feed, so this reader stops loading, reading, and marking
+     * stories, and keeps the empty pane's look until the next story tapped replaces it. Closing it
+     * instead would bring back ReadingPlaceholder.kt, whose pane the system slides up from below.
+     */
+    fun park() {
+        if (parked) return
+        parked = true
+        stopLoading = true
+        cancelStoryDwell(clearStory = true)
+        cancelUnreadSearch()
+        flushAndStopReadTimeTracking()
+        keyboardManager.removeListener()
+    }
+
+    override fun onEnterAnimationComplete() {
+        super.onEnterAnimationComplete()
+        onSplitReaderEntered()
+    }
+
+    private fun onSplitReaderEntered() {
+        splitReaderEntered = true
+        if (splitReaderStoryPainted) revealSplitReader()
+    }
+
+    private fun revealSplitReader() {
+        if (!fadeInSplitReader) return
+        fadeInSplitReader = false
+        val cover = splitReaderCover ?: return
+        splitReaderCover = null
+        cover
+            .animate()
+            .alpha(0f)
+            .setDuration(SPLIT_READER_FADE_MS)
+            .withEndAction { (cover.parent as? ViewGroup)?.removeView(cover) }
+            .start()
+    }
+
+    /**
+     * ItemsList.java hands this reader a story tapped in the list beside it in a tablet split,
+     * so the reader pages over to it, sideways like a swipe, instead of a new reader replacing
+     * this one. Returns false when the story can't be shown in place (another feed set, or a
+     * story this reader hasn't loaded), and the list opens a new reader instead.
+     */
+    fun showStoryFromStoryList(
+        feedSet: FeedSet,
+        hash: String,
+    ): Boolean {
+        if (parked || isFinishing || isDestroyed || stopLoading || feedSet != fs) return false
+        val adapter = readingAdapter ?: return false
+        if (pager == null) return false
+        val position = adapter.findHash(hash)
+        if (position < 0) return false
+        cancelUnreadSearch()
+        clearCurrentStoryPins()
+        if (position != requestedReadingPosition()) navigateToStory(position)
+        return true
     }
 
     fun onReaderPageNativeReady(readyStoryHash: String) {
@@ -1138,6 +1283,7 @@ abstract class Reading :
         }
 
     override fun handleUpdate(updateType: Int) {
+        if (parked) return
         if (updateType and UPDATE_REBUILD != 0) {
             finish()
         }
@@ -1189,7 +1335,7 @@ abstract class Reading :
     }
 
     override fun onPageSelected(position: Int) {
-        if (preparedPageNavigation?.isPreparing == true) return
+        if (parked || preparedPageNavigation?.isPreparing == true) return
         cancelStoryDwell(clearStory = true)
         val isRestoringSelection = isRestoringState
         val story = readingAdapter?.getStory(position)
@@ -2135,10 +2281,18 @@ abstract class Reading :
         private const val BUNDLE_STARTING_UNREAD = "starting_unread"
         private const val BUNDLE_CURRENT_SCROLL_POS_REL = "current_scroll_pos_rel"
         private const val BUNDLE_CURRENT_STORY = "current_story"
+        private const val BUNDLE_PARKED = "parked"
 
         /** special value for starting story hash that jumps to the first unread.  */
         const val FIND_FIRST_UNREAD = "FIND_FIRST_UNREAD"
         private const val OVERLAY_ELEVATION_DP = 1.5f
+
+        // Reading.kt's fade for a reader opening in a tablet split, as the iPad fades its first story.
+        private const val SPLIT_READER_FADE_MS = 140L
+        private const val SPLIT_READER_FADE_TIMEOUT_MS = 1_500L
+
+        // How long the system's slide of a new reader pane into place takes, give or take.
+        private const val SPLIT_READER_SLIDE_MS = 350L
 
         /** The minimum screen width (in DP) needed to show all the overlay controls.  */
         private const val OVERLAY_MIN_WIDTH_DP = 355
