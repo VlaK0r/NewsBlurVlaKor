@@ -52,15 +52,15 @@ services:
 
   imageproxy:
     container_name: newsblur_imageproxy
-    # image: ghcr.io/willnorris/imageproxy:latest # Enable if you don't need arm64 and want the original imageproxy
-    image: yusukeito/imageproxy:v0.11.2 # Enable if you want arm64
+    image: ghcr.io/willnorris/imageproxy:latest # Enable if you don't need arm64 and want the original imageproxy
+    # image: yusukeito/imageproxy:v0.11.2 # Enable if you want arm64
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
     entrypoint: /app/imageproxy -addr 0.0.0.0:8088 -cache /tmp/imageproxy -verbose
     restart: unless-stopped
     ports:
       - 8088:8088
     volumes:
-      - /tmp:/tmp/imageproxy
+      - ./data/tmp:/tmp/imageproxy
 
   nginx:
     container_name: newsblur_nginx
@@ -96,7 +96,7 @@ services:
     ports:
       - 5434:5432
     volumes:
-      - ./docker/volumes/postgres:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
 
   newsblur_db_redis:
     container_name: newsblur_db_redis
@@ -107,7 +107,7 @@ services:
     volumes:
       - ./docker/redis/redis.conf:/etc/redis/redis.conf
       - ./docker/redis/redis_server.conf:/usr/local/etc/redis/redis_replica.conf
-      - ./docker/volumes/redis:/data
+      - ./data/redis:/data
     command: redis-server /etc/redis/redis.conf --port 6579
 
   # Prod Redis
@@ -131,8 +131,8 @@ services:
     restart: unless-stopped
     environment:
       - discovery.type=single-node
-      - "ES_JAVA_OPTS=-Xms1g -Xmx1g -XX:UseSVE=0"
-      - "CLI_JAVA_OPTS=-XX:UseSVE=0"
+    #  - "ES_JAVA_OPTS=-Xms1g -Xmx1g -XX:UseSVE=0"
+    #  - "CLI_JAVA_OPTS=-XX:UseSVE=0"
       - cluster.routing.allocation.disk.threshold_enabled=false
       - xpack.security.enabled=false
       - bootstrap.memory_lock=false
@@ -141,7 +141,7 @@ services:
       - 9200:9200
       - 9300:9300
     volumes:
-      - ./docker/volumes/elasticsearch:/usr/share/elasticsearch/data
+      - ./data/elasticsearch:/usr/share/elasticsearch/data
       - ./config/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
 
   # Dejavu is a web UI for Elasticsearch
@@ -160,7 +160,7 @@ services:
       - 29019:29019
     command: mongod --port 29019 --wiredTigerEngineConfigString="checkpoint=(wait=60),file_manager=(close_idle_time=0)"
     volumes:
-      - ./docker/volumes/db_mongo:/data/db:delegated
+      - ./data/db_mongo:/data/db:delegated
 
   task_celery:
     container_name: newsblur_celery
@@ -180,13 +180,13 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONPATH=/srv/newsblur_mcp
-      - NEWSBLUR_BASE_URL=http://newsblur_web:8000
+      - NEWSBLUR_BASE_URL=https://nb.vlakor.ru
       - MCP_PORT=8099
       - MCP_HOST=0.0.0.0
       - MCP_OAUTH_CLIENT_ID=newsblur-mcp-server
       - MCP_OAUTH_CLIENT_SECRET=newsblur-mcp-dev-secret
-      - MCP_OAUTH_BASE_URL=http://localhost/mcp
-      - MCP_OAUTH_UPSTREAM_URL=http://localhost
+      - MCP_OAUTH_BASE_URL=https://nb.vlakor.ru/mcp
+      - MCP_OAUTH_UPSTREAM_URL=https://nb.vlakor.ru
       - MCP_OAUTH_INTERNAL_URL=http://newsblur_web:8000
       - MCP_REDIS_URL=redis://newsblur_db_redis:6579/5
     volumes:
@@ -208,8 +208,8 @@ services:
       - newsblur_db_elasticsearch
       - newsblur_db_mongo
     ports:
-      - 80:80
-      - 443:443
+      - 8001:80
+      - 4431:443
       - 1936:1936
     volumes:
       - ./docker/haproxy/haproxy.docker-compose.cfg:/usr/local/etc/haproxy/haproxy.cfg
