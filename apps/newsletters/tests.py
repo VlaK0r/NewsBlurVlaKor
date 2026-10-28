@@ -53,7 +53,7 @@ class NewsletterFixture:
 
     def receive(self, suffix, **overrides):
         params = {
-            "recipient": "newsletteruser-abc123@newsletters.newsblur.com",
+            "recipient": "newsletteruser-abc123@newsletters.nb.vlakor.ru",
             "from": "Hipersonica - hipersonica+tier-list at substack.com "
             "<hipersonica_tier-list_at_substack_com_zjdml@simplelogin.co>",
             "subject": "Newsletter test",

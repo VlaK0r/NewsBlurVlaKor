@@ -24,7 +24,7 @@ _.extend(NEWSBLUR.ReaderNewsletters.prototype, {
 
     make_modal: function () {
         var self = this;
-        var email = NEWSBLUR.Globals.username + "-" + NEWSBLUR.Globals.secret_token + "@newsletters.newsblur.com";
+        var email = NEWSBLUR.Globals.username + "-" + NEWSBLUR.Globals.secret_token + "@newsletters.nb.vlakor.ru";
 
         this.$modal = $.make('div', { className: 'NB-modal-newsletters NB-modal' }, [
             $.make('h2', { className: 'NB-modal-title' }, [

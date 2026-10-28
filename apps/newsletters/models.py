@@ -272,8 +272,8 @@ class EmailNewsletter:
         logging.user(user, "~BB~FM~SBSending first newsletter email to: %s" % user.email)
 
     def _user_from_email(self, email):
-        # Support both @newsletters.newsblur.com and @improvmx.newsblur.com
-        tokens = re.search(r"(\w+)[\+\-\.](\w+)@(?:newsletters|improvmx)\.newsblur\.com", email)
+        # Support both @newsletters.nb.vlakor.ru and @improvmx.nb.vlakor.ru
+        tokens = re.search(r"(\w+)[\+\-\.](\w+)@(?:newsletters|improvmx)\.nb\.vlakor\.ru", email)
         if not tokens:
             logging.debug(f" ***> Newsletter email regex failed for: {email}")
             return
