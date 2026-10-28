@@ -542,8 +542,13 @@ public abstract class ItemsList extends NbActivity implements ReadingActionListe
             Session session = sessionDataSource.getNextSession();
             if (session != null) {
                 applyNextSession(session);
-            } else backToFeedList();
-        } else backToFeedList();
+                return;
+            }
+        }
+        // ItemsList.java action completion returns to feeds without treating an already open
+        // FeedListDrawer.kt as a request to leave the app, as explicit Back navigation does.
+        if (slidesOverFeedDrawer()) FeedListDrawer.open(this);
+        else finish();
     }
 
     @Nullable
@@ -1891,6 +1896,28 @@ public abstract class ItemsList extends NbActivity implements ReadingActionListe
         binding.itemlistStoryStatusBorder.setBackgroundColor(borderColor);
         binding.itemlistStoryStatusOfflineIcon.setImageTintList(ColorStateList.valueOf(textColor));
         binding.itemlistStoryStatusSpinner.setIndicatorColor(textColor);
+    }
+
+    @Override
+    protected boolean showsListenMiniPlayer() {
+        return true;
+    }
+
+    @Override
+    protected View listenMiniPlayerAnchor() {
+        // ItemsList.java's story toolbar floats at the bottom unless it was moved to the top in Settings.
+        return binding != null && storyToolbarAtBottom ? binding.itemlistStoryHeader : null;
+    }
+
+    @Override
+    protected boolean showsListenMiniPlayerInThisPane() {
+        return !(StorySplitView.isInSplit(this) && Reading.peekSplitReader(getTaskId()) != null);
+    }
+
+    @Override
+    protected void onListenMiniPlayerInsetChanged(int insetPx) {
+        // ItemsList.java pads the story list like Main.java pads the feed list, only while the mini player shows.
+        if (itemSetFragment != null) itemSetFragment.setListenMiniPlayerInset(insetPx);
     }
 
     private static class StoryHeaderPalette {
