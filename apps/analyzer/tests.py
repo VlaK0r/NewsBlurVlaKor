@@ -2001,6 +2001,12 @@ class Test_AIPromptClassifierDirection(TransactionTestCase):
         self.assertIn("hide", hidden_system.lower())
         self.assertIn("sports", hidden_system)
 
+    def test_openai_classifier_uses_gpt6_luna_function_calling_mode(self):
+        """GPT-6 Luna requires reasoning_effort=none for Chat Completions tools."""
+        _result, kwargs = self._run(classify_stories_with_ai, self.hidden_prompt)
+        self.assertEqual(kwargs["model"], "gpt-6-luna")
+        self.assertEqual(kwargs["reasoning_effort"], "none")
+
     def test_hidden_match_survives_the_reader_filter(self):
         """End-to-end sign check: what the model returns for a match must be
         the value apps/reader/views.py honors for that classifier type."""

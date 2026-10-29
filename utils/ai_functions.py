@@ -144,6 +144,7 @@ You MUST use the classify_stories function to return your classifications."""
                 "type": "function",
                 "function": {"name": "classify_stories"},
             },
+            reasoning_effort="none",
             max_completion_tokens=min(8192, 512 + 40 * len(story_items)),
         )
 
