@@ -899,6 +899,7 @@ NEWSBLUR.Views.StoryAskAiView = Backbone.View.extend({
     // Legacy model keys from before keys became vendor slugs (Aug 2026).
     // Cached responses and saved preferences may still carry them.
     LEGACY_MODEL_KEYS: {
+        'gpt': 'openai',
         'opus': 'anthropic',
         'haiku': 'anthropic',
         'gpt-5.2': 'openai',
