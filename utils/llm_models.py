@@ -25,6 +25,9 @@ ANTHROPIC_CHAT_MODEL_DISPLAY = "Claude Sonnet 5.5"
 OPENAI_MODEL = "gpt-6-luna"
 OPENAI_MODEL_DISPLAY = "GPT-6 Luna"
 
+# Dedicated low-cost model for the text AI Content Filter.
+OPENAI_CLASSIFIER_MODEL = "gpt-5.4-nano"
+
 GOOGLE_MODEL = "gemini-3.8-flash"
 GOOGLE_MODEL_DISPLAY = "Gemini 3.8 Flash"
 

@@ -1898,35 +1898,74 @@ class Test_AIPromptClassifierDirection(TransactionTestCase):
         MClassifierPrompt.objects(user_id=self.user.pk).delete()
 
     def _run(self, classify_fn, prompt, classification=0, raises=None):
-        """Call a classifier against a mocked Anthropic client.
+        """Call the appropriate classifier against a mocked API client."""
+        if classify_fn is classify_stories_with_vision:
+            block = MagicMock()
+            block.type = "tool_use"
+            block.name = "classify_stories"
+            block.input = {
+                "classifications": [
+                    {"id": "guid-1", "classification": classification}
+                ]
+            }
+            response = MagicMock()
+            response.content = [block]
+            response.usage = None
 
-        Returns (result, create_kwargs) so tests can assert on both the value
-        returned and the request that was actually sent to the model.
-        """
-        block = MagicMock()
-        block.type = "tool_use"
-        block.name = "classify_stories"
-        block.input = {"classifications": [{"id": "guid-1", "classification": classification}]}
+            with patch(
+                "apps.ask_ai.providers.AnthropicProvider.is_configured",
+                return_value=True,
+            ), patch("utils.ai_functions.anthropic.Anthropic") as MockAnthropic:
+                client = MockAnthropic.return_value
+                if raises:
+                    client.messages.create.side_effect = raises
+                else:
+                    client.messages.create.return_value = response
+                result = classify_fn(prompt, self.stories, user_id=None)
+                kwargs = (
+                    client.messages.create.call_args.kwargs
+                    if client.messages.create.call_args else {}
+                )
+            return result, kwargs
+
+        tool_call = MagicMock()
+        tool_call.function.name = "classify_stories"
+        tool_call.function.arguments = json.dumps({
+            "classifications": [
+                {"id": "guid-1", "classification": classification}
+            ]
+        })
+        message = MagicMock()
+        message.tool_calls = [tool_call]
         response = MagicMock()
-        response.content = [block]
+        response.choices = [MagicMock()]
+        response.choices[0].message = message
         response.usage = None
 
-        with patch("apps.ask_ai.providers.AnthropicProvider.is_configured", return_value=True), patch(
-            "utils.ai_functions.anthropic.Anthropic"
-        ) as MockAnthropic:
-            client = MockAnthropic.return_value
+        with patch(
+            "apps.ask_ai.providers.OpenAIProvider.is_configured",
+            return_value=True,
+        ), patch("utils.ai_functions.openai.OpenAI") as MockOpenAI:
+            client = MockOpenAI.return_value
             if raises:
-                client.messages.create.side_effect = raises
+                client.chat.completions.create.side_effect = raises
             else:
-                client.messages.create.return_value = response
+                client.chat.completions.create.return_value = response
             result = classify_fn(prompt, self.stories, user_id=None)
-            kwargs = client.messages.create.call_args.kwargs if client.messages.create.call_args else {}
+            kwargs = (
+                client.chat.completions.create.call_args.kwargs
+                if client.chat.completions.create.call_args else {}
+            )
         return result, kwargs
 
     def _allowed_scores(self, kwargs):
-        """Pull the enum of classification values the tool schema permits."""
+        """Read allowed classification scores from OpenAI or Anthropic schemas."""
         tool = kwargs["tools"][0]
-        schema = tool["input_schema"]["properties"]["classifications"]["items"]
+        if "function" in tool:
+            schema = tool["function"]["parameters"]
+        else:
+            schema = tool["input_schema"]
+        schema = schema["properties"]["classifications"]["items"]
         return schema["properties"]["classification"]["enum"]
 
     def test_hidden_prompt_only_permits_neutral_or_hide(self):
@@ -1951,8 +1990,8 @@ class Test_AIPromptClassifierDirection(TransactionTestCase):
         and a focus classifier in production, so the two messages must differ."""
         _r1, hidden_kwargs = self._run(classify_stories_with_ai, self.hidden_prompt)
         _r2, focus_kwargs = self._run(classify_stories_with_ai, self.focus_prompt)
-        hidden_system = hidden_kwargs["system"]
-        focus_system = focus_kwargs["system"]
+        hidden_system = hidden_kwargs["messages"][0]["content"]
+        focus_system = focus_kwargs["messages"][0]["content"]
 
         self.assertNotEqual(
             hidden_system,
@@ -1979,6 +2018,20 @@ class Test_AIPromptClassifierDirection(TransactionTestCase):
         allowed = self._allowed_scores(kwargs)
         self.assertNotIn(1, allowed, "A hidden image classifier must not be allowed to return +1")
         self.assertIn(-1, allowed)
+
+    def test_incomplete_classification_returns_none(self):
+        """An incomplete batch must not be cached as neutral scores."""
+        self.stories.append({
+            **self.stories[0],
+            "story_id": "guid-2",
+            "story_hash": "2:guid2",
+            "story_title": "Another story",
+        })
+        result, _kwargs = self._run(classify_stories_with_ai, self.hidden_prompt)
+        self.assertIsNone(
+            result,
+            "A partial classification batch must be treated as a failure",
+        )
 
     def test_api_failure_returns_none_instead_of_neutral_scores(self):
         """An exception used to yield {story_id: 0} for every story, which
@@ -2031,10 +2084,10 @@ class Test_AIPromptClassifierDirection(TransactionTestCase):
         prompt_id = str(self.hidden_prompt.id)
         MClassifierPrompt.invalidate_cache(self.user.pk, prompt_id)
 
-        with patch("apps.ask_ai.providers.AnthropicProvider.is_configured", return_value=True), patch(
-            "utils.ai_functions.anthropic.Anthropic"
-        ) as MockAnthropic:
-            MockAnthropic.return_value.messages.create.side_effect = Exception("API is down")
+        with patch("apps.ask_ai.providers.OpenAIProvider.is_configured", return_value=True), patch(
+            "utils.ai_functions.openai.OpenAI"
+        ) as MockOpenAI:
+            MockOpenAI.return_value.chat.completions.create.side_effect = Exception("API is down")
             MClassifierPrompt._run_classifier(
                 self.hidden_prompt, self.stories, user_id=self.user.pk, feed_id=self.feed.pk
             )

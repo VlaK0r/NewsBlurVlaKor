@@ -61,6 +61,7 @@ MODEL_PRICING = {
     "claude-haiku-4-5": {"input": 1.00, "output": 5.00},
     # OpenAI GPT models
     "gpt-6-luna": {"input": 0.10, "output": 0.50},
+    "gpt-5.4-nano": {"input": 0.20, "output": 1.25},
     "gpt-5.6-luna": {"input": 0.10, "output": 0.60},
     "gpt-5.2": {"input": 2.00, "output": 8.00},
     "gpt-5-mini": {"input": 0.30, "output": 1.20},
@@ -125,6 +126,7 @@ MODEL_PROVIDERS = {
     "claude-haiku-4-5-20251022": "anthropic",
     "claude-haiku-4-5": "anthropic",
     "gpt-6-luna": "openai",
+    "gpt-5.4-nano": "openai",
     "gpt-5.6-luna": "openai",
     "gpt-5.2": "openai",
     "gpt-5-mini": "openai",

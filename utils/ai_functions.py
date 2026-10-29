@@ -17,7 +17,7 @@ import tiktoken
 from django.conf import settings
 
 from utils.llm_costs import LLMCostTracker
-from utils.llm_models import ANTHROPIC_MODEL
+from utils.llm_models import ANTHROPIC_MODEL, OPENAI_CLASSIFIER_MODEL
 
 
 def setup_openai_model(openai_model):
@@ -47,136 +47,181 @@ def _classifier_direction(prompt_classifier):
     return 1, "FOCUS ON"
 
 
-def classify_stories_with_ai(prompt_classifier, stories, model=ANTHROPIC_MODEL, user_id=None):
+def classify_stories_with_ai(prompt_classifier, stories, model=OPENAI_CLASSIFIER_MODEL, user_id=None):
+    """Classify stories through OpenAI function calling.
+
+    The classifier direction is determined by classifier_type, so a hidden
+    classifier can only return -1 or 0, and a focus classifier only 1 or 0.
     """
-    Classify a list of stories using Claude's tool use.
+    from apps.ask_ai.providers import OpenAIProvider
 
-    Args:
-        prompt_classifier: User-defined prompt (MClassifierPrompt) for classification criteria
-        stories: List of dictionaries containing story data with at least title and content
-        model: Claude model to use
-        user_id: User ID for usage tracking and billing
+    neutral = {story["story_id"]: 0 for story in stories}
+    if not stories:
+        return {}
 
-    Returns:
-        Dictionary mapping story_ids to classifications: 1 (focus), 0 (neutral), -1 (hidden)
-    """
-    from apps.ask_ai.providers import AnthropicProvider
-
-    if not AnthropicProvider().is_configured():
-        logging.error("Anthropic API key not configured")
+    if not OpenAIProvider().is_configured():
+        logging.error("OpenAI API key not configured")
         return None
 
-    # Initialize Anthropic client
-    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
 
-    # Prepare stories for classification
-    story_items = []
-    for story in stories:
-        story_items.append(
-            {
-                "id": story["story_id"],
-                "title": story["story_title"],
-                "excerpt": story.get("story_content", "")[:500],  # Limit content size
-            }
-        )
+    story_items = [
+        {
+            "id": str(story["story_id"]),
+            "title": story["story_title"],
+            "excerpt": story.get("story_content", "")[:500],
+        }
+        for story in stories
+    ]
 
-    # The direction has to be resolved before the schema is built: a hidden
-    # classifier must not even be able to express +1.
     match_score, match_verb = _classifier_direction(prompt_classifier)
 
-    # Define the tool for classification
     tool_definition = {
-        "name": "classify_stories",
-        "description": "Classify stories based on user-defined criteria",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "classifications": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "string"},
-                            "classification": {
-                                "type": "integer",
-                                "enum": [0, match_score],
-                                "description": "%d when the story matches the criteria, 0 otherwise"
-                                % match_score,
+        "type": "function",
+        "function": {
+            "name": "classify_stories",
+            "description": "Classify stories based on user-defined criteria",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "classifications": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "classification": {
+                                    "type": "integer",
+                                    "enum": [0, match_score],
+                                    "description": (
+                                        f"{match_score} when the story matches "
+                                        "the criteria, 0 otherwise"
+                                    ),
+                                },
                             },
+                            "required": ["id", "classification"],
+                            "additionalProperties": False,
                         },
-                        "required": ["id", "classification"],
-                    },
-                }
+                    }
+                },
+                "required": ["classifications"],
+                "additionalProperties": False,
             },
-            "required": ["classifications"],
         },
     }
 
-    # Create system message. The direction (hide vs focus) must be stated
-    # explicitly — see _classifier_direction() for why the prompt alone can't.
     system_message = f"""You are a story classifier for a news reader application.
 
-The user wants to {match_verb} stories matching this criteria: {prompt_classifier.prompt}
+The user wants to {match_verb} stories matching this criteria:
+{prompt_classifier.prompt}
 
 Classify each story independently:
 - {match_score}: the story clearly matches the criteria above
 - 0: the story does not match
 
-The criteria describes which stories to act on, not which stories the user likes.
-A criteria of "sports" on a {match_verb} classifier means every sports story gets
-{match_score}, whether or not the user enjoys sports.
+The criteria describes which stories to act on, not which stories the user
+likes. For example, a hidden classifier for "sports" must hide matching
+sports stories regardless of whether the user likes sports.
 
-Most stories should be 0. Only return {match_score} when the story clearly matches.
-
-You MUST use the classify_stories tool to return your classifications."""
+Most stories should be 0. Only return {match_score} when a story clearly matches.
+You MUST use the classify_stories function to return your classifications."""
 
     try:
-        # Call the Anthropic API with tool use
-        # Each classification costs ~25 output tokens on Haiku 4.5 and ~30% more on
-        # Haiku 5.5's tokenizer. A fixed 1024 cap silently truncated the tool call on
-        # large batches, which parsed as a failure.
-        response = client.messages.create(
+        response = client.chat.completions.create(
             model=model,
-            max_tokens=min(8192, 512 + 40 * len(story_items)),
-            system=system_message,
-            tools=[tool_definition],
-            tool_choice={"type": "tool", "name": "classify_stories"},
             messages=[
-                {"role": "user", "content": f"Please classify these stories: {json.dumps(story_items)}"}
+                {"role": "system", "content": system_message},
+                {
+                    "role": "user",
+                    "content": (
+                        "Please classify these stories: "
+                        f"{json.dumps(story_items, ensure_ascii=False)}"
+                    ),
+                },
             ],
+            tools=[tool_definition],
+            tool_choice={
+                "type": "function",
+                "function": {"name": "classify_stories"},
+            },
+            max_completion_tokens=min(8192, 512 + 40 * len(story_items)),
         )
 
-        # Record LLM cost
         if response.usage:
             LLMCostTracker.record_usage(
-                provider="anthropic",
+                provider="openai",
                 model=model,
                 feature="story_classification",
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
+                input_tokens=response.usage.prompt_tokens,
+                output_tokens=response.usage.completion_tokens,
                 user_id=user_id,
                 metadata={"story_count": len(stories)},
             )
 
-        # Parse the response - look for tool_use blocks
-        for block in response.content:
-            if block.type == "tool_use" and block.name == "classify_stories":
-                try:
-                    result = block.input
-                    # Convert to dictionary mapping story_id to classification
-                    classifications = {
-                        item["id"]: item["classification"] for item in result["classifications"]
-                    }
-                    return classifications
-                except (KeyError, TypeError) as e:
-                    logging.error(f"Error parsing AI classification response: {e}")
+        message = response.choices[0].message if response.choices else None
+        if not message or not message.tool_calls:
+            logging.error("OpenAI did not return a valid function call")
+            return None
+
+        story_ids = {str(story["story_id"]): story["story_id"] for story in stories}
+        expected_ids = set(story_ids)
+
+        for tool_call in message.tool_calls:
+            if tool_call.function.name != "classify_stories":
+                continue
+
+            try:
+                result = json.loads(tool_call.function.arguments)
+                if not isinstance(result, dict) or not isinstance(
+                    result.get("classifications"), list
+                ):
+                    logging.error("OpenAI returned an invalid classifications structure")
                     return None
 
-        logging.error("AI did not return a valid tool use")
+                returned = {}
+                for item in result["classifications"]:
+                    if not isinstance(item, dict) or "id" not in item or "classification" not in item:
+                        logging.error("OpenAI returned an invalid classification item")
+                        return None
+
+                    story_id = str(item["id"])
+                    value = item["classification"]
+
+                    if (
+                        story_id not in story_ids
+                        or story_id in returned
+                        or not isinstance(value, int)
+                        or isinstance(value, bool)
+                        or value not in (0, match_score)
+                    ):
+                        logging.error("OpenAI returned an unknown, duplicate, or invalid classification")
+                        return None
+
+                    returned[story_id] = value
+
+                if set(returned) != expected_ids:
+                    logging.error(
+                        "OpenAI returned an incomplete classification batch: "
+                        "%d of %d stories",
+                        len(returned),
+                        len(expected_ids),
+                    )
+                    return None
+
+                return {
+                    story_ids[story_id]: value
+                    for story_id, value in returned.items()
+                }
+
+            except (KeyError, TypeError, json.JSONDecodeError) as error:
+                logging.error(f"Error parsing OpenAI classification response: {error}")
+                return None
+
+        logging.error("OpenAI did not return the classify_stories function")
         return None
 
-    except Exception as e:
-        logging.error(f"Error during AI classification: {e}")
+    except Exception as error:
+        logging.error(f"Error during OpenAI classification: {error}")
         return None
 
 
