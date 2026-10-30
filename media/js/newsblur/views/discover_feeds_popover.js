@@ -354,9 +354,13 @@ NEWSBLUR.DiscoverFeedsPopover = NEWSBLUR.ReaderPopover.extend({
             url: '/discover/index/',
             type: 'POST',
             success: _.bind(function (data) {
-                if (data.code < 0) {
+                if (!data || data.code < 0 || !data.indexing) {
                     this.is_discover_indexing = false;
-                    this.update_index_button_state();
+                    if (data && data.code >= 0 && !data.indexing) {
+                        this.fetch_data();
+                    } else {
+                        this.update_index_button_state();
+                    }
                 }
             }, this),
             error: _.bind(function () {
@@ -390,7 +394,7 @@ NEWSBLUR.DiscoverFeedsPopover = NEWSBLUR.ReaderPopover.extend({
         } else if (_.string.startsWith(message, 'feeds:')) {
             // Update progress bar with current indexed count
             var counts = this.get_discover_counts();
-            var progress_pct = counts.feed_count > 0 ? Math.round((counts.discover_indexed_count / counts.feed_count) * 100) : 0;
+            var progress_pct = counts.feed_count > 0 ? Math.round((counts.discover_indexed_count / counts.feed_count) * 100) : 100;
 
             this.$('.NB-discover-archive-banner-progress-fill').css('width', progress_pct + '%');
             this.$('.NB-discover-archive-banner-progress-label').text(
@@ -415,14 +419,15 @@ NEWSBLUR.DiscoverFeedsPopover = NEWSBLUR.ReaderPopover.extend({
         var feed_count, discover_indexed_count;
         if (this.options.feed_ids) {
             var feed_ids = this.options.feed_ids;
-            feed_count = feed_ids.length;
-            discover_indexed_count = NEWSBLUR.assets.feeds.filter(function (feed) {
-                return _.contains(feed_ids, feed.get('id'));
-            }).reduce(function (sum, feed) {
-                return sum + (feed.get('discover_indexed') ? 1 : 0);
-            }, 0);
+            var eligible_feeds = NEWSBLUR.assets.feeds.filter(function (feed) {
+                return _.contains(feed_ids, feed.get('id')) && feed.get('discover_index_eligible');
+            });
+            feed_count = eligible_feeds.length;
+            discover_indexed_count = eligible_feeds.filter(function (feed) {
+                return feed.get('discover_indexed');
+            }).length;
         } else {
-            feed_count = NEWSBLUR.assets.feeds.length;
+            feed_count = NEWSBLUR.assets.feeds.discover_indexable();
             discover_indexed_count = NEWSBLUR.assets.feeds.discover_indexed();
         }
         return { feed_count: feed_count, discover_indexed_count: discover_indexed_count };
@@ -432,7 +437,7 @@ NEWSBLUR.DiscoverFeedsPopover = NEWSBLUR.ReaderPopover.extend({
         var counts = this.get_discover_counts();
         var feed_count = counts.feed_count;
         var discover_indexed_count = counts.discover_indexed_count;
-        var progress_pct = feed_count > 0 ? Math.round((discover_indexed_count / feed_count) * 100) : 0;
+        var progress_pct = feed_count > 0 ? Math.round((discover_indexed_count / feed_count) * 100) : 100;
 
         // Archive users: show index banner if not fully indexed
         if (NEWSBLUR.Globals.is_archive) {

@@ -347,6 +347,7 @@ class Feed(models.Model):
             "fetched_once": self.fetched_once,
             "search_indexed": self.search_indexed,
             "discover_indexed": self.discover_indexed,
+            "discover_index_eligible": bool(self.archive_subscribers and self.archive_subscribers > 0),
             "not_yet_fetched": not self.fetched_once,  # Legacy. Doh.
             "favicon_color": self.favicon_color,
             "favicon_fade": self.favicon_fade(),

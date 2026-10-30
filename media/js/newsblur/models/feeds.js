@@ -371,12 +371,16 @@ NEWSBLUR.Collections.Feeds = Backbone.Collection.extend({
         return indexed;
     },
 
-    discover_indexed: function () {
-        var indexed = this.select(function (feed) {
-            return feed.get('discover_indexed');
+    discover_indexable: function () {
+        return this.select(function (feed) {
+            return feed.get('discover_index_eligible');
         }).length;
+    },
 
-        return indexed;
+    discover_indexed: function () {
+        return this.select(function (feed) {
+            return feed.get('discover_index_eligible') && feed.get('discover_indexed');
+        }).length;
     },
 
     // ==========

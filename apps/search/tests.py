@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from django.test import TestCase, TransactionTestCase
 
-from apps.search.models import SearchStory
+from apps.search.models import MUserSearch, SearchStory
 
 
 class Test_SanitizeQuery(TestCase):
@@ -469,3 +469,48 @@ class Test_BriefingCustomQuery(TestCase):
         result = SearchStory.query_briefing_custom([1], "test phrase", date_start, date_end)
         self.assertEqual(result, ["123:abc", "456:def"])
         mock_es.indices.flush.assert_not_called()
+
+
+class Test_MUserSearchDiscoverIndexing(TestCase):
+    """Regression tests for resuming discovery indexing."""
+
+    def test_resumes_when_user_is_marked_indexed_but_feeds_remain(self):
+        user_search = MUserSearch(
+            user_id=2,
+            discover_indexed=True,
+            discover_indexing=False,
+        )
+
+        with (
+            patch.object(MUserSearch, "has_pending_discover_feeds", return_value=True, create=True) as pending,
+            patch.object(MUserSearch, "schedule_index_subscriptions_for_discover") as schedule,
+            patch.object(MUserSearch, "save") as save,
+        ):
+            user_search.touch_discover_date()
+
+        pending.assert_called_once_with()
+        schedule.assert_called_once_with()
+        self.assertFalse(user_search.discover_indexed)
+        self.assertTrue(user_search.discover_indexing)
+        self.assertIsNotNone(user_search.discover_indexing_date)
+        save.assert_called_once()
+
+    def test_does_not_schedule_when_no_eligible_feeds_remain(self):
+        user_search = MUserSearch(
+            user_id=2,
+            discover_indexed=False,
+            discover_indexing=False,
+        )
+
+        with (
+            patch.object(MUserSearch, "has_pending_discover_feeds", return_value=False, create=True) as pending,
+            patch.object(MUserSearch, "schedule_index_subscriptions_for_discover") as schedule,
+            patch.object(MUserSearch, "save") as save,
+        ):
+            user_search.touch_discover_date()
+
+        pending.assert_called_once_with()
+        schedule.assert_not_called()
+        self.assertTrue(user_search.discover_indexed)
+        self.assertFalse(user_search.discover_indexing)
+        save.assert_called_once()

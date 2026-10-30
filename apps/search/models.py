@@ -20,6 +20,7 @@ import redis
 import urllib3
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.db.models import Q
 from mongoengine.queryset import NotUniqueError
 from openai import APITimeoutError, OpenAI
 
@@ -111,36 +112,56 @@ class MUserSearch(mongo.Document):
         self.last_search_date = datetime.datetime.now()
         self.save()
 
-    def touch_discover_date(self):
-        if not self.discover_indexed and not self.discover_indexing:
-            self.schedule_index_subscriptions_for_discover()
-            self.discover_indexing_date = datetime.datetime.now()
-            self.discover_indexing = True
-        one_day = 60 * 60 * 24
-        indexing_expired = (
-            self.discover_indexing_date is None
-            or (datetime.datetime.now() - self.discover_indexing_date).total_seconds() > one_day
-        )
-        if not self.discover_indexed and self.discover_indexing and indexing_expired:
-            user = User.objects.get(pk=self.user_id)
-            if self.discover_indexing_date:
-                logging.user(
-                    user,
-                    f"~FCScheduling indexing ~SBdiscover~SN for ~SB%s~SN because it's been more than one day ({(datetime.datetime.now() - self.discover_indexing_date).total_seconds()})..."
-                    % self.user_id,
-                )
-            else:
-                logging.user(
-                    user,
-                    f"~FCScheduling indexing ~SBdiscover~SN for ~SB%s~SN, because it's never been indexed..."
-                    % self.user_id,
-                )
-            self.schedule_index_subscriptions_for_discover()
-            self.discover_indexing = True
-            self.discover_indexing_date = datetime.datetime.now()
+    def has_pending_discover_feeds(self):
+        from apps.reader.models import UserSubscription
 
-        self.last_discover_date = datetime.datetime.now()
+        return UserSubscription.objects.filter(
+            user_id=self.user_id,
+            feed__archive_subscribers__gt=0,
+        ).filter(
+            Q(feed__discover_indexed=False)
+            | Q(feed__discover_indexed__isnull=True)
+        ).exists()
+
+    def touch_discover_date(self):
+        now = datetime.datetime.now()
+        has_pending_feeds = self.has_pending_discover_feeds()
+
+        one_day = 60 * 60 * 24
+        indexing_expired = self.discover_indexing and (
+            self.discover_indexing_date is None
+            or (now - self.discover_indexing_date).total_seconds() > one_day
+        )
+
+        if has_pending_feeds:
+            self.discover_indexed = False
+
+            if not self.discover_indexing or indexing_expired:
+                if indexing_expired:
+                    user = User.objects.get(pk=self.user_id)
+                    if self.discover_indexing_date:
+                        logging.user(
+                            user,
+                            "~FCScheduling indexing ~SBdiscover~SN for ~SB%s~SN because it expired after %s seconds..."
+                            % (self.user_id, (now - self.discover_indexing_date).total_seconds()),
+                        )
+                    else:
+                        logging.user(
+                            user,
+                            "~FCScheduling indexing ~SBdiscover~SN for ~SB%s~SN because the indexing date is missing..."
+                            % self.user_id,
+                        )
+
+                self.schedule_index_subscriptions_for_discover()
+                self.discover_indexing = True
+                self.discover_indexing_date = now
+        else:
+            self.discover_indexed = True
+            self.discover_indexing = False
+
+        self.last_discover_date = now
         self.save()
+        return self.discover_indexing
 
     def schedule_index_subscriptions_for_search(self):
         IndexSubscriptionsForSearch.apply_async(

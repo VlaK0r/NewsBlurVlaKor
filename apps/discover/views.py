@@ -339,9 +339,9 @@ def discover_stories(request, story_hash):
 @json.json_view
 def discover_index(request):
     user_search = MUserSearch.get_user(request.user.pk)
-    user_search.touch_discover_date()
+    indexing = user_search.touch_discover_date()
 
-    return {"code": 1, "indexing": True}
+    return {"code": 1, "indexing": indexing}
 
 
 def _get_trending_popular(days, limit, offset, one_year_ago):

@@ -7858,8 +7858,8 @@
                 });
                 this.show_discover_indexing_tooltip(false);
                 var indexed = NEWSBLUR.assets.feeds.discover_indexed();
-                var total = NEWSBLUR.assets.feeds.length;
-                var progress = Math.ceil(indexed / total * 100);
+                var total = NEWSBLUR.assets.feeds.discover_indexable();
+                var progress = total > 0 ? Math.ceil(indexed / total * 100) : 100;
                 NEWSBLUR.utils.attach_loading_gradient($related_stories_buttons, progress);
             }
 
