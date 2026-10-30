@@ -659,3 +659,136 @@ class TestMediaHtml(SimpleTestCase):
         self.assertTrue(f.is_reddit_internal_url("https://i.redd.it/x.jpg"))
         self.assertTrue(f.is_reddit_internal_url("https://www.reddit.com/gallery/x"))
         self.assertFalse(f.is_reddit_internal_url("https://example.com/a"))
+
+
+class TestPersonalizedRedditGalleryEnrichment(SimpleTestCase):
+    @patch("utils.reddit_fetcher.requests.get")
+    def test_personalized_rss_replaces_gallery_thumbnail_with_all_original_images(
+        self, mock_get
+    ):
+        rss = """<?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>reddit: the front page of the internet</title>
+          <id>personal-feed</id>
+          <entry>
+            <title>Gallery post</title>
+            <id>t3_g1</id>
+            <link href="https://www.reddit.com/r/example/comments/g1/gallery_post/"/>
+            <content type="html">&lt;table&gt;&lt;tr&gt;&lt;td&gt;
+              &lt;a href="https://www.reddit.com/r/example/comments/g1/gallery_post/"&gt;
+              &lt;img src="https://preview.redd.it/thumb.jpg?width=140" /&gt;&lt;/a&gt;
+              &lt;a href="https://www.reddit.com/gallery/g1"&gt;[link]&lt;/a&gt;
+            &lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</content>
+          </entry>
+        </feed>
+        """
+        gallery_post = make_post(
+            id="g1",
+            is_gallery=True,
+            gallery_data={"items": [{"media_id": "m1"}, {"media_id": "m2"}]},
+            media_metadata={
+                "m1": {
+                    "status": "valid",
+                    "s": {"u": "https://i.redd.it/original1.jpg"},
+                },
+                "m2": {
+                    "status": "valid",
+                    "s": {"u": "https://i.redd.it/original2.jpg"},
+                },
+            },
+        )
+
+        rss_response = MagicMock(status_code=200, text=rss)
+        api_response = MagicMock(status_code=200)
+        api_response.json.return_value = {"data": {"children": [child(gallery_post)]}}
+        mock_get.side_effect = [rss_response, api_response]
+
+        address = "https://www.reddit.com/.rss?feed=secret-token&user=alice"
+        fetcher = RedditFetcher(StubFeed(address))
+        fetcher.reserve_rate_limit_slot = MagicMock(return_value=True)
+        fetcher.access_token = MagicMock(return_value="token123")
+
+        parsed = feedparser.parse(fetcher.fetch())
+        content = parsed.entries[0].content[0].value
+
+        self.assertEqual(content.count("<img"), 2)
+        self.assertIn("https://i.redd.it/original1.jpg", content)
+        self.assertIn("https://i.redd.it/original2.jpg", content)
+        self.assertNotIn("width=140", content)
+        self.assertLess(content.index("<img"), content.index("<table"))
+        self.assertNotIn(
+            '<a href="https://www.reddit.com/r/example/comments/g1/gallery_post/">',
+            content,
+        )
+        self.assertEqual(
+            parsed.entries[0].link,
+            "https://www.reddit.com/r/example/comments/g1/gallery_post/",
+        )
+
+        self.assertEqual(
+            mock_get.call_args_list[1].args[0],
+            "https://oauth.reddit.com/api/info",
+        )
+        self.assertEqual(
+            mock_get.call_args_list[1].kwargs["params"]["id"],
+            "t3_g1",
+        )
+        fetcher.access_token.assert_called_once()
+
+
+class TestPersonalizedRedditGalleryFallback(SimpleTestCase):
+    RSS = """<?xml version="1.0"?>
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <entry>
+        <title>Gallery post</title>
+        <id>t3_g1</id>
+        <link href="https://www.reddit.com/r/example/comments/g1/gallery_post/"/>
+        <content type="html">&lt;a href="https://www.reddit.com/gallery/g1"&gt;
+          &lt;img src="https://preview.redd.it/thumb.jpg?width=140" /&gt;
+        &lt;/a&gt;</content>
+      </entry>
+    </feed>
+    """
+
+    def _fetcher(self):
+        fetcher = RedditFetcher(
+            StubFeed("https://www.reddit.com/.rss?feed=secret-token&user=alice")
+        )
+        fetcher.access_token = MagicMock(return_value="token123")
+        return fetcher
+
+    def _assert_original_rss_survives(self, result, fetcher):
+        parsed = feedparser.parse(result)
+        content = parsed.entries[0].content[0].value
+        self.assertIn("thumb.jpg?width=140", content)
+        self.assertEqual(content.count("<img"), 1)
+        self.assertFalse(fetcher.rate_limited)
+        self.assertIsNone(fetcher.http_error_status)
+
+    @patch("utils.reddit_fetcher.requests.get")
+    def test_api_failure_keeps_original_rss(self, mock_get):
+        fetcher = self._fetcher()
+        fetcher.reserve_rate_limit_slot = MagicMock(return_value=True)
+        mock_get.side_effect = [
+            MagicMock(status_code=200, text=self.RSS),
+            MagicMock(status_code=503),
+        ]
+
+        result = fetcher.fetch()
+
+        self._assert_original_rss_survives(result, fetcher)
+        self.assertEqual(mock_get.call_count, 2)
+
+    @patch("utils.reddit_fetcher.requests.get")
+    def test_redis_rate_limiter_failure_keeps_original_rss(self, mock_get):
+        fetcher = self._fetcher()
+        fetcher.reserve_rate_limit_slot = MagicMock(
+            side_effect=RuntimeError("Redis unavailable")
+        )
+        mock_get.return_value = MagicMock(status_code=200, text=self.RSS)
+
+        result = fetcher.fetch()
+
+        self._assert_original_rss_survives(result, fetcher)
+        self.assertEqual(mock_get.call_count, 1)
+        fetcher.access_token.assert_not_called()

@@ -25,6 +25,7 @@ import datetime
 import html
 import re
 import urllib.parse
+import xml.etree.ElementTree as ET
 
 import redis
 import requests
@@ -64,7 +65,9 @@ USER_AGENT = "NewsBlur/1.0 (+https://www.newsblur.com)"
 # XML 1.0 forbids the C0/C1 control characters below (tab, newline, and carriage
 # return stay legal), plus the noncharacters. Reddit titles and comment bodies carry
 # them now and then. Matches the same scrub in utils/twitter_fetcher.py.
-INVALID_XML_CHARS = re.compile(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x84\x86-\x9F\uFDD0-\uFDEF\uFFFE\uFFFF]")
+INVALID_XML_CHARS = re.compile(
+    r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x84\x86-\x9F\uFDD0-\uFDEF\uFFFE\uFFFF]"
+)
 
 
 def scrub_control_chars(value):
@@ -165,7 +168,9 @@ class RedditFetcher:
     def fetch_original_rss(self):
         """Fetch a tokenized Reddit RSS URL without converting it through OAuth."""
         try:
-            resp = requests.get(self.address, headers={"User-Agent": USER_AGENT}, timeout=15)
+            resp = requests.get(
+                self.address, headers={"User-Agent": USER_AGENT}, timeout=15
+            )
         except requests.RequestException as e:
             logging.debug(
                 "   ***> [%-30s] ~FRReddit original RSS request failed: %s: %s"
@@ -185,7 +190,169 @@ class RedditFetcher:
             )
             return None
 
-        return resp.text
+        return self.enrich_personalized_rss_galleries(resp.text)
+
+    def enrich_personalized_rss_galleries(self, rss):
+        """Replace Reddit gallery thumbnails with all images from the API."""
+        atom_ns = "http://www.w3.org/2005/Atom"
+        try:
+            root = ET.fromstring(rss)
+        except (ET.ParseError, TypeError):
+            return rss
+
+        gallery_entries = {}
+        for entry in root.findall(".//{%s}entry" % atom_ns):
+            entry_id = entry.findtext("{%s}id" % atom_ns, default="").strip()
+            content = entry.find("{%s}content" % atom_ns)
+            if content is None or not re.fullmatch(r"t3_[a-z0-9]+", entry_id, re.I):
+                continue
+
+            content_html = content.text or ""
+            gallery_match = re.search(
+                r"https?://(?:www\.)?reddit\.com/gallery/([a-z0-9]+)",
+                content_html,
+                re.I,
+            )
+            if gallery_match and gallery_match.group(1).lower() == entry_id[3:].lower():
+                gallery_entries[entry_id] = content
+
+        if not gallery_entries:
+            return rss
+
+        posts = self.fetch_gallery_posts(list(gallery_entries.keys()))
+        changed = False
+
+        for fullname, content in gallery_entries.items():
+            post = posts.get(fullname)
+            if not post:
+                continue
+
+            try:
+                image_urls = self.gallery_image_urls(post)
+            except Exception as e:
+                logging.debug("   ***> ~FRSkipping malformed Reddit gallery %s: %s" % (fullname, e))
+                continue
+            if not image_urls:
+                continue
+
+            content_html = content.text or ""
+            if all(html.unescape(url) in content_html for url in image_urls):
+                continue
+
+            image_html = "".join(
+                '<p><img src="%s" /></p>' % html.escape(html.unescape(url), quote=True)
+                for url in image_urls
+            )
+            content_html, replaced = re.subn(
+                r"<img\b[^>]*>",
+                "",
+                content_html,
+                count=1,
+                flags=re.I,
+            )
+            if replaced:
+                # Reddit wraps its thumbnail in an anchor. Remove the now-empty
+                # anchor, then render the full gallery outside the table markup.
+                content_html = re.sub(
+                    r"<a\b[^>]*>\s*</a>", "", content_html, count=1, flags=re.I
+                )
+                content_html = image_html + content_html
+            else:
+                content_html += image_html
+
+            content.text = content_html
+            changed = True
+
+        if not changed:
+            return rss
+
+        ET.register_namespace("", atom_ns)
+        return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+
+    def fetch_gallery_posts(self, post_ids):
+        """Fetch optional gallery metadata in batches without failing the RSS fetch."""
+        posts = {}
+
+        for start in range(0, len(post_ids), 100):
+            batch = post_ids[start : start + 100]
+            try:
+                rate_limit_reserved = self.reserve_rate_limit_slot()
+            except Exception as e:
+                logging.debug(
+                    "   ***> ~FRReddit gallery rate limiter unavailable: %s" % e
+                )
+                break
+
+            if not rate_limit_reserved:
+                logging.debug(
+                    "   ***> [%-30s] ~FRSkipping Reddit gallery enrichment: API budget exhausted"
+                    % self.feed.log_title[:30]
+                )
+                break
+
+            previous_rate_limited = self.rate_limited
+            previous_http_error = self.http_error_status
+            try:
+                token = self.access_token()
+            except Exception as e:
+                logging.debug("   ***> ~FRReddit gallery token lookup failed: %s" % e)
+                break
+            finally:
+                # An optional metadata lookup must not turn a successful RSS fetch
+                # into a failed feed update.
+                self.rate_limited = previous_rate_limited
+                self.http_error_status = previous_http_error
+
+            if not token:
+                break
+
+            try:
+                response = requests.get(
+                    "https://oauth.reddit.com/api/info",
+                    params={"id": ",".join(batch), "raw_json": 1},
+                    headers={
+                        "Authorization": "Bearer %s" % token,
+                        "User-Agent": USER_AGENT,
+                    },
+                    timeout=15,
+                )
+            except requests.RequestException as e:
+                logging.debug(
+                    "   ***> ~FRReddit gallery metadata request failed: %s" % e
+                )
+                break
+
+            if response.status_code != 200:
+                if response.status_code == 401:
+                    try:
+                        self.clear_cached_token()
+                    except Exception as e:
+                        logging.debug(
+                            "   ***> ~FRReddit gallery token cleanup failed: %s" % e
+                        )
+                logging.debug(
+                    "   ***> [%-30s] ~FRReddit gallery metadata HTTP %s"
+                    % (self.feed.log_title[:30], response.status_code)
+                )
+                break
+
+            try:
+                children = response.json().get("data", {}).get("children", [])
+            except (ValueError, TypeError, AttributeError):
+                logging.debug(
+                    "   ***> ~FRReddit gallery metadata returned invalid JSON"
+                )
+                break
+
+            for item in children:
+                post = item.get("data") or {}
+                fullname = post.get("name")
+                if not fullname and post.get("id"):
+                    fullname = "t3_%s" % post["id"]
+                if fullname in batch:
+                    posts[fullname] = post
+
+        return posts
 
     def extract_listing_path_and_sort(self):
         """Map a Reddit feed URL to an OAuth API listing path and sort.
@@ -323,7 +490,8 @@ class RedditFetcher:
         if resp.status_code == 401:
             self.clear_cached_token()
             logging.debug(
-                "   ***> [%-30s] ~FRReddit auth rejected (401): %s" % (self.feed.log_title[:30], self.address)
+                "   ***> [%-30s] ~FRReddit auth rejected (401): %s"
+                % (self.feed.log_title[:30], self.address)
             )
             return None
         if resp.status_code != 200:
@@ -466,7 +634,8 @@ class RedditFetcher:
             # The cached token is no longer valid; drop it so the next fetch re-auths.
             self.clear_cached_token()
             logging.debug(
-                "   ***> [%-30s] ~FRReddit auth rejected (401): %s" % (self.feed.log_title[:30], self.address)
+                "   ***> [%-30s] ~FRReddit auth rejected (401): %s"
+                % (self.feed.log_title[:30], self.address)
             )
             return None
         if resp.status_code != 200:
@@ -480,7 +649,8 @@ class RedditFetcher:
             children = resp.json().get("data", {}).get("children", [])
         except ValueError:
             logging.debug(
-                "   ***> [%-30s] ~FRReddit returned non-JSON: %s" % (self.feed.log_title[:30], self.address)
+                "   ***> [%-30s] ~FRReddit returned non-JSON: %s"
+                % (self.feed.log_title[:30], self.address)
             )
             return None
 
@@ -571,7 +741,11 @@ class RedditFetcher:
         # gallery, and other reddit-hosted URLs are already shown inline above.
         if not post.get("is_self"):
             external = post.get("url")
-            if external and not self.is_reddit_internal_url(external) and not self.is_image_url(external):
+            if (
+                external
+                and not self.is_reddit_internal_url(external)
+                and not self.is_image_url(external)
+            ):
                 body += '<p><a href="%s">%s</a></p>' % (external, external)
 
         footer = (
@@ -614,7 +788,9 @@ class RedditFetcher:
             return []
         gallery_items = (post.get("gallery_data") or {}).get("items") or []
         # Honor the gallery's ordering when present; otherwise take whatever media exists.
-        media_ids = [item.get("media_id") for item in gallery_items] or list(media_metadata.keys())
+        media_ids = [item.get("media_id") for item in gallery_items] or list(
+            media_metadata.keys()
+        )
 
         urls = []
         for media_id in media_ids:
@@ -639,7 +815,11 @@ class RedditFetcher:
         """True when a URL points directly at an image file."""
         if not url:
             return False
-        return url.split("?")[0].lower().endswith((".jpg", ".jpeg", ".png", ".gif", ".webp"))
+        return (
+            url.split("?")[0]
+            .lower()
+            .endswith((".jpg", ".jpeg", ".png", ".gif", ".webp"))
+        )
 
     def is_reddit_internal_url(self, url):
         """True for reddit-hosted URLs (gallery pages, i.redd.it, permalinks)."""
