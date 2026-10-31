@@ -33,6 +33,127 @@ CLASSIFIER_WEIGHTS = {
 }
 
 
+def select_keyword_section_candidates(
+    user_id,
+    period_start,
+    period_end,
+    story_sources="all",
+    read_filter="unread",
+    include_read=False,
+    exclude_hashes=None,
+    max_candidates=100,
+):
+    """Select recent stories for independent semantic keyword analysis."""
+    user_subs = list(
+        UserSubscription.objects.filter(user_id=user_id, active=True).select_related("feed")
+    )
+    if not user_subs:
+        return []
+
+    feed_ids = [sub.feed_id for sub in user_subs]
+
+    if read_filter == "focus":
+        positive_feed_ids = {
+            cf.feed_id
+            for cf in MClassifierFeed.objects(user_id=user_id)
+            if cf.feed_id and cf.score > 0
+        }
+        if positive_feed_ids:
+            feed_ids = [fid for fid in feed_ids if fid in positive_feed_ids]
+
+    if story_sources and story_sources.startswith("folder:"):
+        folder_name = story_sources[len("folder:") :]
+        try:
+            from apps.reader.models import UserSubscriptionFolders
+
+            usf = UserSubscriptionFolders.objects.get(user_id=user_id)
+            flat_folders = usf.flatten_folders()
+            matching_keys = {
+                key for key in flat_folders
+                if key == folder_name or key.endswith(" - " + folder_name)
+            }
+            folder_feed_ids = set()
+            for key, fids in flat_folders.items():
+                if any(key == match or key.startswith(match + " - ") for match in matching_keys):
+                    folder_feed_ids.update(fids)
+            feed_ids = [fid for fid in feed_ids if fid in folder_feed_ids]
+        except UserSubscriptionFolders.DoesNotExist:
+            logging.debug(
+                " ---> Keyword sections: no folder data for user %s; using all feeds" % user_id
+            )
+
+    if not feed_ids:
+        return []
+
+    r = redis.Redis(connection_pool=settings.REDIS_STORY_HASH_POOL)
+    start_ts = time.mktime(period_start.timetuple())
+    end_ts = time.mktime(period_end.timetuple())
+    pipe = r.pipeline()
+    for feed_id in feed_ids:
+        pipe.zrangebyscore("zF:%s" % feed_id, start_ts, end_ts)
+    feed_results = pipe.execute()
+
+    excluded = set(exclude_hashes or [])
+    candidate_hashes = []
+    seen_hashes = set()
+    for hashes in feed_results:
+        for value in hashes:
+            story_hash = value.decode() if isinstance(value, bytes) else value
+            if story_hash not in seen_hashes and story_hash not in excluded:
+                seen_hashes.add(story_hash)
+                candidate_hashes.append(story_hash)
+
+    if not candidate_hashes:
+        return []
+
+    read_key = "RS:%s" % user_id
+    pipe = r.pipeline()
+    for story_hash in candidate_hashes:
+        pipe.sismember(read_key, story_hash)
+    read_results = pipe.execute()
+    read_status = {
+        story_hash: bool(is_read)
+        for story_hash, is_read in zip(candidate_hashes, read_results)
+    }
+
+    unread_hashes = [h for h in candidate_hashes if not read_status[h]]
+    if not include_read and len(unread_hashes) >= 3:
+        candidate_hashes = unread_hashes
+    elif not include_read:
+        logging.debug(
+            " ---> Keyword sections: only %s unread stories for user %s; including read stories"
+            % (len(unread_hashes), user_id)
+        )
+
+    stories_by_hash = {}
+    for batch_start in range(0, len(candidate_hashes), 100):
+        batch = candidate_hashes[batch_start : batch_start + 100]
+        for story in MStory.objects(story_hash__in=batch).order_by():
+            stories_by_hash[story.story_hash] = story
+
+    stories = list(stories_by_hash.values())
+    stories.sort(
+        key=lambda story: time.mktime(story.story_date.timetuple()) if story.story_date else 0,
+        reverse=True,
+    )
+    selected = stories[: max(1, int(max_candidates))]
+    logging.debug(
+        " ---> Keyword sections: selected %s of %s candidates for user %s"
+        % (len(selected), len(stories), user_id)
+    )
+    return [
+        {
+            "story_hash": story.story_hash,
+            "score": 0,
+            "is_read": read_status.get(story.story_hash, False),
+            "category": "keyword_candidate",
+            "content_word_count": 0,
+            "classifier_matches": [],
+        }
+        for story in selected
+    ]
+
+
 def select_briefing_stories(
     user_id,
     period_start,
