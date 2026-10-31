@@ -2944,14 +2944,23 @@ class Test_KeywordSections(BriefingTestCase):
                         {
                             "story_hash": valid_hash,
                             "section_key": "custom_1",
+                            "relationship": "direct",
                             "relevance": 95,
                             "summary": "Представлена новая энергетическая стратегия.",
                         },
                         {
                             "story_hash": fake_hash,
                             "section_key": "custom_1",
+                            "relationship": "direct",
                             "relevance": 99,
                             "summary": "Несуществующая статья.",
+                        },
+                        {
+                            "story_hash": valid_hash,
+                            "section_key": "custom_1",
+                            "relationship": "incidental",
+                            "relevance": 99,
+                            "summary": "Случайное упоминание темы.",
                         },
                     ]
                 }),

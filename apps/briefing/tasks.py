@@ -156,7 +156,7 @@ def GenerateBriefings():
     )
 
 
-@app.task(name="generate-user-briefing", time_limit=120, soft_time_limit=110)
+@app.task(name="generate-user-briefing", time_limit=300, soft_time_limit=270)
 def GenerateUserBriefing(user_id, on_demand=False, slot=None, local_date=None):
     """
     Generate a single user's daily briefing.
@@ -207,7 +207,7 @@ def GenerateUserBriefing(user_id, on_demand=False, slot=None, local_date=None):
     # so the user can regenerate again immediately.
     r = redis.Redis(connection_pool=settings.REDIS_PUBSUB_POOL)
     lock_key = "briefing:generate_user:%s" % user_id
-    lock_ttl = 120 if on_demand else 840
+    lock_ttl = 360 if on_demand else 840
     if not r.set(lock_key, "1", nx=True, ex=lock_ttl):
         logging.debug(" ---> GenerateUserBriefing: already running for user %s, skipping" % user_id)
         return
@@ -319,7 +319,7 @@ def GenerateUserBriefing(user_id, on_demand=False, slot=None, local_date=None):
                 read_filter=prefs.read_filter or "unread",
                 include_read=prefs.include_read,
                 exclude_hashes=exclude_hashes,
-                max_candidates=100,
+                max_candidates=300,
             )
             keyword_html, keyword_story_dicts, keyword_meta = generate_keyword_sections(
                 user_id,
