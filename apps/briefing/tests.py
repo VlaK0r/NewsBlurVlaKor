@@ -2877,3 +2877,118 @@ class Test_Tasks(BriefingTestCase):
 
 
 # ---------------------------------------------------------------------------
+
+
+class Test_KeywordSections(BriefingTestCase):
+
+    @patch("apps.briefing.scoring.redis.Redis")
+    def test_candidates_ignore_regular_ranking(self, mock_redis_cls):
+        from apps.briefing.scoring import (
+            select_keyword_section_candidates,
+            _get_trending_scores,
+            _get_feed_trending_times,
+        )
+
+        mock_redis = MagicMock()
+        mock_pipe = MagicMock()
+        mock_redis.pipeline.return_value = mock_pipe
+        mock_redis_cls.return_value = mock_redis
+
+        feed_hashes = [
+            [s.story_hash.encode() for s in self.stories[:3]],
+            [s.story_hash.encode() for s in self.stories[3:]],
+        ]
+        mock_pipe.execute.side_effect = [
+            feed_hashes,
+            [False] * len(self.stories),
+        ]
+
+        with (
+            patch("apps.briefing.scoring._get_trending_scores") as trending,
+            patch("apps.briefing.scoring._get_feed_trending_times") as feed_trending,
+        ):
+            result = select_keyword_section_candidates(
+                self.user.pk,
+                self.period_start,
+                self.now,
+                max_candidates=100,
+            )
+
+        self.assertEqual(len(result), 6)
+        self.assertEqual(
+            {s["story_hash"] for s in result},
+            {s.story_hash for s in self.stories},
+        )
+        self.assertTrue(all(s["score"] == 0 for s in result))
+        trending.assert_not_called()
+        feed_trending.assert_not_called()
+
+    @patch("apps.briefing.summary._generate_keyword_llm_response")
+    def test_semantic_generation_builds_verified_story_links(self, mock_generate):
+        import json as stdlib_json
+        from apps.briefing.summary import generate_keyword_sections
+
+        story = self.make_story(
+            self.feed,
+            "Климатическая политика и энергетика",
+            content="<p>Правительство представило новую энергетическую стратегию.</p>",
+        )
+
+        valid_hash = story.story_hash
+        fake_hash = "nonexistent-story-hash"
+
+        mock_generate.side_effect = [
+            (
+                stdlib_json.dumps({
+                    "matches": [
+                        {
+                            "story_hash": valid_hash,
+                            "section_key": "custom_1",
+                            "relevance": 95,
+                            "summary": "Представлена новая энергетическая стратегия.",
+                        },
+                        {
+                            "story_hash": fake_hash,
+                            "section_key": "custom_1",
+                            "relevance": 99,
+                            "summary": "Несуществующая статья.",
+                        },
+                    ]
+                }),
+                {"model_name": "test-model", "input_tokens": 10, "output_tokens": 20},
+            ),
+            (
+                stdlib_json.dumps({
+                    "sections": [
+                        {
+                            "section_key": "custom_1",
+                            "title": "Энергетическая политика",
+                            "overview": "Правительство меняет подход к энергетике.",
+                            "findings": ["Подготовлена новая стратегия."],
+                            "conclusion": "Результаты будут зависеть от реализации мер.",
+                        }
+                    ]
+                }),
+                {"model_name": "test-model", "input_tokens": 15, "output_tokens": 25},
+            ),
+        ]
+
+        html, story_dicts, metadata = generate_keyword_sections(
+            self.user.pk,
+            [{"story_hash": valid_hash, "is_read": False}],
+            ["климатическая политика и энергетика"],
+        )
+
+        self.assertIn('data-section="custom_1"', html)
+        self.assertIn("Энергетическая политика", html)
+        self.assertIn("Подготовлена новая стратегия", html)
+        self.assertIn("зависеть от реализации мер", html)
+        self.assertIn(valid_hash, html)
+        self.assertNotIn(fake_hash, html)
+
+        self.assertEqual(len(story_dicts), 1)
+        self.assertEqual(story_dicts[0]["story_hash"], valid_hash)
+        self.assertEqual(story_dicts[0]["category"], "custom_1")
+        self.assertEqual(metadata["matched_count"], 1)
+        self.assertEqual(metadata["input_tokens"], 25)
+        self.assertEqual(metadata["output_tokens"], 45)

@@ -184,6 +184,7 @@ def GenerateUserBriefing(user_id, on_demand=False, slot=None, local_date=None):
     )
     from apps.briefing.scoring import (
         select_briefing_stories,
+        select_keyword_section_candidates,
         select_global_section_stories,
     )
     from apps.briefing.summary import (
@@ -193,6 +194,7 @@ def GenerateUserBriefing(user_id, on_demand=False, slot=None, local_date=None):
         extract_section_summaries,
         filter_disabled_sections,
         generate_briefing_summary,
+        generate_keyword_sections,
         inject_widely_covered_clusters,
         rebuild_summary_from_sections,
     )
@@ -268,8 +270,12 @@ def GenerateUserBriefing(user_id, on_demand=False, slot=None, local_date=None):
     for b in recent_briefings:
         exclude_hashes.update(b.curated_story_hashes or [])
 
+    import time
+
+    t_summary_start = time.monotonic()
+
     publish("progress", {"step": "scoring", "message": "Selecting your top stories..."})
-    scored_stories = select_briefing_stories(
+    personal_stories = select_briefing_stories(
         user_id,
         period_start,
         now,
@@ -277,32 +283,13 @@ def GenerateUserBriefing(user_id, on_demand=False, slot=None, local_date=None):
         story_sources=prefs.story_sources or "all",
         read_filter=prefs.read_filter or "unread",
         include_read=prefs.include_read,
-        custom_section_prompts=prefs.custom_section_prompts,
+        custom_section_prompts=None,
         active_sections=merged_sections,
         exclude_hashes=exclude_hashes,
         section_order=section_order,
     )
+    scored_stories = list(personal_stories)
 
-    # tasks.py: Lower minimum threshold for twice/thrice_daily since shorter windows may have fewer stories
-    min_stories = 1 if prefs.frequency in ("twice_daily", "thrice_daily") else 3
-    if len(scored_stories) < min_stories:
-        logging.debug(
-            " ---> GenerateUserBriefing: only %s stories for user %s, skipping (need %s)"
-            % (len(scored_stories), user_id, min_stories)
-        )
-        publish(
-            "error",
-            {
-                "error": "Not enough stories to generate a briefing (found %s, need %s)."
-                % (len(scored_stories), min_stories)
-            },
-        )
-        return
-
-    # tasks.py: Append stories from the site-wide curated rivers (Widely Read, Long
-    # Reads, Good Reads, Global Shared Stories). These are additive on top of the
-    # personal story_count budget and are excluded from the min_stories check above
-    # so a briefing still requires stories from the user's own feeds.
     publish("progress", {"step": "global", "message": "Adding stories from across NewsBlur..."})
     global_stories = select_global_section_stories(
         user_id,
@@ -310,39 +297,110 @@ def GenerateUserBriefing(user_id, on_demand=False, slot=None, local_date=None):
         exclude_hashes=exclude_hashes | {s["story_hash"] for s in scored_stories},
         section_order=section_order,
     )
-    if global_stories:
-        scored_stories = scored_stories + global_stories
+    scored_stories.extend(global_stories or [])
 
-    # tasks.py: Disable custom sections that have no matching stories so the LLM
-    # doesn't force-fit unrelated stories to a custom prompt (e.g. "Trump news" in a gaming folder).
-    matched_custom_sections = set()
-    for s in scored_stories:
-        cat = s.get("category", "")
-        if cat.startswith("custom_"):
-            matched_custom_sections.add(cat)
+    # Keyword sections use an independent candidate pool, without regular ranking.
+    keyword_prompts = [
+        prompt if merged_sections.get("custom_%s" % (i + 1), False) else ""
+        for i, prompt in enumerate(prefs.custom_section_prompts or [])
+    ]
+    keyword_html = None
+    keyword_story_dicts = []
+    keyword_meta = None
 
-    filtered_sections = dict(merged_sections)
-    if prefs.custom_section_prompts:
-        for i, prompt in enumerate(prefs.custom_section_prompts):
-            custom_key = "custom_%d" % (i + 1)
-            if custom_key not in matched_custom_sections:
-                filtered_sections[custom_key] = False
+    if any(keyword_prompts):
+        publish("progress", {"step": "keywords", "message": "Analyzing your keyword topics..."})
+        try:
+            keyword_candidates = select_keyword_section_candidates(
+                user_id,
+                period_start,
+                now,
+                story_sources=prefs.story_sources or "all",
+                read_filter=prefs.read_filter or "unread",
+                include_read=prefs.include_read,
+                exclude_hashes=exclude_hashes,
+                max_candidates=100,
+            )
+            keyword_html, keyword_story_dicts, keyword_meta = generate_keyword_sections(
+                user_id,
+                keyword_candidates,
+                keyword_prompts,
+                model=prefs.briefing_model,
+            )
+        except Exception as error:
+            logging.error(
+                " ---> GenerateUserBriefing: keyword analysis failed for user %s: %s"
+                % (user_id, error)
+            )
+
+    # Keyword matches can satisfy the personal-story minimum; global stories cannot.
+    min_stories = 1 if prefs.frequency in ("twice_daily", "thrice_daily") else 3
+    personal_hashes = {
+        s["story_hash"] for s in personal_stories + keyword_story_dicts
+    }
+    personal_total = len(personal_hashes)
+    if personal_total < min_stories:
+        logging.debug(
+            " ---> GenerateUserBriefing: only %s personal stories for user %s, skipping (need %s)"
+            % (personal_total, user_id, min_stories)
+        )
+        publish(
+            "error",
+            {
+                "error": "Not enough stories to generate a briefing (found %s, need %s)."
+                % (personal_total, min_stories)
+            },
+        )
+        return
+
+    # Standard sections retain their original prompts and ranking behavior.
+    base_sections = dict(merged_sections)
+    for i, prompt in enumerate(keyword_prompts):
+        base_sections["custom_%s" % (i + 1)] = False
 
     publish("progress", {"step": "summary", "message": "Writing your briefing summary..."})
-    import time
+    summary_result = None
+    if scored_stories:
+        summary_result = generate_briefing_summary(
+            user_id,
+            scored_stories,
+            now,
+            summary_length=prefs.summary_length or "medium",
+            summary_style=prefs.summary_style or "bullets",
+            sections=base_sections,
+            custom_section_prompts=None,
+            model=prefs.briefing_model,
+            section_order=section_order,
+        )
+    summary_html, summary_meta = summary_result or (None, None)
 
-    t_summary_start = time.monotonic()
-    summary_html, summary_meta = generate_briefing_summary(
-        user_id,
-        scored_stories,
-        now,
-        summary_length=prefs.summary_length or "medium",
-        summary_style=prefs.summary_style or "bullets",
-        sections=filtered_sections,
-        custom_section_prompts=prefs.custom_section_prompts,
-        model=prefs.briefing_model,
-        section_order=section_order,
+    # Merge independently generated keyword sections into the standard HTML.
+    section_summaries = extract_section_summaries(summary_html) if summary_html else {}
+    if keyword_html:
+        section_summaries.update(extract_section_summaries(keyword_html))
+    summary_html = (
+        rebuild_summary_from_sections(section_summaries, section_order)
+        if section_summaries else None
     )
+
+    # Keep the final section filter aligned with the sections actually generated.
+    active_sections = dict(base_sections)
+    matched_custom_sections = {s["category"] for s in keyword_story_dicts}
+    for i, prompt in enumerate(keyword_prompts):
+        key = "custom_%s" % (i + 1)
+        active_sections[key] = bool(prompt and key in matched_custom_sections)
+
+    if summary_meta and keyword_meta:
+        summary_meta["input_tokens"] = (
+            summary_meta.get("input_tokens", 0) + keyword_meta.get("input_tokens", 0)
+        )
+        summary_meta["output_tokens"] = (
+            summary_meta.get("output_tokens", 0) + keyword_meta.get("output_tokens", 0)
+        )
+    elif keyword_meta:
+        summary_meta = dict(keyword_meta)
+        summary_meta["display_name"] = summary_meta.get("model_name") or "Keyword analysis"
+
     t_summary_elapsed = time.monotonic() - t_summary_start
 
     if not summary_html:
@@ -350,24 +408,20 @@ def GenerateUserBriefing(user_id, on_demand=False, slot=None, local_date=None):
         publish("error", {"error": "Summary generation failed. Please try again."})
         return
 
-    # tasks.py: Strip sections from output that the user has disabled. The LLM may
-    # occasionally create sections it wasn't instructed to because it sees category
-    # annotations in the story data.
-    active_sections = filtered_sections
     if active_sections:
         summary_html = filter_disabled_sections(summary_html, active_sections, section_order)
 
-    # tasks.py: Inject cluster member story lists into the widely_covered section
-    # before embedding icons, so cluster member stories get favicons too.
-    summary_html, cluster_extras = inject_widely_covered_clusters(summary_html, scored_stories, user.pk)
+    # Inject clusters only into the regular widely-covered section.
+    summary_html, cluster_extras = inject_widely_covered_clusters(
+        summary_html, scored_stories, user.pk
+    )
 
-    # tasks.py: Embed feed favicons and section icons directly in the HTML so they
-    # appear in email notifications and don't pop in on the web.
-    summary_html = embed_briefing_icons(summary_html, scored_stories + cluster_extras)
+    briefing_stories = scored_stories + keyword_story_dicts
+    summary_html = embed_briefing_icons(summary_html, briefing_stories + cluster_extras)
 
-    curated_hashes = [s["story_hash"] for s in scored_stories]
+    curated_hashes = [s["story_hash"] for s in briefing_stories]
     curated_sections = {}
-    for s in scored_stories:
+    for s in briefing_stories:
         curated_sections.setdefault(s.get("category", "top_stories"), []).append(s["story_hash"])
 
     # tasks.py: Filter curated_sections to remove disabled section keys, remapping their
