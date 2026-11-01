@@ -10,7 +10,7 @@
 "%1$@ folder, %2$@" = "%1$@ klasörü, %2$@";
 "%1$@ folder, collapsed, %2$@" = "%1$@ klasörü, daraltılmış, %2$@";
 "%1$@ followed %2$@." = "%1$@, %2$@ kişisini takip etti.";
-"%1$@ of %2$@ of listening left this month" = "Bu ayki dinleme hakkınızdan %2$@ üzerinden %1$@ kaldı";
+"%1$@ of %2$@ of listening left this week" = "Bu hafta dinleme sürenizin %1$@ / %2$@ kadarı kaldı";
 "%1$@ of %2$@ sites indexed" = "%2$@ siteden %1$@ tanesi dizine eklendi";
 "%1$@ of %2$@ story previews used today" = "Bugün kullanılan haber önizlemelerinin %1$@ / %2$@ kadarı";
 "%1$@ re-shared %2$@." = "%1$@, %2$@ haberini yeniden paylaştı.";
@@ -38,8 +38,8 @@
 "%@ free story previews left today" = "Bugün %@ ücretsiz haber önizlemesi hakkınız kaldı";
 "%@ is now following you." = "%@ artık sizi takip ediyor.";
 "%@ left in this preview" = "Bu önizlemede %@ kaldı";
+"%@ left this week" = "Bu hafta %@ kaldı";
 "%@ match" = "%@ eşleşme";
-"%@ minutes left this month" = "Bu ay için %@ dakika kaldı";
 "%@ opens" = "%@ açılma";
 "%@ or search" = "%@ veya ara";
 "%@ public comments" = "%@ herkese açık yorum";
@@ -434,6 +434,8 @@
 "Hide Changes" = "Değişiklikleri gizle";
 "Hide Sidebar" = "Kenar çubuğunu gizle";
 "Hide Story Titles" = "Haber başlıklarını gizle";
+"Hide [training level]" = "Gizle";
+"Hide beats any number of likes:" = "“Gizle”, istediğiniz sayıda beğeninin önüne geçer:";
 "Hide hidden stories" = "Gizli haberleri gizle";
 "Hide status bar" = "Durum çubuğunu gizle";
 "Hide toolbars when reading" = "Okurken araç çubuklarını gizle";
@@ -494,7 +496,8 @@
 "List style" = "Liste stili";
 "Listen" = "Dinle";
 "Listen Settings" = "Dinleme Ayarları";
-"Listen to stories read aloud" = "Haberleri sesli dinleyin";
+"Listen to 1 hour of stories read aloud a week" = "Haftada 1 saat haberleri sesli dinleyin";
+"Listen to 10 hours of stories read aloud a week" = "Haftada 10 saat haberleri sesli dinleyin";
 "Listen to story" = "Haberi dinle";
 "Listening isn't available right now." = "Dinleme şu anda kullanılamıyor.";
 "Loading Google News topics..." = "Google Haberler konuları yükleniyor...";
@@ -992,7 +995,7 @@
 "Story count" = "Haber sayısı";
 "Story detail" = "Haber ayrıntısı";
 "Story image" = "Haber görseli";
-"Story is hidden (super dislike wins)" = "Haber gizlenir (“Hiç beğenme” baskın)";
+"Story is always hidden" = "Haber her zaman gizli";
 "Story is shown (like wins)" = "Haber gösterilir (beğeni baskın)";
 "Story language" = "Haberin dili";
 "Story list toolbar position" = "Haber listesi araç çubuğu konumu";
@@ -1015,8 +1018,6 @@
 "Summarize" = "Özetle";
 "Sunday" = "Pazar";
 "Sunrise Gold" = "Gün Doğumu Altını";
-"Super dislike" = "Hiç beğenme";
-"Super dislike beats any number of likes:" = "“Hiç beğenme”, istediğiniz sayıda beğeninin önüne geçer:";
 "Support Forum" = "Destek Forumu";
 "Swipe from left edge" = "Sol kenardan kaydır";
 "Swipe from the left edge while reading" = "Okurken sol kenardan kaydırın";
