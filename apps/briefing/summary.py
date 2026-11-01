@@ -64,6 +64,37 @@ def _generate_with_retries(provider, messages, model_id, max_tokens, thinking_co
             time.sleep(backoff)
 
 
+def _truncate_at_sentence_boundary(value, max_chars=800):
+    """Prefer a soft character limit without cutting a sentence in half."""
+    text = str(value or "").strip()
+    if len(text) <= max_chars:
+        return text
+
+    sentence_ends = [
+        match.end()
+        for match in re.finditer(
+            r"""[.!?…]["'»”’)\]]*(?=\s|$)""",
+            text,
+        )
+    ]
+
+    complete_before_limit = [
+        end for end in sentence_ends
+        if max_chars * 0.7 <= end <= max_chars
+    ]
+    if complete_before_limit:
+        return text[:complete_before_limit[-1]].rstrip()
+
+    first_complete_after_limit = next(
+        (end for end in sentence_ends if end > max_chars),
+        None,
+    )
+    if first_complete_after_limit:
+        return text[:first_complete_after_limit].rstrip()
+
+    return text
+
+
 def normalize_section_key(key):
     """
     Normalize a section key to match VALID_SECTION_KEYS.
@@ -1690,6 +1721,8 @@ def generate_keyword_sections(
         "На основе переданных материалов подготовь содержательный тематический "
         "обзор на русском языке. Для каждой темы сформулируй общую картину, "
         "от 2 до 5 ключевых наблюдений и обоснованный вывод. "
+        "Каждое наблюдение должно содержать 1–3 законченных предложения; "
+        "ориентир — до 800 символов. Не обрывай предложение ради лимита длины. "
 
         "ОБЯЗАТЕЛЬНЫЕ ПРАВИЛА ДОСТОВЕРНОСТИ: "
         "1. Всегда сохраняй атрибуцию сообщений. Указывай, кто именно сообщил "
@@ -1784,7 +1817,7 @@ def generate_keyword_sections(
             "title": title,
             "overview": overview,
             "findings": [
-                str(value).strip()[:400]
+                _truncate_at_sentence_boundary(value, max_chars=800)
                 for value in findings[:5]
                 if isinstance(value, str) and value.strip()
             ],
