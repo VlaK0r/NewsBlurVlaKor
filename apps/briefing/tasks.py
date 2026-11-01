@@ -40,8 +40,11 @@ def GenerateBriefings():
 
     now = datetime.datetime.utcnow()
 
+    # The public homepage account does not receive personal briefings.
     eligible_profiles = Profile.objects.filter(
         Q(is_archive=True) | Q(is_pro=True),
+    ).exclude(
+        user__username="popular",
     ).select_related("user")
 
     dispatched = 0
