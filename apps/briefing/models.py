@@ -312,14 +312,18 @@ def create_briefing_story(
     # models.py: Convert UTC briefing_date to user's local timezone for the title
     user_tz = pytz.timezone(str(user.profile.timezone))
     local_date = pytz.utc.localize(briefing_date).astimezone(user_tz)
-    # models.py: Include time-of-day in briefing title based on user's local time
-    local_hour = local_date.hour
-    if local_hour < 12:
-        time_of_day = "Morning"
-    elif local_hour < 17:
-        time_of_day = "Afternoon"
+    # Scheduled briefings use their explicit slot, not the generation
+    # timestamp (which can be 5 minutes before the slot boundary).
+    if not on_demand and slot in ("morning", "afternoon", "evening"):
+        time_of_day = slot.capitalize()
     else:
-        time_of_day = "Evening"
+        local_hour = local_date.hour
+        if local_hour < 12:
+            time_of_day = "Morning"
+        elif local_hour < 17:
+            time_of_day = "Afternoon"
+        else:
+            time_of_day = "Evening"
     title = "%s Daily Briefing — %s" % (time_of_day, local_date.strftime("%B %-d, %Y"))
 
     # models.py: Compute local-time day boundaries in UTC for DB queries
@@ -327,7 +331,14 @@ def create_briefing_story(
     local_day_end = local_day_start + datetime.timedelta(days=1)
     day_start_utc = local_day_start.astimezone(pytz.utc).replace(tzinfo=None)
     day_end_utc = local_day_end.astimezone(pytz.utc).replace(tzinfo=None)
-    if on_demand:
+    if not on_demand and slot and local_date_str:
+        # Match scheduled briefings by their idempotency key, not generation time.
+        existing_briefing = MBriefing.objects.filter(
+            user_id=user.pk,
+            slot=slot,
+            local_date=local_date_str,
+        ).first()
+    elif on_demand:
         # models.py: Regenerate overwrites the most recent briefing today
         existing_briefing = (
             MBriefing.objects.filter(
@@ -397,6 +408,13 @@ def create_briefing_story(
         existing_briefing.briefing_date = briefing_date
         existing_briefing.generated_at = datetime.datetime.utcnow()
         existing_briefing.status = "complete"
+
+        # Scheduled updates must preserve the slot idempotency guard.
+        # On-demand regeneration keeps the existing slot unchanged.
+        if not on_demand and slot and local_date_str:
+            existing_briefing.slot = slot
+            existing_briefing.local_date = local_date_str
+
         existing_briefing.save()
         briefing = existing_briefing
     else:
