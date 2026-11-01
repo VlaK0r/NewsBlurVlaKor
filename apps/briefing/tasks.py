@@ -210,6 +210,20 @@ def GenerateUserBriefing(user_id, on_demand=False, slot=None, local_date=None):
     lock_ttl = 360 if on_demand else 840
     if not r.set(lock_key, "1", nx=True, ex=lock_ttl):
         logging.debug(" ---> GenerateUserBriefing: already running for user %s, skipping" % user_id)
+
+        if on_demand:
+            try:
+                user = User.objects.only("username").get(pk=user_id)
+                payload = {
+                    "type": "error",
+                    "error": "Другая задача уже выполняется. Попробуйте запустить генерацию позже.",
+                }
+                r.publish(user.username, "briefing:%s" % json.dumps(payload))
+            except User.DoesNotExist:
+                logging.error(" ---> GenerateUserBriefing: user %s not found" % user_id)
+            except Exception as e:
+                logging.error(" ---> GenerateUserBriefing: busy notification error: %s" % e)
+
         return
 
     try:
