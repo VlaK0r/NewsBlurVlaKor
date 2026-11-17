@@ -137,6 +137,7 @@
                 feed_collection: NEWSBLUR.assets.feeds,
                 socialfeed_collection: NEWSBLUR.assets.social_feeds
             });
+            this.apply_saved_feed_list_filter();
             NEWSBLUR.app.sidebar = new NEWSBLUR.Views.Sidebar();
             NEWSBLUR.app.feed_list = new NEWSBLUR.Views.FeedList({ el: this.$s.$feed_list[0] });
             NEWSBLUR.app.story_titles = new NEWSBLUR.Views.StoryTitlesView({
@@ -308,6 +309,11 @@
 
             if (options.resize) {
                 this.$s.$story_pane.stop(true).css('left', story_pane_position);
+            } else if (!options.slide) {
+                // reader.js: when the reader picks the view itself (a selected story's site view, an opened
+                // folder's view, a fallback), sliding across looked like the story scrolling in from the side,
+                // so the pane jumps there. Only a view the reader chose by hand passes options.slide.
+                this.$s.$story_pane.stop(true).css('left', -100 * offset_multiplier + '%');
             } else {
                 this.$s.$story_pane.animate({
                     'left': story_pane_position
@@ -1579,9 +1585,16 @@
         // = Feed bar - Individual Feeds =
         // ===============================
 
-        reset_feed: function (options) {
+        reset_feed: function (options, transition) {
             options = options || {};
             if (NEWSBLUR.app.mobile) NEWSBLUR.app.mobile.feed_reset();
+            // reader.js: the story titles fade out as they look now, before the river class, selection and
+            // scroll position below change under them. The story pane fades too when a river or folder is on
+            // either side of the switch (river openers pass entering_river); between single feeds it empties at once.
+            NEWSBLUR.app.story_titles.depart();
+            if (this.flags.river_view || (transition && transition.entering_river)) {
+                NEWSBLUR.app.story_list.depart();
+            }
 
             // Clean up any active voice recordings from Ask AI menu
             var $menu = $('.NB-menu-ask-ai-container');
@@ -1649,6 +1662,8 @@
                 '$feed_in_social_feed_list': {}
             });
 
+            // reader.js: paging starts over, so the page still loading for the last feed or folder is thrown out.
+            NEWSBLUR.assets.cancel_story_pages();
             $.extend(this.counts, {
                 'page': 1,
                 'find_next_unread_on_page_of_feed_stories_load': 0,
@@ -2589,7 +2604,7 @@
             options = options || {};
             var $story_titles = this.$s.$story_titles;
 
-            this.reset_feed(options);
+            this.reset_feed(options, { entering_river: true });
             this.hide_splash_page();
             if (options.story_id) {
                 this.flags['select_story_in_feed'] = options.story_id;
@@ -2704,7 +2719,7 @@
                 new_section && !same_section;
 
             if (!switching_section) {
-                this.reset_feed(options);
+                this.reset_feed(options, { entering_river: true });
                 this.hide_splash_page();
             }
 
@@ -2881,7 +2896,7 @@
             options = options || {};
             var self = this;
 
-            this.reset_feed(options);
+            this.reset_feed(options, { entering_river: true });
             this.hide_splash_page();
 
             this.active_feed = 'river:briefing-admin';
@@ -3033,7 +3048,7 @@
             options = options || {};
             var $story_titles = this.$s.$story_titles;
 
-            this.reset_feed(options);
+            this.reset_feed(options, { entering_river: true });
             this.hide_splash_page();
             this.active_feed = 'read';
             if (options.story_id) {
@@ -3106,7 +3121,7 @@
             $folder = $folder || this.$s.$feed_list;
             var folder_title = folder && folder.get('folder_title') || 'Everything';
 
-            this.reset_feed(options);
+            this.reset_feed(options, { entering_river: true });
 
             if (options.story_id) {
                 this.flags['select_story_in_feed'] = options.story_id;
@@ -3254,7 +3269,7 @@
             var $story_titles = this.$s.$story_titles;
             var folder_title = options.global ? "Global Blurblogs" : "Blurblogs";
 
-            this.reset_feed(options);
+            this.reset_feed(options, { entering_river: true });
             this.hide_splash_page();
 
             this.active_feed = options.global ? 'river:global' : 'river:blurblogs';
@@ -3373,7 +3388,7 @@
             };
             var folder_title = folder_titles[trending_type] || folder_titles['well_read'];
 
-            this.reset_feed(options);
+            this.reset_feed(options, { entering_river: true });
             this.hide_splash_page();
 
             this.active_feed = 'trending:' + trending_type;
@@ -3767,31 +3782,31 @@
                     this.flags['page_view_showing_feed_view'] = true;
                     this.flags['feed_view_showing_story_view'] = false;
                     this.flags['temporary_story_view'] = false;
-                    this.switch_taskbar_view('feed', { skip_save_type: 'page' });
+                    this.switch_taskbar_view('feed', { skip_save_type: 'page', slide: options.slide });
                     NEWSBLUR.app.story_list.show_stories_preference_in_feed_view();
                 }
             } else if (_.contains(['list', 'grid', 'magazine'],
                 NEWSBLUR.assets.view_setting(NEWSBLUR.reader.active_feed, 'layout')) &&
                 (this.story_view == 'page' || this.story_view == 'story')) {
-                this.switch_taskbar_view('feed', { skip_save_type: 'layout' });
+                this.switch_taskbar_view('feed', { skip_save_type: 'layout', slide: options.slide });
             } else if (this.story_view == 'page' && this.flags['page_view_showing_feed_view']) {
                 // NEWSBLUR.log(['turn off feed view', this.flags['page_view_showing_feed_view'], this.flags['feed_view_showing_story_view']]);
                 this.flags['page_view_showing_feed_view'] = false;
                 this.flags['feed_view_showing_story_view'] = false;
                 this.flags['temporary_story_view'] = false;
-                this.switch_taskbar_view('page');
+                this.switch_taskbar_view('page', { slide: options.slide });
             } else if (this.flags['feed_view_showing_story_view']) {
                 // NEWSBLUR.log(['turn off story view', this.flags['page_view_showing_feed_view'], this.flags['feed_view_showing_story_view']]);
                 this.flags['page_view_showing_feed_view'] = false;
                 this.flags['feed_view_showing_story_view'] = false;
                 this.flags['temporary_story_view'] = false;
-                this.switch_taskbar_view(this.story_view, { skip_save_type: true });
+                this.switch_taskbar_view(this.story_view, { skip_save_type: true, slide: options.slide });
             } else if (this.flags['temporary_story_view']) {
                 // NEWSBLUR.log(['turn off story view', this.flags['page_view_showing_feed_view'], this.flags['feed_view_showing_story_view']]);
                 this.flags['page_view_showing_feed_view'] = false;
                 this.flags['feed_view_showing_story_view'] = false;
                 this.flags['temporary_story_view'] = false;
-                this.switch_taskbar_view(this.story_view, { skip_save_type: true });
+                this.switch_taskbar_view(this.story_view, { skip_save_type: true, slide: options.slide });
             }
         },
 
@@ -4954,7 +4969,8 @@
             }
 
             if (view) {
-                this.switch_taskbar_view(view);
+                // reader.js: stepping between views by keyboard is a choice made by hand, so the pane slides.
+                this.switch_taskbar_view(view, { slide: true });
             }
         },
 
@@ -7083,6 +7099,20 @@
         // ==========================
         // = Taskbar - Intelligence =
         // ==========================
+
+        // reader.js: the Unread, Focus and Saved filters hide sites through classes on the body and the sidebar,
+        // which load_intelligence_slider applies once the feeds arrive. views/feed_list_view.js starts the list's
+        // entrance as soon as it draws, which is earlier, so the saved filter is applied up front and the cascade
+        // only covers the rows that stay shown.
+        apply_saved_feed_list_filter: function () {
+            var unread_view = this.get_unread_view_score();
+            // reader.js: load_intelligence_slider reads this flag before it sets it, so it goes back afterwards.
+            var showing_starred = this.flags['feed_list_showing_starred'];
+            this.flags['feed_list_showing_starred'] = unread_view >= 2;
+            this.switch_feed_view_unread_view(Math.max(0, Math.min(unread_view, 2)));
+            NEWSBLUR.app.sidebar_header.toggle_hide_read_preference();
+            this.flags['feed_list_showing_starred'] = showing_starred;
+        },
 
         load_intelligence_slider: function () {
             var self = this;
@@ -9722,21 +9752,22 @@
                 NEWSBLUR.assets.stories.mark_read(story, { skip_delay: true });
             });
 
+            // reader.js: the taskbar view buttons are a choice made by hand, so the story pane slides to it.
             $.targetIs(e, { tagSelector: '.task_view_page:not(.NB-task-return)' }, function ($t, $p) {
                 e.preventDefault();
-                self.switch_taskbar_view('page');
+                self.switch_taskbar_view('page', { slide: true });
             });
             $.targetIs(e, { tagSelector: '.task_view_feed' }, function ($t, $p) {
                 e.preventDefault();
-                self.switch_taskbar_view('feed');
+                self.switch_taskbar_view('feed', { slide: true });
             });
             $.targetIs(e, { tagSelector: '.task_view_story' }, function ($t, $p) {
                 e.preventDefault();
-                self.switch_taskbar_view('story');
+                self.switch_taskbar_view('story', { slide: true });
             });
             $.targetIs(e, { tagSelector: '.task_view_text' }, function ($t, $p) {
                 e.preventDefault();
-                self.switch_taskbar_view('text');
+                self.switch_taskbar_view('text', { slide: true });
             });
             $.targetIs(e, { tagSelector: '.NB-task-return' }, function ($t, $p) {
                 e.preventDefault();
@@ -10120,21 +10151,22 @@
                     self.force_instafetch_stories();
                 }
             });
+            // reader.js: Enter and Shift+Enter open or close the Story and Text views by hand, so the pane slides.
             $document.bind('keydown', 'enter', function (e) {
                 e.preventDefault();
                 if (self.flags['feed_view_showing_story_view']) {
-                    self.switch_to_correct_view();
+                    self.switch_to_correct_view({ slide: true });
                 } else {
-                    NEWSBLUR.app.story_tab_view.prepare_story(null, true);
+                    NEWSBLUR.app.story_tab_view.prepare_story(null, true, { slide: true });
                     NEWSBLUR.app.story_tab_view.open_story();
                 }
             });
             $document.bind('keydown', 'return', function (e) {
                 e.preventDefault();
                 if (self.flags['feed_view_showing_story_view']) {
-                    self.switch_to_correct_view();
+                    self.switch_to_correct_view({ slide: true });
                 } else {
-                    NEWSBLUR.app.story_tab_view.prepare_story(null, true);
+                    NEWSBLUR.app.story_tab_view.prepare_story(null, true, { slide: true });
                     NEWSBLUR.app.story_tab_view.open_story();
                 }
             });
@@ -10145,9 +10177,9 @@
                     if (!self.active_story) NEWSBLUR.reader.show_next_story(1);
                     self.active_story.story_title_view.render_inline_story_detail(true);
                 } else if (self.flags['temporary_story_view']) {
-                    self.switch_to_correct_view();
+                    self.switch_to_correct_view({ slide: true });
                 } else {
-                    NEWSBLUR.app.text_tab_view.fetch_and_render(null, true);
+                    NEWSBLUR.app.text_tab_view.fetch_and_render(null, true, { slide: true });
                 }
             });
             $document.bind('keydown', 'shift+return', function (e) {
@@ -10157,9 +10189,9 @@
                     if (!self.active_story) NEWSBLUR.reader.show_next_story(1);
                     self.active_story.story_title_view.render_inline_story_detail(true);
                 } else if (self.flags['temporary_story_view']) {
-                    self.switch_to_correct_view();
+                    self.switch_to_correct_view({ slide: true });
                 } else {
-                    NEWSBLUR.app.text_tab_view.fetch_and_render(null, true);
+                    NEWSBLUR.app.text_tab_view.fetch_and_render(null, true, { slide: true });
                 }
             });
             $document.bind('keydown', 'space', function (e) {
