@@ -132,7 +132,7 @@ services:
     entrypoint: ["chown", "-R", "1000:0", "/usr/share/elasticsearch/data"]
     restart: "no"
     volumes:
-      - ./docker/volumes/elasticsearch:/usr/share/elasticsearch/data
+      - ./data/elasticsearch:/usr/share/elasticsearch/data
 
   newsblur_db_elasticsearch:
     container_name: newsblur_db_elasticsearch
