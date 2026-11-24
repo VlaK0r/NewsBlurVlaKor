@@ -55,7 +55,9 @@ typedef NS_ENUM(NSUInteger, FeedSection)
 typedef NS_ENUM(NSUInteger, FeedDetailVisibleRowType)
 {
     FeedDetailVisibleRowTypeStory = 0,
-    FeedDetailVisibleRowTypeCluster
+    FeedDetailVisibleRowTypeCluster,
+    // NewStoriesPill.swift: the inline "N new stories" row at the top of the list while stories wait.
+    FeedDetailVisibleRowTypeNewStories
 };
 
 static NSString * const FeedDetailVisibleRowTypeKey = @"type";
@@ -84,6 +86,8 @@ static const NSInteger NBTryFeedTitleFallbackPageCount = 5;
 @property (nonatomic) NSInteger retainedFirstPageLocation;
 @property (readwrite) BOOL inPullToRefresh_;
 @property (nonatomic) BOOL isFadingTable;
+@property (nonatomic, strong) NBLoadingCell *storyLoadingCell;
+@property (nonatomic, copy) NSString *navigationTheme;
 @property (nonatomic, strong) NSString *restoringFolder;
 @property (nonatomic, strong) NSString *restoringFeedID;
 @property (nonatomic) NSUInteger deferredLoadStoryCount;
@@ -242,7 +246,7 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
     self.storyHeightCache = [[NSCache alloc] init];
     self.storyHeightCache.countLimit = 1024;
     
-    self.storyTitlesTable.backgroundColor = UIColorFromRGB(0xf4f4f4);
+    self.storyTitlesTable.backgroundColor = ThemeManager.shared.storyListBackgroundColor;
     self.storyTitlesTable.separatorColor = UIColorFromLightSepiaMediumDarkRGB(0xE9E8E4, 0xD4C8B8, 0x383838, 0x222222);
     self.storyTitlesTable.accessibilityIdentifier = @"story-titles-list";
     self.storyTitlesTable.prefetchDataSource = self;
@@ -254,7 +258,7 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
         self.storyTitlesTable.dragDelegate = self;
         self.storyTitlesTable.dragInteractionEnabled = YES;
     }
-    self.view.backgroundColor = UIColorFromRGB(0xf4f4f4);
+    self.view.backgroundColor = ThemeManager.shared.storyListBackgroundColor;
 
 #if !TARGET_OS_MACCATALYST
     self.refreshControl = [UIRefreshControl new];
@@ -327,6 +331,12 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
         [weakSelf markReadShowMenu:MarkReadShowMenuBasedOnPref sender:weakSelf.storyTitlesHeaderBar.markReadContainer];
     };
     self.storyTitlesHeaderBar.markReadHandler = ^(NSInteger days) {
+        if (days > 0) {
+            // FeedDetailObjCViewController.m applies age cutoffs to cached stories and refreshes the list after success.
+            NSInteger cutoffTimestamp = (NSInteger)[[NSDate date] timeIntervalSince1970] - days * 24 * 60 * 60;
+            [weakSelf markFeedsReadFromTimestamp:cutoffTimestamp andOlder:YES footerDays:days];
+            return;
+        }
         NSArray *feedIds = weakSelf.storiesCollection.isRiverView ?
             [weakSelf.appDelegate feedIdsForFolderTitle:weakSelf.storiesCollection.activeFolder] :
             @[weakSelf.storiesCollection.activeFeed[@"id"]];
@@ -705,6 +715,10 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
     }
     
     CFTimeInterval reloadStartedAt = shouldLogDailyBriefingRender ? NBDailyBriefingNow() : 0;
+    // FeedDetailObjCViewController.m keeps the same pulse alive while a loading-only table reloads.
+    if (storiesCollection.storyLocationsCount > 0 || self.pageFinished) {
+        [ReaderMotion retireLoadingRows:self.storyTitlesTable];
+    }
     [self.storyTitlesTable reloadData];
     if (shouldLogDailyBriefingRender) {
         self.dailyBriefingReloadDataMs = NBDailyBriefingElapsedMs(reloadStartedAt);
@@ -786,27 +800,104 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
     }
 
     NSMutableArray<NSDictionary *> *rows = [NSMutableArray arrayWithCapacity:(NSUInteger)(storyCount - startLocation)];
+    BOOL hasNewStoriesRow = [self isKindOfClass:[FeedDetailViewController class]] &&
+        [(FeedDetailViewController *)self newStoriesRowCount] > 0;
+    BOOL newStoriesRowAtBottom = hasNewStoriesRow && [(FeedDetailViewController *)self newStoriesRowAtBottom];
+    if (startLocation == 0 && hasNewStoriesRow && !newStoriesRowAtBottom) {
+        [rows addObject:@{ FeedDetailVisibleRowTypeKey: @(FeedDetailVisibleRowTypeNewStories) }];
+    }
     for (NSInteger location = startLocation; location < storyCount; location++) {
         [rows addObject:@{
             FeedDetailVisibleRowTypeKey: @(FeedDetailVisibleRowTypeStory),
             FeedDetailVisibleRowStoryLocationKey: @(location)
         }];
 
-        if (![self shouldShowStoryClustering]) {
-            continue;
+        if ([self shouldShowStoryClustering]) {
+            NSDictionary *story = [self getStoryAtLocation:location];
+            for (NSDictionary *clusterStory in [self visibleClusterStoriesForStory:story]) {
+                [rows addObject:@{
+                    FeedDetailVisibleRowTypeKey: @(FeedDetailVisibleRowTypeCluster),
+                    FeedDetailVisibleRowStoryLocationKey: @(location),
+                    FeedDetailVisibleRowClusterStoryKey: clusterStory
+                }];
+            }
         }
-
-        NSDictionary *story = [self getStoryAtLocation:location];
-        for (NSDictionary *clusterStory in [self visibleClusterStoriesForStory:story]) {
-            [rows addObject:@{
-                FeedDetailVisibleRowTypeKey: @(FeedDetailVisibleRowTypeCluster),
-                FeedDetailVisibleRowStoryLocationKey: @(location),
-                FeedDetailVisibleRowClusterStoryKey: clusterStory
-            }];
-        }
+    }
+    if (newStoriesRowAtBottom) {
+        [rows addObject:@{ FeedDetailVisibleRowTypeKey: @(FeedDetailVisibleRowTypeNewStories) }];
     }
 
     return rows;
+}
+
+- (BOOL)isNewStoriesRowAtIndexPath:(NSIndexPath *)indexPath {
+    NSDictionary *rowDescriptor = [self storyRowDescriptorForIndexPath:indexPath];
+    return rowDescriptor && [rowDescriptor[FeedDetailVisibleRowTypeKey] integerValue] == FeedDetailVisibleRowTypeNewStories;
+}
+
+// NewStoriesPill.swift keeps the floating pill away while any of the inline "N new stories" row is on screen.
+- (BOOL)isNewStoriesRowVisible {
+    if (!self.isLegacyTable || !self.isViewLoaded) return NO;
+    UITableView *table = self.storyTitlesTable;
+    NSUInteger rowIndex = [self.visibleStoryRows indexOfObjectPassingTest:^BOOL(NSDictionary *row, NSUInteger index, BOOL *stop) {
+        return [row[FeedDetailVisibleRowTypeKey] integerValue] == FeedDetailVisibleRowTypeNewStories;
+    }];
+    if (rowIndex == NSNotFound || rowIndex >= (NSUInteger)[table numberOfRowsInSection:0]) return NO;
+    UIEdgeInsets inset = table.adjustedContentInset;
+    CGRect visible = UIEdgeInsetsInsetRect(table.bounds, UIEdgeInsetsMake(inset.top, 0, inset.bottom, 0));
+    CGRect row = [table rectForRowAtIndexPath:[NSIndexPath indexPathForRow:rowIndex inSection:0]];
+    return CGRectGetHeight(CGRectIntersection(row, visible)) > 0;
+}
+
+// NewStoriesPill.swift shows or removes the inline "N new stories" row, or changes its count. Only that row changes,
+// and a row added or removed above the reader moves the list by its height, so the stories on screen stay put.
+- (void)newStoriesRowDidChange {
+    if (!self.isLegacyTable || storiesCollection.isDailyBriefing || !self.isViewLoaded) return;
+    UITableView *table = self.storyTitlesTable;
+    NSArray<NSDictionary *> *oldRows = self.visibleStoryRows;
+    NSArray<NSDictionary *> *newRows = [self buildVisibleStoryRows];
+    NSPredicate *isStoryRow = [NSPredicate predicateWithBlock:^BOOL(NSDictionary *row, NSDictionary *bindings) {
+        return [row[FeedDetailVisibleRowTypeKey] integerValue] != FeedDetailVisibleRowTypeNewStories;
+    }];
+    BOOL sameStories = oldRows && [[oldRows filteredArrayUsingPredicate:isStoryRow]
+                                   isEqualToArray:[newRows filteredArrayUsingPredicate:isStoryRow]];
+    NSUInteger (^rowIndex)(NSArray<NSDictionary *> *) = ^NSUInteger(NSArray<NSDictionary *> *rows) {
+        return [rows indexOfObjectPassingTest:^BOOL(NSDictionary *row, NSUInteger index, BOOL *stop) {
+            return [row[FeedDetailVisibleRowTypeKey] integerValue] == FeedDetailVisibleRowTypeNewStories;
+        }];
+    };
+    NSUInteger oldIndex = oldRows ? rowIndex(oldRows) : NSNotFound;
+    NSUInteger newIndex = rowIndex(newRows);
+    self.visibleStoryRows = newRows;
+    self.storyRowHeightCache = nil;
+    if (!sameStories || table.hasUncommittedUpdates || !self.messageView.hidden || table.numberOfSections != 1 ||
+        [table numberOfRowsInSection:0] != oldRows.count + 1) {
+        [table reloadData];
+        return;
+    }
+    CGFloat top = -table.adjustedContentInset.top;
+    BOOL readerIsBelowTop = table.contentOffset.y > top + 1;
+    [UIView performWithoutAnimation:^{
+        if (oldIndex != NSNotFound && newIndex != NSNotFound) {
+            [table reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:newIndex inSection:0]]
+                         withRowAnimation:UITableViewRowAnimationNone];
+            return;
+        }
+        if (newIndex != NSNotFound) {
+            [table insertRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:newIndex inSection:0]]
+                         withRowAnimation:UITableViewRowAnimationNone];
+        } else if (oldIndex != NSNotFound) {
+            [table deleteRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:oldIndex inSection:0]]
+                         withRowAnimation:UITableViewRowAnimationNone];
+        }
+        [table layoutIfNeeded];
+        BOOL changedAtTop = (newIndex == 0) || (oldIndex == 0 && newIndex == NSNotFound);
+        if (changedAtTop && readerIsBelowTop) {
+            CGFloat shift = newIndex != NSNotFound ? NewStoriesRowCell.height : -NewStoriesRowCell.height;
+            [(FeedDetailViewController *)self newStoriesListScrollsItself];
+            table.contentOffset = CGPointMake(table.contentOffset.x, MAX(top, table.contentOffset.y + shift));
+        }
+    }];
 }
 
 - (NSDictionary *)storyAppendContext {
@@ -863,6 +954,10 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
         return NO;
     }
 
+    // FeedDetailObjCViewController.m appends a page below the rows; an inline new stories row at the end must move.
+    if ([self.visibleStoryRows.lastObject[FeedDetailVisibleRowTypeKey] integerValue] == FeedDetailVisibleRowTypeNewStories) {
+        return NO;
+    }
     // FeedDetailObjCViewController.m only preserves geometry when filtering kept the existing visible prefix.
     for (NSInteger location = 0; location < previousStoryCount; location++) {
         if (![self.renderedStoryLocationIds[location] isEqual:storiesCollection.activeFeedStoryLocationIds[location]]) {
@@ -882,6 +977,7 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
         [indexPaths addObject:[NSIndexPath indexPathForRow:row inSection:0]];
     }
     // FeedDetailObjCViewController.m inserts before the loading row, preserving cells and the scroll-read anchor.
+    [ReaderMotion retireLoadingRows:self.storyTitlesTable];
     [UIView performWithoutAnimation:^{
         [self.storyTitlesTable insertRowsAtIndexPaths:indexPaths withRowAnimation:UITableViewRowAnimationNone];
     }];
@@ -927,6 +1023,11 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
 
 - (NSInteger)storyLocationForScrollingAtIndexPath:(NSIndexPath *)indexPath {
     NSDictionary *rowDescriptor = [self storyRowDescriptorForIndexPath:indexPath];
+    // FeedDetailObjCViewController.m: the inline new stories row belongs to no story. At the top of the list it comes
+    // before the first story; at the end, after the last.
+    if (rowDescriptor && !rowDescriptor[FeedDetailVisibleRowStoryLocationKey]) {
+        return indexPath.row == 0 ? 0 : storiesCollection.storyLocationsCount;
+    }
     NSNumber *targetLocation = [FeedRowScrollReadDecision targetStoryLocationWithRowStoryLocation:rowDescriptor[FeedDetailVisibleRowStoryLocationKey]
                                                                                  isDailyBriefing:storiesCollection.isDailyBriefing
                                                                                        storyCount:storiesCollection.storyLocationsCount];
@@ -1181,8 +1282,6 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
         self.storyTitlesTable.refreshControl = nil;
     }
 #endif
-    
-    [self updateTheme];
     
     if (self.isPhoneOrCompact) {
         // Async to let the view be added to the view hierarchy.
@@ -1916,6 +2015,8 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
 #pragma mark Initialization
 
 - (void)resetFeedDetail {
+    [self.storyLoadingCell endAnimation];
+    self.storyLoadingCell = nil;
     [self resetNotificationStoryLookup];
     self.deferredLoadStoryCount = 0;
     self.firstPageLoad = nil;
@@ -2613,6 +2714,29 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
     return theFeedDetailURL;
 }
 
+// NewStoriesNewestPage.swift drops the page the list's own paging was loading, which its fresh first page replaces.
+// A new request id turns that page's late callbacks into no-ops, so a cancelled page can't end the wait for the
+// newest stories or land after them.
+- (void)abandonPageInFlight {
+    [self.currentFetchTask cancel];
+    self.currentFetchTask = nil;
+    self.fetchRequestId++;
+    self.pageFetching = NO;
+}
+
+// NewStoriesNewestPage.swift replaced the list, first page included. The first-page load that opened the list no
+// longer describes it, and once a folder's feeds widen its URL no longer matches, so later pages checked against it
+// would be dropped as stale.
+- (void)forgetFirstPageLoad {
+    self.firstPageLoad = nil;
+}
+
+// NewStoriesNewestPage.swift requests the open list's pages exactly as opening it does.
+- (NSString *)newestStoriesRequestURLForPage:(NSInteger)page {
+    if (storiesCollection.isRiverView) return [self riverRequestURLForPage:(int)page];
+    return [self feedRequestURLForPage:(int)page];
+}
+
 - (NSString *)normalFirstPageRequestURL {
     if (!self.isLegacyTable || self.isDashboard || self.dashboardIndex >= 0 ||
         storiesCollection.inSearch || storiesCollection.isSocialView || storiesCollection.isSocialRiverView ||
@@ -2746,10 +2870,12 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
 - (void)beginNotificationStoryLookupIfNeeded {
     NSString *hash = storiesCollection.notificationStoryHash;
     if (!hash.length || self.notificationStoryLookupHash || !appDelegate.inFindingStoryMode ||
-        ![appDelegate.tryFeedStoryId isEqualToString:hash] || storiesCollection.isRiverOrSocial) return;
-    self.notificationStoryLookupHash = hash;
+        ![appDelegate.tryFeedStoryId isEqualToString:hash]) return;
     StoriesCollection *collection = storiesCollection;
-    NSString *feedId = collection.activeFeedIdStr;
+    NSString *river = collection.isRiverView ? collection.activeFolder : nil;
+    NSString *feedId = river ? appDelegate.tryFeedFeedId : collection.activeFeedIdStr;
+    if (!feedId.length) return;
+    self.notificationStoryLookupHash = hash;
     NSString *account = [appDelegate.activeUsername copy];
     NSString *host = [appDelegate.url copy];
     NSUInteger generation = self.fetchRequestId;
@@ -2762,7 +2888,7 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
         return controller && controller.fetchRequestId == generation && controller.storiesCollection == collection &&
             [controller.appDelegate.activeUsername isEqualToString:account] &&
             [controller.appDelegate.url isEqualToString:host] &&
-            [collection.activeFeedIdStr isEqualToString:feedId] &&
+            (river ? [collection.activeFolder isEqualToString:river] : [collection.activeFeedIdStr isEqualToString:feedId]) &&
             [collection.notificationStoryHash isEqualToString:hash] &&
             [controller.notificationStoryLookupHash isEqualToString:hash];
     };
@@ -2944,11 +3070,11 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
 }
 
 - (void)finishFirstPageResponse:(NSDictionary *)response feedPage:(NSInteger)page feedId:(NSString *)feedId load:(StoryFirstPageLoad *)load {
-    if (storiesCollection.notificationStory && !storiesCollection.isRiverOrSocial) {
+    if (storiesCollection.notificationStory) {
         NSDictionary *updated = response;
         if (load && page == 1) {
             if (![self isCurrentFirstPageLoad:load]) return;
-            if (![[NSString stringWithFormat:@"%@", response[@"feed_id"]] isEqualToString:feedId]) {
+            if (!storiesCollection.isRiverView && ![[NSString stringWithFormat:@"%@", response[@"feed_id"]] isEqualToString:feedId]) {
                 load.pending = NO;
                 self.pageFetching = NO;
                 return;
@@ -3307,6 +3433,7 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
     }
 
     NSString *theFeedDetailURL = [self riverRequestURLForPage:page];
+    if (page == 1) [self beginNotificationStoryLookupIfNeeded];
 
     NSUInteger requestId = self.fetchRequestId;
     NSInteger feedPage = page;
@@ -3357,25 +3484,8 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
 #pragma mark -
 #pragma mark Processing Stories
 
-- (void)finishedLoadingFeed:(NSDictionary *)results feedPage:(NSInteger)feedPage feedId:(NSString *)sentFeedId {
-    if (self.dashboardIndex >= 0 && !self.isDashboard) {
-        return;
-    }
-    
-    appDelegate.hasLoadedFeedDetail = YES;
-    self.isOnline = YES;
-    self.isShowingFetching = NO;
-    NSString *receivedFeedId = [NSString stringWithFormat:@"%@", [results objectForKey:@"feed_id"]];
-    
-    if (!(storiesCollection.isRiverView ||
-          storiesCollection.isSavedView ||
-          storiesCollection.isReadView ||
-          storiesCollection.isWidgetView ||
-          storiesCollection.isSocialView ||
-          storiesCollection.isSocialRiverView)
-        && ![receivedFeedId isEqualToString:sentFeedId]) {
-        return;
-    }
+// FeedDetailObjCViewController.m files a page's feeds and classifiers; NewStoriesNewestPage.swift's pages need them too.
+- (void)absorbStoryPageFeedsAndClassifiers:(NSDictionary *)results feedId:(NSString *)receivedFeedId {
     NSArray *newFeeds = [results objectForKey:@"feeds"];
     if ([newFeeds isKindOfClass:[NSArray class]] && newFeeds.count) {
         for (int i = 0; i < newFeeds.count; i++){
@@ -3406,7 +3516,29 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
     }
     storiesCollection.activePopularAuthors = [results objectForKey:@"feed_authors"];
     storiesCollection.activePopularTags = [results objectForKey:@"feed_tags"];
+}
+
+- (void)finishedLoadingFeed:(NSDictionary *)results feedPage:(NSInteger)feedPage feedId:(NSString *)sentFeedId {
+    if (self.dashboardIndex >= 0 && !self.isDashboard) {
+        return;
+    }
     
+    appDelegate.hasLoadedFeedDetail = YES;
+    self.isOnline = YES;
+    self.isShowingFetching = NO;
+    NSString *receivedFeedId = [NSString stringWithFormat:@"%@", [results objectForKey:@"feed_id"]];
+    
+    if (!(storiesCollection.isRiverView ||
+          storiesCollection.isSavedView ||
+          storiesCollection.isReadView ||
+          storiesCollection.isWidgetView ||
+          storiesCollection.isSocialView ||
+          storiesCollection.isSocialRiverView)
+        && ![receivedFeedId isEqualToString:sentFeedId]) {
+        return;
+    }
+    [self absorbStoryPageFeedsAndClassifiers:results feedId:receivedFeedId];
+
     NSArray *newStories = [results objectForKey:@"stories"];
     NSMutableArray *confirmedNewStories = [[NSMutableArray alloc] init];
     if (storiesCollection.feedPage == 1) {
@@ -3458,6 +3590,15 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
         }
     }
     
+    // NewStoriesNewestPage.swift put the newest stories above the pages that also hold them. A page holding only those
+    // isn't the end of the list, so the list asks for the next page instead of finishing.
+    if (storiesCollection.feedPage > 1 && !confirmedNewStories.count &&
+        [(FeedDetailViewController *)self pageRepeatsNewestStories:newStories]) {
+        self.pageFetching = NO;
+        [self fetchNextPage:nil];
+        return;
+    }
+
     NSLog(@"finishedLoadingFeed: %@", receivedFeedId);
 
 #if TARGET_OS_MACCATALYST
@@ -3596,6 +3737,10 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
 #pragma mark Stories
 
 - (void)renderStories:(NSArray *)newStories {
+    // FeedDetailObjCViewController.m drops stories RealtimeUpdates.swift was holding for the list a first page replaces.
+    if (storiesCollection.feedPage == 1 && self == appDelegate.feedDetailViewController) {
+        [RealtimeUpdates.shared storyListDidReload];
+    }
     NSInteger newStoriesCount = [newStories count];
     NSInteger previousStoryCount = storiesCollection.storyLocationsCount;
     BOOL premiumRestriction = !appDelegate.isPremium &&
@@ -4359,8 +4504,10 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
         
         return cell;
     } else {
-        NBLoadingCell *loadingCell = [[NBLoadingCell alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, height)];
-        return loadingCell;
+        if (!self.storyLoadingCell) {
+            self.storyLoadingCell = [[NBLoadingCell alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, height)];
+        }
+        return self.storyLoadingCell;
     }
     
     return cell;
@@ -4679,6 +4826,14 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
          cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     NSInteger storyCount = storiesCollection.storyLocationsCount;
     NSDictionary *rowDescriptor = self.isLegacyTable ? [self storyRowDescriptorForIndexPath:indexPath] : nil;
+    if (rowDescriptor && [rowDescriptor[FeedDetailVisibleRowTypeKey] integerValue] == FeedDetailVisibleRowTypeNewStories) {
+        NewStoriesRowCell *rowCell = [tableView dequeueReusableCellWithIdentifier:NewStoriesRowCell.reuseIdentifier];
+        if (!rowCell) rowCell = [[NewStoriesRowCell alloc] initWithStyle:UITableViewCellStyleDefault
+                                                         reuseIdentifier:NewStoriesRowCell.reuseIdentifier];
+        FeedDetailViewController *controller = (FeedDetailViewController *)self;
+        [rowCell configureWithCount:controller.newStoriesRowCount atBottom:controller.newStoriesRowAtBottom];
+        return rowCell;
+    }
     BOOL isClusterRow = [rowDescriptor[FeedDetailVisibleRowTypeKey] integerValue] == FeedDetailVisibleRowTypeCluster;
     NSInteger location = [self storyLocationForIndexPath:indexPath];
     NSInteger parentLocation = isClusterRow ? [self storyLocationForScrollingAtIndexPath:indexPath] : location;
@@ -5053,6 +5208,11 @@ static const CGFloat NBBottomNextFeedHeight = 56.0f;
 //}
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (self.isLegacyTable && [self isNewStoriesRowAtIndexPath:indexPath]) {
+        [tableView deselectRowAtIndexPath:indexPath animated:NO];
+        [(FeedDetailViewController *)self didTapNewStoriesRow];
+        return;
+    }
     NSDictionary *clusterStory = [self clusterStoryForIndexPath:indexPath];
     if (clusterStory) {
         [tableView deselectRowAtIndexPath:indexPath animated:YES];
@@ -5213,18 +5373,18 @@ leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
             appDelegate.activeStory &&
             [[story objectForKey:@"story_hash"]
              isEqualToString:[appDelegate.activeStory objectForKey:@"story_hash"]]) {
-            if ([self markStoryReadIfNeeded:story isScrolling:NO] && !isGridView) {
-                [self reloadStoryRowsForLocation:location rowAnimation:UITableViewRowAnimationFade];
+            if ([self markStoryReadIfNeeded:story isScrolling:NO]) {
+                if (isGridView) [self reload];
+                else [self reloadStoryRowsForLocation:location rowAnimation:UITableViewRowAnimationFade];
             }
             
             [appDelegate showColumn:UISplitViewControllerColumnSecondary debugInfo:@"tap selected row" animated:YES];
             
-            if (!appDelegate.isPhone) {
-                [appDelegate.storyPagesViewController viewWillAppear:NO];
-                [appDelegate.storyPagesViewController viewDidAppear:NO];
-            }
-            
-            if (!isGridView) {
+            // FeedDetailObjCViewController.m leaves appearance callbacks to UIKit: replaying them resets
+            // StoryPagesObjCViewController.m's entrance animation and restyles the already visible article.
+            StoryPagesViewController *reader = appDelegate.storyPagesViewController;
+            BOOL readerIsVisible = reader.viewIfLoaded.window && ![reader hasHiddenReaderAncestor];
+            if (!isGridView || readerIsVisible) {
                 [appDelegate.detailViewController dismissFullscreenSidebarOverlayAfterStorySelection];
                 [appDelegate.detailViewController restoreStoryKeyboardFocusIfNeeded];
                 return;
@@ -5255,8 +5415,15 @@ leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
 }
 
 - (void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath {
+    if ([cell isKindOfClass:[FeedDetailTableCell class]]) {
+        FeedDetailTableCell *storyCell = (FeedDetailTableCell *)cell;
+        if (storyCell.storyHash) [ReaderMotion row:cell.contentView key:storyCell.storyHash owner:self scrolling:tableView.dragging || tableView.decelerating position:[ReaderMotion positionForIndexPath:indexPath table:tableView]];
+    }
     if ([cell class] == [NBLoadingCell class]) {
+        [ReaderMotion row:cell key:[NSString stringWithFormat:@"loading-%ld", (long)storiesCollection.storyLocationsCount] owner:self scrolling:NO];
         [(NBLoadingCell *)cell animate];
+    } else if (![cell isKindOfClass:[FeedDetailTableCell class]]) {
+        [ReaderMotion row:cell key:[NSString stringWithFormat:@"status-%ld-%ld-%ld", (long)indexPath.section, (long)indexPath.row, (long)storiesCollection.storyLocationsCount] owner:self scrolling:tableView.dragging || tableView.decelerating];
     }
     if (tableView == self.storyTitlesTable &&
         storiesCollection.isDailyBriefing &&
@@ -5311,6 +5478,9 @@ leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (tableView == self.storyTitlesTable && self.isLegacyTable && [self isNewStoriesRowAtIndexPath:indexPath]) {
+        return NewStoriesRowCell.height;
+    }
     BOOL cacheRowHeight = tableView == self.storyTitlesTable && self.isLegacyTable &&
         !storiesCollection.isDailyBriefing && indexPath.section == 0 &&
         indexPath.row >= 0 && indexPath.row < self.visibleStoryRows.count;
@@ -5484,6 +5654,9 @@ finish_height_measurement:
 }
 
 - (void)scrollViewDidScroll:(UIScrollView *)scroll {
+    if (scroll == self.storyTitlesTable && (scroll.dragging || scroll.decelerating)) {
+        [[ReaderMotion session:self] stopEntrances];
+    }
     BOOL isBottomPulling = scroll == self.storyTitlesTable &&
         [self isActivelyDraggingBottomNextFeedForScroll:scroll] &&
         [self bottomNextFeedRevealDistanceForScroll:scroll] > 0.0f &&
@@ -5498,6 +5671,7 @@ finish_height_measurement:
 
 - (BOOL)scrollViewShouldScrollToTop:(UIScrollView *)scroll {
     if (scroll == self.storyTitlesTable) {
+        [[ReaderMotion session:self] stopEntrances];
         self.pendingNotificationAnchorHash = nil;
         self.notificationSelectionAnchorHash = nil;
     }
@@ -5506,6 +5680,7 @@ finish_height_measurement:
 
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scroll {
     if (scroll == self.storyTitlesTable) {
+        [[ReaderMotion session:self] stopEntrances];
         self.pendingNotificationAnchorHash = nil;
         self.notificationSelectionAnchorHash = nil;
         self.bottomNextFeedReady = NO;
@@ -5970,10 +6145,10 @@ finish_height_measurement:
         nextLocation = [self storyLocationForScrollingAtIndexPath:indexPath];
         if (nextLocation == NSNotFound) return;
         NSDictionary *row = [self storyRowDescriptorForIndexPath:indexPath];
-        if (row) {
+        if (row && row[FeedDetailVisibleRowStoryLocationKey]) {
             // FeedDetailObjCViewController.m measures the parent cell, including its preview.
             // Every Match/Related row follows that parent, so its midpoint is already behind us.
-            BOOL isChild = [row[FeedDetailVisibleRowTypeKey] integerValue] == FeedDetailVisibleRowTypeCluster;
+            BOOL isChild = [row[FeedDetailVisibleRowTypeKey] integerValue] != FeedDetailVisibleRowTypeStory;
             if (isChild || visibleTop >= CGRectGetMidY([table rectForRowAtIndexPath:indexPath])) {
                 nextLocation += 1;
             }
@@ -6088,7 +6263,7 @@ finish_height_measurement:
             return storiesCollection.storyLocationsCount;
         }
 
-        if ([rowDescriptor[FeedDetailVisibleRowTypeKey] integerValue] == FeedDetailVisibleRowTypeCluster) {
+        if ([rowDescriptor[FeedDetailVisibleRowTypeKey] integerValue] != FeedDetailVisibleRowTypeStory) {
             return NSNotFound;
         }
 
@@ -6279,57 +6454,100 @@ didEndSwipingSwipingWithState:(MCSwipeTableViewCellState)state
 }
 
 - (void)markFeedsReadFromTimestamp:(NSInteger)cutoffTimestamp andOlder:(BOOL)older {
+    [self markFeedsReadFromTimestamp:cutoffTimestamp andOlder:older footerDays:0];
+}
+
+// FeedDetailObjCViewController.m: footerDays is the age chosen in the phone footer's mark read menu, or 0 for the story row menu.
+- (void)markFeedsReadFromTimestamp:(NSInteger)cutoffTimestamp andOlder:(BOOL)older footerDays:(NSInteger)footerDays {
+    BOOL queueOffline = footerDays > 0;
     NSString *account = [appDelegate.activeUsername copy] ?: @"";
     NSString *host = [appDelegate.url copy] ?: @"";
     NSUInteger generation = self.fetchRequestId;
-    NSString *urlString = [NSString stringWithFormat:@"%@/reader/mark_feed_as_read",
-                           self.appDelegate.url];
+    BOOL infrequent = [storiesCollection.activeFolder isEqualToString:@"infrequent"];
+    BOOL everything = storiesCollection.isRiverView &&
+        ([storiesCollection.activeFolder isEqual:@"dashboard"] || [storiesCollection.activeFolder isEqual:@"everything"] || infrequent);
+    // FeedDetailObjCViewController.m sends the footer's age for All Site Stories and Dashboard as days to
+    // mark_all_as_read, which marks every subscription and blurblog in one pass. The Infrequent river lists its
+    // feeds for mark_feed_as_read instead, because mark_all_as_read would also mark every blurblog read.
+    BOOL markAll = everything && !infrequent && footerDays > 0;
+    NSString *urlString = [NSString stringWithFormat:@"%@/reader/%@",
+                           self.appDelegate.url, markAll ? @"mark_all_as_read" : @"mark_feed_as_read"];
     NSMutableArray *feedIds = [NSMutableArray array];
     NSMutableDictionary *params = [NSMutableDictionary dictionary];
     
     if (storiesCollection.isRiverView) {
-        if ([storiesCollection.activeFolder isEqual:@"dashboard"] || [storiesCollection.activeFolder isEqual:@"everything"] || [storiesCollection.activeFolder isEqual:@"infrequent"]) {
+        if (everything) {
             for (NSString *folderName in appDelegate.dictFoldersArray) {
                 for (id feedId in [appDelegate.dictFolders objectForKey:folderName]) {
-                    if (![feedId isKindOfClass:[NSString class]] || ![feedId startsWith:@"saved:"]) {
+                    BOOL isString = [feedId isKindOfClass:[NSString class]];
+                    // FeedDetailObjCViewController.m sends only subscribed feeds for the Infrequent river. Blurblogs
+                    // and saved searches are not in it, and the server's infrequent filter only accepts numeric IDs.
+                    NSCharacterSet *nonDigits = [[NSCharacterSet decimalDigitCharacterSet] invertedSet];
+                    if (isString && infrequent && (![feedId length] || [feedId rangeOfCharacterFromSet:nonDigits].location != NSNotFound)) continue;
+                    if (!isString || ![feedId startsWith:@"saved:"]) {
                         [feedIds addObject:feedId];
                     }
                 }
             }
         } else {
-            for (id feedId in [appDelegate.dictFolders objectForKey:storiesCollection.activeFolder]) {
-                [feedIds addObject:feedId];
-            }
+            [feedIds addObjectsFromArray:[appDelegate feedIdsForFolderTitle:storiesCollection.activeFolder] ?: @[]];
         }
     } else {
-        [feedIds addObject:[storiesCollection.activeFeed objectForKey:@"id"]];
+        id feedId = [storiesCollection.activeFeed objectForKey:@"id"];
+        if (feedId) [feedIds addObject:feedId];
+    }
+    if (!feedIds.count) return;
+    
+    if (markAll) {
+        [params setObject:@(footerDays) forKey:@"days"];
+    } else {
+        [params setObject:feedIds forKey:@"feed_id"];
+        [params setObject:@(cutoffTimestamp) forKey:@"cutoff_timestamp"];
+        NSString *direction = older ? @"older" : @"newest";
+        [params setObject:direction forKey:@"direction"];
     }
     
-    [params setObject:feedIds forKey:@"feed_id"];
-    [params setObject:@(cutoffTimestamp) forKey:@"cutoff_timestamp"];
-    NSString *direction = older ? @"older" : @"newest";
-    [params setObject:direction forKey:@"direction"];
-    
-    if ([storiesCollection.activeFolder isEqualToString:@"infrequent"]) {
+    if (infrequent) {
         NSUserDefaults *prefs = [NSUserDefaults standardUserDefaults];
         NSString *infrequent = [NSString stringWithFormat:@"%ld", (long)[prefs integerForKey:@"infrequent_stories_per_month"]];
         [params setObject:infrequent forKey:@"infrequent"];
     }
     
+    // FeedDetailObjCViewController.m owns one progress view per request, including replies after navigation or account changes.
+    MBProgressHUD *progressHUD = self.viewIfLoaded ? [MBProgressHUD showHUDAddedTo:self.viewIfLoaded animated:YES] : nil;
+    progressHUD.removeFromSuperViewOnHide = YES;
     [appDelegate POST:urlString parameters:params success:^(NSURLSessionTask *task, id responseObject) {
+        [progressHUD hide:NO];
         [[StoryFirstPageCache shared] invalidateSnapshotsForAccount:account host:host];
         if (![(self.appDelegate.activeUsername ?: @"") isEqualToString:account] ||
             ![(self.appDelegate.url ?: @"") isEqualToString:host]) return;
-        [self.appDelegate markFeedReadInCache:feedIds cutoffTimestamp:cutoffTimestamp older:older];
+        // FeedDetailObjCViewController.m leaves infrequent-feed filtering to the server; the reply does not identify the filtered feeds.
+        if (!infrequent) [self.appDelegate markFeedReadInCache:feedIds cutoffTimestamp:cutoffTimestamp older:older];
+        if (queueOffline) {
+            self.appDelegate.feedsViewController.isOffline = NO;
+            [self.appDelegate.storyPagesViewController reloadWidget];
+        }
         [self.appDelegate.feedsViewController reloadFeedTitlesTable];
         [self.appDelegate.feedsViewController refreshHeaderCounts];
         // FeedDetailObjCViewController.m reconciles badges with the server because offline stories may cover only part of a feed.
         [self.appDelegate.feedsViewController refreshFeedList:feedIds.count == 1 ? feedIds.firstObject : nil];
         if (self.fetchRequestId == generation) [self reloadStories];
     } failure:^(NSURLSessionTask *operation, NSError *error) {
+        [progressHUD hide:NO];
         if (![(self.appDelegate.activeUsername ?: @"") isEqualToString:account] ||
             ![(self.appDelegate.url ?: @"") isEqualToString:host]) return;
-        [self requestFailed:error];
+        if (queueOffline && !infrequent) {
+            [self.appDelegate markStoriesRead:nil inFeeds:feedIds cutoffTimestamp:cutoffTimestamp];
+            self.appDelegate.feedsViewController.isOffline = YES;
+            [self.appDelegate.feedsViewController showOfflineNotifier];
+            [self.appDelegate.feedsViewController reloadFeedTitlesTable];
+            [self.appDelegate.feedsViewController refreshHeaderCounts];
+            if (self.fetchRequestId == generation) [self reloadStories];
+        } else {
+            // FeedDetailObjCViewController.m reports the failure from the story row menu and from the footer in the
+            // Infrequent river, where only the server knows which feeds are in scope, so nothing can be queued for replay.
+            [self requestFailed:error];
+        }
     }];
 }
 
@@ -7420,6 +7638,9 @@ didEndSwipingSwipingWithState:(MCSwipeTableViewCellState)state
 - (void)updateTheme {
     [super updateTheme];
 
+    BOOL navigationThemeChanged = ![self.navigationTheme isEqualToString:ThemeManager.shared.effectiveTheme];
+    self.navigationTheme = ThemeManager.shared.effectiveTheme;
+
     [self applyToolbarButtonTint];
     
     UIColor *toolbarButtonTint = UIColorFromLightSepiaMediumDarkRGB(0x8F918B, 0x8B7B6B, 0xAEAFAF, 0xAEAFAF);    UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] initWithIdiom:[[UIDevice currentDevice] userInterfaceIdiom]];
@@ -7436,15 +7657,25 @@ didEndSwipingSwipingWithState:(MCSwipeTableViewCellState)state
         appearance.doneButtonAppearance = buttonAppearance;
     }
     
-    self.navigationController.navigationBar.scrollEdgeAppearance = appearance;
-    self.navigationController.navigationBar.standardAppearance = appearance;
-    self.navigationController.navigationBar.compactAppearance = appearance;
-    self.navigationController.navigationBar.tintColor = toolbarButtonTint;
-    self.navigationController.navigationBar.barTintColor = [UINavigationBar appearance].barTintColor;
-    self.navigationController.navigationBar.barStyle = ThemeManager.shared.isDarkTheme ? UIBarStyleBlack : UIBarStyleDefault;
+    UINavigationBar *bar = self.navigationController.navigationBar;
+    UINavigationBarAppearance *current = bar.standardAppearance;
+    BOOL sameBackground = current.backgroundColor == appearance.backgroundColor || [current.backgroundColor isEqual:appearance.backgroundColor];
+    BOOL sameTitle = current.titleTextAttributes == appearance.titleTextAttributes || [current.titleTextAttributes isEqualToDictionary:appearance.titleTextAttributes];
+    BOOL sameButtons = [current.backButtonAppearance.normal.titleTextAttributes isEqualToDictionary:appearance.backButtonAppearance.normal.titleTextAttributes];
+    if (navigationThemeChanged || !sameBackground || !sameTitle || !sameButtons) {
+        // FeedDetailObjCViewController.m keeps repeated theme/layout updates from restarting UIKit's back-button fade.
+        [UIView performWithoutAnimation:^{
+            bar.scrollEdgeAppearance = appearance;
+            bar.standardAppearance = appearance;
+            bar.compactAppearance = appearance;
+            bar.tintColor = toolbarButtonTint;
+            bar.barTintColor = [UINavigationBar appearance].barTintColor;
+            bar.barStyle = ThemeManager.shared.isDarkTheme ? UIBarStyleBlack : UIBarStyleDefault;
+        }];
+    }
     self.navigationController.toolbar.barTintColor = [UINavigationBar appearance].barTintColor;
     
-    if (self.isPhoneOrCompact) {
+    if (self.isPhoneOrCompact && (navigationThemeChanged || !self.navigationItem.titleView)) {
         self.navigationItem.titleView = [appDelegate makeFeedTitle:storiesCollection.activeFeed];
     }
     // FeedDetailObjCViewController.m applies the owned fullscreen rendering to a fresh themed title immediately.
@@ -7466,9 +7697,15 @@ didEndSwipingSwipingWithState:(MCSwipeTableViewCellState)state
 
     // Story titles header pill bar (includes search container)
     [self.storyTitlesHeaderBar updateTheme];
+    // FeedDetailObjCViewController.m recolors NewStoriesPill.swift's pill, which only the Swift story list shows.
+    if ([self isKindOfClass:[FeedDetailViewController class]]) {
+        [(FeedDetailViewController *)self updateNewStoriesPillTheme];
+    }
     [self.bottomNextFeedControl updateTheme];
 
-    self.appDelegate.detailViewController.navigationItem.titleView = [appDelegate makeFeedTitle:storiesCollection.activeFeed];
+    if (navigationThemeChanged || !self.appDelegate.detailViewController.navigationItem.titleView) {
+        self.appDelegate.detailViewController.navigationItem.titleView = [appDelegate makeFeedTitle:storiesCollection.activeFeed];
+    }
 
     if ([ThemeManager themeManager].isDarkTheme) {
         self.storyTitlesTable.indicatorStyle = UIScrollViewIndicatorStyleWhite;
@@ -7478,8 +7715,8 @@ didEndSwipingSwipingWithState:(MCSwipeTableViewCellState)state
         self.searchField.keyboardAppearance = UIKeyboardAppearanceDefault;
     }
     
-    self.view.backgroundColor = UIColorFromRGB(0xf4f4f4);
-    self.storyTitlesTable.backgroundColor = UIColorFromRGB(0xf4f4f4);
+    self.view.backgroundColor = ThemeManager.shared.storyListBackgroundColor;
+    self.storyTitlesTable.backgroundColor = ThemeManager.shared.storyListBackgroundColor;
     self.storyTitlesTable.separatorColor = UIColorFromLightSepiaMediumDarkRGB(0xE9E8E4, 0xD4C8B8, 0x383838, 0x222222);
     if (@available(iOS 13.0, *)) {
         self.storyTitlesTable.overrideUserInterfaceStyle = ThemeManager.shared.isDarkTheme ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
@@ -7613,7 +7850,7 @@ didEndSwipingSwipingWithState:(MCSwipeTableViewCellState)state
 - (void)finishRefresh {
     self.inPullToRefresh_ = NO;
 #if !TARGET_OS_MACCATALYST
-    [self.refreshControl endRefreshing];
+    [ReaderMotion finishRefresh:self.refreshControl];
 #endif
 }
 

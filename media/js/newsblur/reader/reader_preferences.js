@@ -69,6 +69,14 @@ _.extend(NEWSBLUR.ReaderPreferences.prototype, {
             ]),
             $.make('form', { className: 'NB-preferences-form' }, [
                 $.make('div', { className: 'NB-tab NB-tab-general NB-active' }, [
+                    $.make('div', { className: 'NB-preference NB-preference-reduce-motion' }, [
+                        $.make('div', { className: 'NB-preference-label' }, gettext('Appearance')),
+                        $.make('div', { className: 'NB-preference-options' }, [
+                            $.make('input', { id: 'NB-preference-reduce-motion', type: 'checkbox', name: 'reduce_motion' }),
+                            $.make('label', { 'for': 'NB-preference-reduce-motion' }, gettext('Reduce motion')),
+                            $.make('div', { className: 'NB-preference-description' }, gettext('Keep fades, without movement.'))
+                        ])
+                    ]),
                     $.make('div', { className: 'NB-preference' }, [
                         $.make('label', { className: 'NB-preference-label', 'for': 'NB-preference-language' }, gettext('Language')),
                         $.make('div', { className: 'NB-preference-options' }, [
@@ -614,6 +622,25 @@ _.extend(NEWSBLUR.ReaderPreferences.prototype, {
                         ]),
                         $.make('div', { className: 'NB-preference-label' }, [
                             gettext('Mark stories read on scroll')
+                        ])
+                    ]),
+                    $.make('div', { className: 'NB-preference NB-preference-realtimenewstories' }, [
+                        $.make('div', { className: 'NB-preference-options' }, [
+                            $.make('div', [
+                                $.make('input', { id: 'NB-preference-realtimenewstories-1', type: 'radio', name: 'realtime_new_stories', value: "true" }),
+                                $.make('label', { 'for': 'NB-preference-realtimenewstories-1' }, [
+                                    gettext('Offer them in an "N new stories" pill')
+                                ])
+                            ]),
+                            $.make('div', [
+                                $.make('input', { id: 'NB-preference-realtimenewstories-0', type: 'radio', name: 'realtime_new_stories', value: "false" }),
+                                $.make('label', { 'for': 'NB-preference-realtimenewstories-0' }, [
+                                    gettext('Only show them when the list reloads')
+                                ])
+                            ])
+                        ]),
+                        $.make('div', { className: 'NB-preference-label' }, [
+                            gettext('Show new stories as they arrive')
                         ])
                     ]),
                     $.make('div', { className: 'NB-preference NB-preference-density' }, [
@@ -1290,6 +1317,12 @@ _.extend(NEWSBLUR.ReaderPreferences.prototype, {
                 return false;
             }
         });
+        $('input[name=realtime_new_stories]', $modal).each(function () {
+            if ($(this).val() == "" + (NEWSBLUR.Preferences.realtime_new_stories !== false)) {
+                $(this).prop('checked', true);
+                return false;
+            }
+        });
         $('input[name=density]', $modal).each(function () {
             if ($(this).val() == "" + NEWSBLUR.Preferences.density) {
                 $(this).prop('checked', true);
@@ -1354,6 +1387,7 @@ _.extend(NEWSBLUR.ReaderPreferences.prototype, {
                 return false;
             }
         });
+        $('input[name=reduce_motion]', $modal).prop('checked', NEWSBLUR.Preferences.reduce_motion === true || NEWSBLUR.Preferences.reduce_motion === 1);
         $('input[name=dateformat]', $modal).each(function () {
             if ($(this).val() == "" + NEWSBLUR.Preferences.dateformat) {
                 $(this).prop('checked', true);
@@ -1778,6 +1812,10 @@ _.extend(NEWSBLUR.ReaderPreferences.prototype, {
             }
             if (self.original_preferences['days_of_unread'] != form['days_of_unread']) {
                 NEWSBLUR.reader.force_feeds_refresh();
+            }
+            if (form['realtime_new_stories'] === false) {
+                // reader_preferences.js: turning the pill off drops the stories it was holding.
+                NEWSBLUR.reader.clear_realtime_new_stories();
             }
             self.close();
         });

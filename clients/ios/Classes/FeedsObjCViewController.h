@@ -125,6 +125,7 @@ UIGestureRecognizerDelegate, UITextFieldDelegate> {
 - (void)selectWidgetStories;
 
 - (void)selectFolder:(NSString *)folder;
+- (void)expandFolderIfNecessary:(NSString *)folderName;
 - (void)selectFeed:(NSString *)feedId inFolder:(NSString *)folder;
 
 
@@ -163,6 +164,7 @@ UIGestureRecognizerDelegate, UITextFieldDelegate> {
 - (void)resetToolbar;
 - (void)layoutHeaderCounts:(UIInterfaceOrientation)orientation;
 - (void)refreshHeaderCounts;
+- (void)applyRealtimeUnreadCounts:(NSDictionary *)results;
 - (void)redrawFeedCounts:(id)feedId;
 
 - (void)resizePreviewSize;

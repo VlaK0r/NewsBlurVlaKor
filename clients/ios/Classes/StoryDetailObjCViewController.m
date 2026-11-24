@@ -121,8 +121,10 @@
     self.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     
     AVAudioSession *audioSession = [AVAudioSession sharedInstance];
-    [audioSession setCategory:AVAudioSessionCategoryPlayback
-                        error:nil];
+    // Embedded videos need playback in silent mode. Preserve ListenPlayer.swift's mixing settings if it owns playback.
+    if (![audioSession.category isEqualToString:AVAudioSessionCategoryPlayback]) {
+        [audioSession setCategory:AVAudioSessionCategoryPlayback error:nil];
+    }
     
     WKWebViewConfiguration *configuration = [WKWebViewConfiguration new];
     NSUserDefaults *preferences = [NSUserDefaults standardUserDefaults];
@@ -140,6 +142,8 @@
     self.webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.webView.navigationDelegate = self;
     self.webView.allowsLinkPreview = YES;
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateReaderMotionPreference)
+                                                name:ReaderMotion.preferenceDidChangeNotification object:nil];
     
     [self.webView.scrollView setDirectionalLockEnabled:YES];
     [self.webView.scrollView setAlwaysBounceVertical:appDelegate.storyPagesViewController.isHorizontal];
@@ -171,8 +175,7 @@
     tapGesture.numberOfTapsRequired = 1;
     tapGesture.delegate = self;
     [tapGesture requireGestureRecognizerToFail:doubleTapGesture];
-    // StoryDetailObjCViewController.m lets article scrolling win over a short image tap.
-    [tapGesture requireGestureRecognizerToFail:self.webView.scrollView.panGestureRecognizer];
+    // StoryDetailObjCViewController.m suppresses taps in scrollViewWillBeginDragging: so the article pan can reset independently.
     [self.webView addGestureRecognizer:tapGesture];
     
     UITapGestureRecognizer *doubleDoubleTapGesture = [[UITapGestureRecognizer alloc]
@@ -237,10 +240,12 @@
         CGPoint pt = [self pointForGesture:gestureRecognizer];
         if (pt.x == CGPointZero.x && pt.y == CGPointZero.y) return;
         if (inDoubleTap) return;
+        NSUInteger generation = self.storyLoadGeneration;
         // storyDetailView.js opens article images without triggering the reader's chrome gesture.
         CGPoint offset = self.webView.scrollView.contentOffset;
         [self.webView evaluateJavaScript:[NSString stringWithFormat:@"newsblurOpenImageAt(%f, %f, %f, %f, %f)",
                                          pt.x, pt.y, offset.x, offset.y, self.webView.bounds.size.width] completionHandler:^(id openedImage, NSError *error) {
+            if (generation != self.storyLoadGeneration || self.appDelegate.storyPagesViewController.currentPage != self) return;
             if ([openedImage isKindOfClass:NSNumber.class] && [openedImage boolValue]) return;
             if (![self isKindOfClass:StoryDetailViewController.class]) {
                 [self continueTapAtPoint:pt];
@@ -248,29 +253,21 @@
             }
             // Listen/ListenStoryBridge.swift jumps playback to a tapped paragraph of the story being read aloud.
             [(StoryDetailViewController *)self listenHandleTapAt:pt completion:^(BOOL handled) {
-                if (!handled) [self continueTapAtPoint:pt];
+                if (!handled && generation == self.storyLoadGeneration && self.appDelegate.storyPagesViewController.currentPage == self) {
+                    [self continueTapAtPoint:pt];
+                }
             }];
         }];
     }
 }
 
 - (void)continueTapAtPoint:(CGPoint)pt {
-    [self.webView evaluateJavaScript:[NSString stringWithFormat:@"linkAt(%li, %li, 'tagName');", (long)pt.x,(long)pt.y] completionHandler:^(NSString *tagName, NSError *error) {
-        // Special case to handle the story title, Train, Save, and Share buttons.
-        if ([self isTag:tagName equalTo:@"DIV"]) {
-            [self.webView evaluateJavaScript:[NSString stringWithFormat:@"linkAt(%li, %li, 'id');", (long)pt.x,(long)pt.y] completionHandler:^(NSString *identifier, NSError *error) {
-                [self.webView evaluateJavaScript:[NSString stringWithFormat:@"linkAt(%li, %li, 'outerHTML');", (long)pt.x,(long)pt.y] completionHandler:^(NSString *outerHTML, NSError *error) {
-                    if ([identifier isEqualToString:@"NB-story"] || ![outerHTML containsString:@"NB-"]) {
-                        [self.appDelegate.storyPagesViewController tappedStory];
-                    }
-                }];
-            }];
-
-            return;
-        }
-
-        // Ignore links, videos, and iframes (e.g. embedded YouTube videos).
-        if (![@[@"A", @"IMG", @"VIDEO", @"IFRAME"] containsObject:tagName]) {
+    NSUInteger generation = self.storyLoadGeneration;
+    CGPoint offset = self.webView.scrollView.contentOffset;
+    [self.webView evaluateJavaScript:[NSString stringWithFormat:@"newsblur_is_blank_story_tap_at(%f, %f, %f, %f, %f)",
+                                     pt.x, pt.y, offset.x, offset.y, self.webView.bounds.size.width] completionHandler:^(id blank, NSError *error) {
+        if (generation == self.storyLoadGeneration && self.appDelegate.storyPagesViewController.currentPage == self &&
+            [self canOpenStoryImageForAccessibility:NO] && [blank isKindOfClass:NSNumber.class] && [blank boolValue]) {
             [self.appDelegate.storyPagesViewController tappedStory];
         }
     }];
@@ -505,6 +502,16 @@
 #pragma mark -
 #pragma mark Story setup
 
+#if TARGET_OS_MACCATALYST
+- (void)setActiveStory:(NSMutableDictionary *)story {
+    // StoryDetailObjCViewController.m keeps an explicit unread marker with its story when article pages are reused.
+    if (![activeStory[@"story_hash"] isEqual:story[@"story_hash"]]) {
+        self.isRecentlyUnread = NO;
+    }
+    activeStory = story;
+}
+#endif
+
 - (void)initStory {
     appDelegate.inStoryDetail = YES;
     self.noStoryMessage.hidden = YES;
@@ -522,6 +529,10 @@
     [contentController removeScriptMessageHandlerForName:@"newsblurStoryImage"];
     [contentController addScriptMessageHandler:[[StoryReadyMessageHandler alloc] initWithPage:self]
                                          name:@"newsblurStoryImage"];
+    // Listen/ListenMediaStoryBridge.swift plays the story's audio cards in the app's player.
+    [contentController removeScriptMessageHandlerForName:@"newsblurStoryMedia"];
+    [contentController addScriptMessageHandler:[[StoryReadyMessageHandler alloc] initWithPage:self]
+                                         name:@"newsblurStoryMedia"];
     // Use HTTPS baseURL so YouTube embeds get a valid Referer header (fixes Error 153).
     // CSS/JS are inlined directly in the HTML to avoid custom scheme issues.
     static NSURL *baseURL;
@@ -924,6 +935,9 @@
     NSString *markJS = [assetCache textForResource:@"mark" ofType:@"js"];
     NSString *storyDetailJS = [assetCache textForResource:@"storyDetailView" ofType:@"js"];
     NSString *fastTouchJS = [assetCache textForResource:@"fastTouch" ofType:@"js"];
+    // Listen/ListenMediaStoryBridge.swift: labels and state for the audio cards storyDetailView.js draws. It goes
+    // ahead of the bundled scripts so those stay one unchanged run (StoryDetailAssetPerformanceTests.swift).
+    NSString *mediaConfigJS = [ListenMediaStoryBridge configScriptForStory:self.activeStory];
 
     // set up layout values based on iPad/iPhone
     headerString = [NSString stringWithFormat:@
@@ -936,8 +950,9 @@
                     "<script>%@</script>"
                     "<script>%@</script>"
                     "<script>%@</script>"
+                    "<script>%@</script>"
                     "<script>%@</script>",
-                    zeptoJS, fitvidJS, markJS, storyDetailJS, fastTouchJS];
+                    mediaConfigJS, zeptoJS, fitvidJS, markJS, storyDetailJS, fastTouchJS];
     
     sharingHtmlString = [self getSideOptions];
 
@@ -1629,7 +1644,12 @@
     }
     
     NSString *storyUnread = @"";
-    if ([appDelegate.storiesCollection isStoryUnread:self.activeStory]) {
+    BOOL showUnreadMarker = [appDelegate.storiesCollection isStoryUnread:self.activeStory];
+#if TARGET_OS_MACCATALYST
+    // StoryDetailObjCViewController.m avoids moving a prefetched Mac title when focus automatically marks it read.
+    showUnreadMarker = showUnreadMarker && self.isRecentlyUnread;
+#endif
+    if (showUnreadMarker) {
         NSInteger score = [NewsBlurAppDelegate computeStoryScore:[self.activeStory objectForKey:@"intelligence"]];
         storyUnread = [NSString stringWithFormat:@"<div class=\"NB-story-unread NB-%@\"></div>",
                        score > 0 ? @"positive" : score < 0 ? @"negative" : @"neutral"];
@@ -1662,7 +1682,8 @@
         NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:pattern options:NSRegularExpressionCaseInsensitive error:&error];
         if (!error && regex) {
             int regexScore = [[titleRegexClassifiers objectForKey:pattern] intValue];
-            NSArray<NSTextCheckingResult *> *matches = [regex matchesInString:storyTitle options:0 range:NSMakeRange(0, storyTitle.length)];
+            // TrainerRegexInput.swift stops a pattern that backtracks past its budget, leaving the title unmarked.
+            NSArray<NSTextCheckingResult *> *matches = [TrainerRegexMatcher matchesOf:regex in:storyTitle budget:TrainerRegexMatcher.drawingBudget] ?: @[];
             NSString *regexIcon = [self scoreIconHtml:regexScore];
             // Apply replacements in reverse order to preserve indices
             for (NSTextCheckingResult *match in [matches reverseObjectEnumerator]) {
@@ -1703,7 +1724,8 @@
                 NSError *error = nil;
                 NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:pattern options:NSRegularExpressionCaseInsensitive error:&error];
                 if (!error && regex) {
-                    NSTextCheckingResult *result = [regex firstMatchInString:storyPermalink options:0 range:NSMakeRange(0, storyPermalink.length)];
+                    // TrainerRegexInput.swift stops a pattern that backtracks past its budget, so it shows no URL match.
+                    NSTextCheckingResult *result = [TrainerRegexMatcher firstMatchOf:regex in:storyPermalink budget:TrainerRegexMatcher.drawingBudget];
                     if (result) {
                         matchScore = [[urlRegexClassifiers objectForKey:pattern] intValue];
                         matchedText = [storyPermalink substringWithRange:result.range];
@@ -1744,6 +1766,9 @@
         }
     }
 
+    // StoryDetailObjCViewController.m shows matched natural language prompts like the web's story header (AIClassifiers.swift).
+    NSString *storyAIClassifiers = [StoryAIClassifierPills headerHTMLFor:[self.activeStory objectForKey:@"prompt_classifiers"]];
+
     NSString *storyToggleChanges = [self.activeStory[@"has_modifications"] boolValue] ? [NSString stringWithFormat:@"<a href=\"http://ios.newsblur.com/togglechanges\" "
                                                                            "class=\"NB-story-toggle-changes\" id=\"NB-story-toggle-changes\">%@</a><span class=\"NB-middot\">&middot;</span>", [(self.activeStory[@"story_changes"] != nil ? [NBLocalization text:@"Hide Changes"] : [NBLocalization text:@"Show Changes"]) stringByEncodingHTMLEntities]] : @"";
     
@@ -1763,6 +1788,7 @@
                              "%@"
                              "%@"
                              "%@"
+                             "%@"
                              "</div></div>",
                              [self contentDirectionAttribute],
                              storyUnread,
@@ -1773,6 +1799,7 @@
                              storyAuthor,
                              storyTags,
                              storyUrlMatch,
+                             storyAIClassifiers,
                              storyStarred,
                              storyUserTags];
     return storyHeader;
@@ -2454,12 +2481,26 @@
             [self refreshHeader];
         }
 
+        StoryPagesObjCViewController *pagesVC = appDelegate.storyPagesViewController;
+        CGFloat revealDelta = deltaY;
+        if (deltaY > 0 || atTopForFade) {
+            pagesVC.traverseUpwardAccumulator = 0.0;
+        } else if (deltaY < 0) {
+            // StoryDetailObjCViewController.m shares the toolbar's upward intent threshold with traversal on every platform.
+            CGFloat threshold = pagesVC.toolbarScrollHandler ? pagesVC.toolbarScrollHandler.showThreshold : 20.0;
+            if (self.lastDragDirectionDown) {
+                revealDelta = 0;
+            } else {
+                pagesVC.traverseUpwardAccumulator += -deltaY;
+                if (insetAdjustedTop >= 50 && pagesVC.traverseUpwardAccumulator <= threshold) revealDelta = 0;
+            }
+        }
+
 #if !TARGET_OS_MACCATALYST
         if (!atTopForFade) {
             self.hasScrolledAwayFromTop = YES;
         }
 
-        StoryPagesObjCViewController *pagesVC = appDelegate.storyPagesViewController;
         if (pagesVC.isCustomToolbarActive) {
             // Scroll-based toolbar: translate toolbar with scroll deltas
             // Only reset toolbar when user actively scrolls to top (not on programmatic/bounce scrolls)
@@ -2492,7 +2533,7 @@
                 // At top (first load) or at bottom: hold current nav bar state
             } else if (self.canHideNavigationBar) {
                 CGFloat fadeDistance = 80.0;
-                CGFloat newAccum = pagesVC.navBarFadeAccumulator + deltaY;
+                CGFloat newAccum = pagesVC.navBarFadeAccumulator + revealDelta;
                 newAccum = MAX(0.0, MIN(fadeDistance, newAccum));
                 pagesVC.navBarFadeAccumulator = newAccum;
                 CGFloat alpha = 1.0 - (newAccum / fadeDistance);
@@ -2509,11 +2550,10 @@
         }
 
         if (!atTopForFade && !atBottom && !singlePage) {
-            StoryPagesObjCViewController *pagesVC = appDelegate.storyPagesViewController;
             CGFloat traverseFadeDistance = 80.0;
             BOOL isUserTraverseScroll = self.isUserScrolling && (isUserDragging || scrollView.isDecelerating);
             CGFloat newAccum = [StoryTraverseFadeDecision accumulatorWithCurrentAccumulator:pagesVC.traverseFadeAccumulator
-                                                                                     deltaY:deltaY
+                                                                                     deltaY:revealDelta
                                                                                fadeDistance:traverseFadeDistance
                                                                                isUserScroll:isUserTraverseScroll];
             pagesVC.traverseFadeAccumulator = newAccum;
@@ -2876,6 +2916,11 @@
                          yCoordinate:[[urlComponents objectAtIndex:3] intValue]
                                width:[[urlComponents objectAtIndex:4] intValue]
                               height:[[urlComponents objectAtIndex:5] intValue]];
+            decisionHandler(WKNavigationActionPolicyCancel);
+            return;
+        } else if ([action isEqualToString:@"train"]) {
+            // StoryDetailObjCViewController.m still opens the trainer if a header pill's tap arrives without coordinates.
+            [self openTrainingDialog:0 yCoordinate:0 width:0 height:0];
             decisionHandler(WKNavigationActionPolicyCancel);
             return;
         } else if ([action isEqualToString:@"save"]) {
@@ -3302,9 +3347,17 @@
     self.webView.accessibilityElementsHidden = NO;
     if (ReaderPerformance.recordsUITestPresentation) NSLog(@"[ReaderPresentation] fadePreparedStory hash=%@ page=%p gen=%lu", self.activeStoryId, self, (unsigned long)self.storyLoadGeneration);
     // StoryDetailObjCViewController.m reveals only the finished document; native reader controls are already usable.
-    [UIView animateWithDuration:UIAccessibilityIsReduceMotionEnabled() ? 0 : .14
+    NSString *entrance = [NSString stringWithFormat:@"newsblurAnimateStoryEntrance(%@)", ReaderMotion.reduceMotion ? @"true" : @"false"];
+    [self.webView evaluateJavaScript:entrance completionHandler:nil];
+    [UIView animateWithDuration:.14
                           delay:0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
                      animations:^{ self.webView.alpha = 1; } completion:nil];
+}
+
+- (void)updateReaderMotionPreference {
+    // StoryDetailObjCViewController.m updates comments arriving after the preference changes without replaying the article.
+    NSString *script = [NSString stringWithFormat:@"newsblurReduceMotion = %@", ReaderMotion.reduceMotion ? @"true" : @"false"];
+    [self.webView evaluateJavaScript:script completionHandler:nil];
 }
 
 - (void)finishPreparingStoryPresentation {
@@ -3855,7 +3908,7 @@
                           shareBarString];
     NSString *shareType = appDelegate.activeShareType;
     [self.webView evaluateJavaScript:jsString completionHandler:^(id result, NSError * _Nullable error) {
-        [self.webView evaluateJavaScript:@"attachFastClick();" completionHandler:^(id result, NSError * _Nullable error) {
+        [self.webView evaluateJavaScript:@"attachFastClick(); newsblurRefreshStoryMotion();" completionHandler:^(id result, NSError * _Nullable error) {
             // HACK to make the scroll event happen after the replace innerHTML event above happens.
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, .15 * NSEC_PER_SEC),
                            dispatch_get_main_queue(), ^{
@@ -4090,7 +4143,7 @@
                           clusterStoriesString];
 
     [self.webView evaluateJavaScript:jsString completionHandler:^(id result, NSError *error) {
-        [self.webView evaluateJavaScript:@"if (typeof attachFastClick === 'function') { attachFastClick(); }" completionHandler:nil];
+        [self.webView evaluateJavaScript:@"if (typeof attachFastClick === 'function') { attachFastClick(); } newsblurRefreshStoryMotion();" completionHandler:nil];
         [self applyClassifierHighlights];
     }];
 }
@@ -4102,7 +4155,7 @@
                           sideOptionsString];
     
     [self.webView evaluateJavaScript:jsString completionHandler:^(id result, NSError *error) {
-        [self.webView evaluateJavaScript:@"if (typeof attachFastClick === 'function') { attachFastClick(); }" completionHandler:nil];
+        [self.webView evaluateJavaScript:@"if (typeof attachFastClick === 'function') { attachFastClick(); } newsblurRefreshStoryMotion();" completionHandler:nil];
     }];
 }
 

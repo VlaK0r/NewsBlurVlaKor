@@ -109,6 +109,13 @@ interface SyncServiceState {
     ): Boolean
 
     /**
+     * NewStoriesPill.kt replaced the open list with its newest stories: page the list from its first page again, as
+     * opening it does, without clearing those stories. The reading session lists each story once, so later pages
+     * skip them.
+     */
+    fun restartPaging(fs: FeedSet)
+
+    /**
      * Resets any internal temp vars or queues. Called when switching accounts.
      */
     fun clearState()
@@ -150,6 +157,10 @@ interface SyncServiceState {
     fun isHousekeepingRunning(): Boolean
 
     fun isFeedCountSyncRunning(): Boolean
+
+    fun isSyncRunning(): Boolean
+
+    fun isStoryContentSyncRunning(): Boolean
 }
 
 @Singleton
@@ -192,6 +203,7 @@ class DefaultSyncServiceState
         override var authFails: Int = 0
 
         private val _exhaustedFeeds = mutableSetOf<FeedSet>()
+
         private val _feedPagesSeen = mutableMapOf<FeedSet, Int>()
         private val _feedStoriesSeen = mutableMapOf<FeedSet, Int>()
         private val _recountCandidates = mutableSetOf<FeedSet>()
@@ -349,6 +361,16 @@ class DefaultSyncServiceState
             return true
         }
 
+        override fun restartPaging(fs: FeedSet) {
+            synchronized(pendingFeedMutex) {
+                // A page of the old paging still in flight would land in the new paging's place; drop it.
+                sessionGeneration.incrementAndGet()
+                _exhaustedFeeds.remove(fs)
+                _feedPagesSeen[fs] = 0
+                _feedStoriesSeen[fs] = 0
+            }
+        }
+
         override fun clearState() {
             synchronized(pendingFeedMutex) {
                 tryFeedRefresh = null
@@ -433,6 +455,15 @@ class DefaultSyncServiceState
         override fun isHousekeepingRunning(): Boolean = serviceState.value is ServiceState.Housekeeping
 
         override fun isFeedCountSyncRunning(): Boolean = isFeedFolderSyncRunning() || serviceState.value is ServiceState.RecountsSync
+
+        // SyncServiceState.kt keeps message-less prefetch phases active until the service explicitly goes idle.
+        override fun isSyncRunning(): Boolean = serviceState.value != ServiceState.Idle
+
+        // SyncServiceState.kt leaves offline unread-download counts visible on the feed list.
+        override fun isStoryContentSyncRunning(): Boolean = when (serviceState.value) {
+            ServiceState.StorySync, ServiceState.ImagePrefetchSync -> true
+            else -> false
+        }
     }
 
 interface ServiceState {

@@ -103,6 +103,7 @@
 @property (nonatomic) BOOL temporarilyMarkedUnread;
 @property (nonatomic) CGFloat navBarFadeAccumulator;
 @property (nonatomic) CGFloat traverseFadeAccumulator;
+@property (nonatomic) CGFloat traverseUpwardAccumulator;
 @property (nonatomic, strong) StoryToolbar *storyToolbar;
 @property (nonatomic, strong) StoryToolbarScrollHandler *toolbarScrollHandler;
 
@@ -126,6 +127,7 @@
 - (void)refreshPages;
 - (void)reorientPages;
 - (void)preserveCurrentPageAtLocation:(NSInteger)location;
+- (void)relayoutPagesKeepingCurrentPageAtLocation:(NSInteger)location;
 - (void)refreshHeaders;
 - (void)setStoryFromScroll;
 - (void)setStoryFromScroll:(BOOL)force;

@@ -168,7 +168,7 @@ html[dir="rtl"] .NB-story blockquote:dir(rtl) {
     border-color: rgba(255, 255, 255, .3) rgba(0, 0, 0, .2) rgba(0, 0, 0, .3) rgba(255, 255, 255, .2);
 }
 .NB-button.NB-share-button div {
-    color: rgba(80, 60, 30, 0.4);
+    color: rgba(80, 60, 30, 0.8);
     text-shadow: none;
     border: 0.5px solid rgba(80, 60, 30, 0.15);
     background: rgba(80, 60, 30, 0.05);
@@ -189,7 +189,7 @@ html[dir="rtl"] .NB-story blockquote:dir(rtl) {
 
 .NB-button.NB-share-button:active div,
 .NB-button.NB-share-button.NB-button-active div {
-    color: rgba(80, 60, 30, 0.6);
+    color: rgba(80, 60, 30, 0.9);
     background: rgba(80, 60, 30, 0.1);
     text-shadow: none;
 }
@@ -329,4 +329,25 @@ html[dir="rtl"] .NB-story blockquote:dir(rtl) {
 }
 span.NB-listen-run.NB-listen-highlight {
     box-shadow: none;
+}
+
+
+/* AI Classifier Pills: storyDetailViewSepia.css warms the pill edge to match the sepia tags */
+.NB-story-ai-classifier {
+    border-color: rgba(255, 255, 255, .3) transparent rgba(60, 50, 38, .15);
+}
+
+/* storyDetailViewSepia.css: story audio pills (storyDetailView.css .NB-media-card), shaded like this theme's
+   .NB-story-tag and .NB-story-tag-positive. */
+#NB-story .NB-media-card-play {
+    border-color: rgba(255, 255, 255, .3) transparent rgba(0, 0, 0, .1);
+}
+#NB-story .NB-media-card-actions a {
+    background-color: rgba(0, 0, 0, .08);
+    border-color: rgba(255, 255, 255, .3) transparent rgba(0, 0, 0, .1);
+    color: #8B7B6B;
+    text-shadow: 0 1px 0 rgba(245, 230, 211, .9);
+}
+#NB-story .NB-media-card-actions a:active {
+    background-color: rgba(0, 0, 0, .14);
 }

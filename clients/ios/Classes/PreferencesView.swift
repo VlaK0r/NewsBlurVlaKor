@@ -602,6 +602,13 @@ class PreferencesViewModel: ObservableObject {
                             defaultValue: "related"
                         ),
                         subtitle: NBLocalization.text("Choose whether clusters show only duplicate titles or also related stories")
+                    ),
+                    PreferenceItem(
+                        title: NBLocalization.text("Show new stories as they arrive"),
+                        icon: "arrow.up.circle",
+                        iconColor: .blue,
+                        type: .toggle(key: RealtimeNewStories.settingKey, defaultValue: true),
+                        subtitle: NBLocalization.text("Shows an \"N new stories\" pill when stories arrive in the open feed or folder.")
                     )
                 ]
             ),
@@ -791,9 +798,9 @@ class PreferencesViewModel: ObservableObject {
                 ]
             ),
 
-            // MARK: Theme Section
+            // MARK: Appearance Section
             PreferenceSection(
-                title: NBLocalization.text("Theme"),
+                title: NBLocalization.text("Appearance"),
                 icon: "paintbrush",
                 iconColor: .pink,
                 items: [
@@ -839,6 +846,13 @@ class PreferencesViewModel: ObservableObject {
                         iconColor: .purple,
                         type: .toggle(key: "theme_gesture", defaultValue: true),
                         subtitle: NBLocalization.text("Swipe up/down with two fingers to change theme")
+                    ),
+                    PreferenceItem(
+                        title: NBLocalization.text("Reduce motion"),
+                        icon: "figure.stand",
+                        iconColor: .indigo,
+                        type: .toggle(key: "reduce_motion", defaultValue: false),
+                        subtitle: NBLocalization.text("Keep fades, without movement.")
                     )
                 ]
             ),
@@ -1225,7 +1239,7 @@ class PreferencesViewModel: ObservableObject {
                 PreferenceItem(title: NBLocalization.text("Column layout"), icon: "rectangle.split.3x1", iconColor: .blue,
                                type: .multiValue(key: "split_behavior",
                                                  titles: [NBLocalization.text("Automatic"), NBLocalization.text("Three columns"), NBLocalization.text("Two columns"), NBLocalization.text("One column")],
-                                                 values: ["auto", "tile", "displace", "overlay"], defaultValue: "auto")),
+                                                 values: ["auto", "tile", "displace", "overlay"], defaultValue: "tile")),
                 PreferenceItem(title: NBLocalization.text("Dashboard"), icon: "rectangle.grid.2x2", iconColor: .purple,
                                type: .multiValue(key: "dashboard_layout",
                                                  titles: [NBLocalization.text("Hidden"), NBLocalization.text("Single column"), NBLocalization.text("Two columns"), NBLocalization.text("Two rows")],
@@ -1320,6 +1334,10 @@ class PreferencesViewModel: ObservableObject {
     }
 
     func valueChanged(key: String, value: Any) {
+        if key == "reduce_motion" { ReaderMotion.preferencesDidChange() }
+        if key == RealtimeNewStories.settingKey {
+            MainActor.assumeIsolated { RealtimeUpdates.shared.newStoriesSettingDidChange() }
+        }
         if key == "enable_feed_swipes" || key == "enable_story_swipes" {
             withAnimation(.easeInOut(duration: 0.2)) { updateHiddenKeys() }
         } else {
@@ -1714,7 +1732,7 @@ struct ToggleItemView: View {
                     Text(subtitle)
                         .font(.system(size: 12))
                         .foregroundColor(PreferencesColors.textSecondary)
-                        .lineLimit(2)
+                        .lineLimit(3)
                 }
 
                 if key == "story_clustering" {

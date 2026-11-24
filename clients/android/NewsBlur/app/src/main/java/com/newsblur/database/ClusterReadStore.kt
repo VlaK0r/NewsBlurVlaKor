@@ -18,9 +18,16 @@ class ClusterReadStore(private val db: SQLiteDatabase) : ClusterReadRepository.B
     fun apply(hashes: Collection<String>, read: Boolean, adjustCounts: Boolean, actionTime: Long? = null): Set<FeedSet> =
         ClusterReadRepository(this).apply(hashes, read, adjustCounts, actionTime)
 
-    fun applyBulkRead(selection: String?, actionTime: Long) {
+    /**
+     * SyncService.kt replays a synced mark-all-read after each later page of stories loads. A replay
+     * only restores what the action covered: stories published after it are still unread on the server.
+     * The first application is left unbounded so everything on screen is marked whatever the device clock says.
+     */
+    fun applyBulkRead(selection: String?, actionTime: Long, replay: Boolean) {
         val hashes = mutableListOf<String>()
-        db.query(DatabaseConstants.STORY_TABLE, arrayOf("story_hash"), selection, null, null, null, null).use {
+        val publishedBeforeAction = "${DatabaseConstants.STORY_TIMESTAMP} <= $actionTime".takeIf { replay }
+        val bounded = listOfNotNull(selection, publishedBeforeAction).joinToString(" AND ") { "($it)" }.ifEmpty { null }
+        db.query(DatabaseConstants.STORY_TABLE, arrayOf("story_hash"), bounded, null, null, null, null).use {
             while (it.moveToNext()) hashes.add(it.getString(0))
         }
         ClusterReadRepository(this).applyBulkRead(hashes, actionTime)
@@ -96,6 +103,10 @@ class ClusterReadStore(private val db: SQLiteDatabase) : ClusterReadRepository.B
         if (candidates.isNotEmpty()) reconcileServerReadState(candidates, false, requestStartedAt)
         return UnreadReconciliationStats(inspectedChildren.size, retired.size)
     }
+
+    fun applyRemote(hashes: Collection<String>, read: Boolean): Set<FeedSet> = ClusterReadRepository(this).applyRemote(hashes, read)
+
+    fun withoutLocalCopy(hashes: Collection<String>): Set<String> = ClusterReadRepository(this).withoutLocalCopy(hashes)
 
     fun reconcileServerReadState(hashes: Collection<String>, read: Boolean, requestStartedAt: Long) {
         ClusterReadRepository(this).reconcileServerReadState(hashes, read, requestStartedAt)

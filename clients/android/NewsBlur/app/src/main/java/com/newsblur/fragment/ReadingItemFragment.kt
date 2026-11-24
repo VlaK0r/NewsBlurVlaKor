@@ -52,6 +52,7 @@ import com.newsblur.design.ListenPalette
 import com.newsblur.di.IconLoader
 import com.newsblur.di.StoryImageCache
 import com.newsblur.domain.Classifier
+import com.newsblur.domain.PromptClassifierMatch
 import com.newsblur.domain.CustomIcon
 import com.newsblur.domain.Story
 import com.newsblur.image.StoryImageViewerHost
@@ -109,6 +110,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONException
+import org.json.JSONObject
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.regex.Pattern
@@ -172,6 +175,9 @@ class ReadingItemFragment :
     private var listenRowSize = 0
     private var scrollTouching = false
     private var listenShowedText = false
+
+    // The audio file Listen's player has loaded and how it's going, for storyMedia.js's cards in this story.
+    private var mediaCardState = MediaCardState(url = null, state = "")
     private var lastScrollTouchAt = 0L
 
     @JvmField
@@ -218,6 +224,7 @@ class ReadingItemFragment :
     private val isWebLoadFinished = AtomicBoolean(false)
     private var isWebVisualStateReady = false
     private var nativeHeaderStoryHash: String? = null
+    private var controlMotion: com.newsblur.view.ReaderControlMotion? = null
     private val articleReveal = ReaderArticleReveal {
         syncStoryLoadingUi()
         story?.storyHash?.let { hash ->
@@ -387,6 +394,8 @@ class ReadingItemFragment :
     }
 
     override fun onDestroyView() {
+        controlMotion?.close()
+        controlMotion = null
         clearBottomInsetListener?.run()
         clearBottomInsetListener = null
         // A photo host that never started must not keep this fragment, its WebView, or the preview alive.
@@ -436,6 +445,7 @@ class ReadingItemFragment :
         ensureReadingWebview().resumeTimers()
         ensureReadingWebview().onResume()
         articleReveal.resume()
+        animateHeaderEntrance()
         story?.storyHash?.let { (activity as? Reading)?.onReaderPageNativeReady(it) }
     }
 
@@ -507,10 +517,10 @@ class ReadingItemFragment :
             story?.storyHash?.let { (activity as? Reading)?.onReaderPageNativeReady(it) }
         }
 
-        readingItemActionsBinding.trainStoryButton.setOnClickListener { openStoryTrainer() }
-        readingItemActionsBinding.saveStoryButton.setOnClickListener { switchStorySavedState() }
-        readingItemActionsBinding.shareStoryButton.setOnClickListener { openShareDialog() }
-        readingItemActionsBinding.askAiStoryButton.setOnClickListener { openAskAiDialog() }
+        readingItemActionsBinding.trainStoryButton.setOnClickListener { com.newsblur.view.ReaderMotion.pop(it); openStoryTrainer() }
+        readingItemActionsBinding.saveStoryButton.setOnClickListener { com.newsblur.view.ReaderMotion.pop(it); switchStorySavedState() }
+        readingItemActionsBinding.shareStoryButton.setOnClickListener { com.newsblur.view.ReaderMotion.pop(it); openShareDialog() }
+        readingItemActionsBinding.askAiStoryButton.setOnClickListener { com.newsblur.view.ReaderMotion.pop(it); openAskAiDialog() }
         readingItemActionsBinding.listenStoryButton.setOnClickListener { listenToStory() }
         readingItemActionsBinding.listenQueueButton.setOnClickListener { toggleUpNext() }
 
@@ -523,6 +533,13 @@ class ReadingItemFragment :
                         .map(::listenButtonLook)
                         .distinctUntilChanged()
                         .collect(::applyListenButtonLook)
+                }
+                launch {
+                    // Only the loaded file and whether it plays change the audio cards, not every 200ms tick.
+                    listenManager.state
+                        .map(::mediaCardStateOf)
+                        .distinctUntilChanged()
+                        .collect(::applyMediaCardState)
                 }
                 combine(listenManager.state, listenPreferences.settings) { state, settings -> state to settings.highlight }
                     .collect { (state, highlight) ->
@@ -920,6 +937,7 @@ class ReadingItemFragment :
         listenRowSize = rows.firstOrNull { actions.listenStoryButtonContainer in it }?.size ?: 0
         val signature = rows.map { row -> row.map { it.id } }
         if (signature == lastStoryButtonRows) return
+        controlMotion?.invalidate()
         lastStoryButtonRows = signature
 
         buttons.forEach { (_, view) -> (view.parent as? ViewGroup)?.removeView(view) }
@@ -985,6 +1003,7 @@ class ReadingItemFragment :
     }
 
     private fun applyListenButtonLook(look: ListenButtonLook) {
+        controlMotion?.invalidate()
         val actions = readingItemActionsBinding
         val showsUpNext = look.upNext != UpNextButton.HIDDEN
         // A Listen cell sharing a four-button row is too narrow for its label beside the Up Next button.
@@ -1060,6 +1079,74 @@ class ReadingItemFragment :
         )
     }
 
+    /**
+     * A tap on an audio card from storyMedia.js, through NewsblurWebview.java: play the file in Listen's player, or
+     * queue it first or last in Up Next like the web's Play Next and Play Last.
+     */
+    fun onMediaMessage(
+        webview: NewsblurWebview,
+        json: String,
+    ) {
+        if (webview !== readingWebview) return
+        val currentStory = story ?: return
+        val (action, url) =
+            try {
+                val message = JSONObject(json)
+                if (message.optString("type") != "media") return
+                message.getString("action") to message.getString("url")
+            } catch (_: JSONException) {
+                return
+            }
+        // Only web addresses ever reach the player, whatever a story's own scripts might post.
+        val scheme = Uri.parse(url).scheme?.lowercase(Locale.ROOT)
+        if (scheme != "http" && scheme != "https") return
+        when (action) {
+            MEDIA_ACTION_PLAY -> listenManager.playMedia(currentStory, url)
+            MEDIA_ACTION_NEXT, MEDIA_ACTION_LAST -> {
+                val position = listenManager.queueMedia(currentStory, url, playNext = action == MEDIA_ACTION_NEXT) ?: return
+                // ICU's ordinal keeps "2nd" right in every language.
+                val message =
+                    MessageFormat(getString(R.string.listen_added_to_up_next), Locale.getDefault())
+                        .format(arrayOf<Any>(position))
+                showUpNextMessage(message)
+            }
+        }
+    }
+
+    /** The audio cards' labels, which storyMedia.js can't read from strings.xml itself. */
+    private fun mediaCardLabels(): Map<String, String> =
+        mapOf(
+            "play" to getString(R.string.listen_media_play),
+            "pause" to getString(R.string.listen_pause),
+            "resume" to getString(R.string.listen_resume),
+            "play_next" to getString(R.string.listen_media_play_next),
+            "play_last" to getString(R.string.listen_media_play_last),
+        )
+
+    /** Which file Listen's player has loaded and whether it's playing, paused or loading, for storyMedia.js. */
+    private data class MediaCardState(
+        val url: String?,
+        val state: String,
+    )
+
+    private fun mediaCardStateOf(state: ListenUiState): MediaCardState {
+        val url = state.story?.media?.url ?: return MediaCardState(url = null, state = "")
+        val look =
+            when {
+                state.isLoading && state.playWhenReady -> "loading"
+                state.showsPause -> "playing"
+                else -> "paused"
+            }
+        return MediaCardState(url, look)
+    }
+
+    private fun applyMediaCardState(cards: MediaCardState) {
+        mediaCardState = cards
+        if (isWebViewReleasedForBackground || !isWebLoadFinished.get()) return
+        val url = JSONObject.quote(cards.url.orEmpty())
+        readingWebview?.evaluateJavascript("window.NB_media_set_state && NB_media_set_state($url, '${cards.state}');", null)
+    }
+
     /** A paragraph tap from listenFollowAlong.js, through NewsblurWebview.java. */
     fun onListenMessage(
         webview: NewsblurWebview,
@@ -1084,6 +1171,7 @@ class ReadingItemFragment :
     }
 
     private fun updateSaveButton() {
+        controlMotion?.invalidate()
         readingItemActionsBinding.saveStoryButton.setText(if (story!!.starred) R.string.unsave_this else R.string.save_this)
     }
 
@@ -1093,6 +1181,7 @@ class ReadingItemFragment :
     }
 
     private fun updateShareButton() {
+        controlMotion?.invalidate()
         for (userId in story!!.sharedUserIds) {
             if (userId == this@ReadingItemFragment.userId!!) {
                 readingItemActionsBinding.shareStoryButton.setText(R.string.already_shared)
@@ -1175,9 +1264,9 @@ class ReadingItemFragment :
 
         binding.readingItemDate.text = StoryUtils.formatLongDate(requireContext(), story!!.timestamp)
 
-        if (story!!.tags.isEmpty()) {
-            binding.readingItemTags.visibility = View.GONE
-        }
+        // ReadingItemFragment.kt shares the tag row with the AI filter chips from setupTagsAndIntel.
+        binding.readingItemTags.visibility =
+            if (story!!.tags.isEmpty() && story!!.promptClassifiers.isNullOrEmpty()) View.GONE else View.VISIBLE
 
         if (selectedViewMode == DefaultFeedView.STORY && story!!.hasModifications) {
             binding.readingStoryChanges.visibility = View.VISIBLE
@@ -1214,6 +1303,7 @@ class ReadingItemFragment :
 
         setupTagsAndIntel()
         nativeHeaderStoryHash = story?.storyHash
+        animateHeaderEntrance()
     }
 
     private fun setupTagsAndIntel() {
@@ -1256,6 +1346,11 @@ class ReadingItemFragment :
             }
 
             binding.readingItemTags.addView(v)
+        }
+
+        // Matched AI prompts explain why a story is focused or hidden, even past a disliked author.
+        for (match in story!!.promptClassifiers.orEmpty()) {
+            binding.readingItemTags.addView(createAiFilterChip(match))
         }
 
         setupUserTags()
@@ -1336,6 +1431,7 @@ class ReadingItemFragment :
             prefsRepo.getResolvedTheme(requireContext()),
         )
         if (snapshot == lastClusterSnapshot) return
+        controlMotion?.invalidate()
         lastClusterSnapshot = snapshot
         binding.readingStoryClusterList.removeAllViews()
 
@@ -1358,12 +1454,12 @@ class ReadingItemFragment :
         visibleClusterStories.forEachIndexed { index, clusterStory ->
             val clusterView =
                 layoutInflater.inflate(R.layout.view_story_cluster_item, binding.readingStoryClusterList, false)
+            clusterView.tag = clusterStory.storyHash
 
             bindClusterItemView(
                 clusterView = clusterView,
                 clusterStory = clusterStory,
                 showDivider = index > 0,
-                maxTitleLines = 1,
                 onClick = {
                     when (
                         val target =
@@ -1442,7 +1538,6 @@ class ReadingItemFragment :
         clusterView: View,
         clusterStory: Story.ClusterStory,
         showDivider: Boolean,
-        maxTitleLines: Int,
         onClick: () -> Unit,
     ) {
         val palette = StoryClusterThemeStyle.palette(prefsRepo.getResolvedTheme(requireContext()))
@@ -1478,7 +1573,6 @@ class ReadingItemFragment :
         dateView.setTextColor(if (isRead) palette.readMetaColor else palette.metaColor)
 
         titleView.text = UIUtils.fromHtml(clusterStory.title ?: "")
-        titleView.maxLines = maxTitleLines
         titleView.setTextColor(if (isRead) palette.readTitleColor else palette.titleColor)
         StoryClusterBadgeViewBinder.bind(
             badgeView,
@@ -1577,6 +1671,31 @@ class ReadingItemFragment :
     }
 
     private fun isArchiveUser(): Boolean = prefsRepo.getIsArchive() || prefsRepo.getIsPro()
+
+    private fun createAiFilterChip(match: PromptClassifierMatch): View {
+        val v = layoutInflater.inflate(R.layout.chip_view, null)
+        val chip: Chip = v.findViewById(R.id.chip)
+        chip.text = aiFilterChipText(requireContext(), match)
+        chip.ellipsize = TextUtils.TruncateAt.END
+        if (match.isFocus) {
+            chip.setChipBackgroundColorResource(R.color.tag_green)
+            chip.setTextColor(ContextCompat.getColor(requireContext(), R.color.tag_green_text))
+            chip.chipIcon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_thumb_up_green)
+        } else {
+            chip.setChipBackgroundColorResource(R.color.tag_red)
+            chip.setTextColor(ContextCompat.getColor(requireContext(), R.color.tag_red_text))
+            chip.chipIcon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_thumb_down_red)
+        }
+        // Like the tag chips above, tapping opens the trainer, whose AI sections hold this prompt.
+        if (!(fs!!.isAllSaved || fs!!.singleSavedTag != null)) {
+            v.setOnClickListener {
+                if (story!!.feedId == "0") return@setOnClickListener // cannot train on feedless stories
+                val intelFrag = StoryIntelTrainerFragment.newInstance(story, fs)
+                intelFrag.show(parentFragmentManager, StoryIntelTrainerFragment::class.java.name)
+            }
+        }
+        return v
+    }
 
     private fun createTagChip(
         tag: String,
@@ -1799,6 +1918,7 @@ class ReadingItemFragment :
         if (activity == null || view == null) return
         if (isWebViewReleasedForBackground && !isRestoringReleasedWebView) return
         val size = prefsRepo.getReadingTextSize()
+        val mediaLabels = mediaCardLabels()
         val request =
             ReaderHtmlRequest(
                 content = content,
@@ -1832,6 +1952,7 @@ class ReadingItemFragment :
                                 enableHighlights = request.enableHighlights,
                                 classifier = bodyClassifier,
                                 interfaceRtl = request.interfaceRtl,
+                                mediaLabels = mediaLabels,
                             ),
                     )
                 }
@@ -1885,6 +2006,7 @@ class ReadingItemFragment :
         if (!isWebLoadFinished.getAndSet(true)) {
             ensureReadingWebview().evaluateJavascript("loadImages();", null)
             listenFollower?.onDocumentLoaded()
+            applyMediaCardState(mediaCardState)
         }
         maybeFinishInitialStoryRender()
         checkLoadStatus()
@@ -1896,6 +2018,45 @@ class ReadingItemFragment :
         articleReveal.ready()
         maybeFinishInitialStoryRender()
         story?.storyHash?.let { (activity as? Reading)?.onReaderPageVisualReady(it) }
+    }
+
+    private fun animateHeaderEntrance() {
+        controlMotion?.invalidate()
+        if (nativeHeaderStoryHash == null || !isResumed || !::binding.isInitialized || controlMotion != null) return
+        controlMotion = com.newsblur.view.ReaderControlMotion(binding.root, ::readerMotionControls, { isResumed })
+    }
+
+    private fun readerMotionControls(): List<com.newsblur.view.ReaderControlMotion.Control> {
+        val actions = readingItemActionsBinding
+        val controls = mutableListOf<com.newsblur.view.ReaderControlMotion.Control>()
+        fun add(view: View, identity: Any = view.id, state: Any? = (view as? TextView)?.text?.toString()) {
+            controls.add(com.newsblur.view.ReaderControlMotion.Control(view, identity,
+                listOf(state, view.isEnabled, view.contentDescription?.toString())))
+        }
+        listOf(binding.readingFeedTitle, binding.readingItemTitle, binding.readingItemDate, binding.readingItemAuthors,
+            actions.trainStoryButton, actions.saveStoryButton, actions.shareStoryButton, actions.askAiStoryButton,
+            binding.readingStoryClusterTitle, binding.readingStoryClusterMore,
+        ).forEach { add(it) }
+        add(actions.readingFriendCommentHeader, state = actions.readingFriendCommentTotal.text.toString())
+        add(actions.readingFriendEmptyshareHeader, state = actions.readingFriendEmptyshareTotal.text.toString())
+        add(actions.readingPublicCommentHeader, state = actions.readingPublicCommentTotal.text.toString())
+        add(actions.listenStoryButtonContainer, state = actions.listenStoryButton.contentDescription?.toString())
+        add(actions.listenQueueButton)
+        for (id in listOf(R.id.shared_by, R.id.comment_by)) binding.root.findViewById<View>(id)?.let { add(it) }
+        // ReadingItemFragment.kt keys rebuilt social/cluster rows by content, so unchanged controls do not replay.
+        for (id in listOf(R.id.reading_social_shareimages, R.id.reading_social_commentimages,
+            R.id.reading_story_cluster_list, R.id.reading_friend_comment_container,
+            R.id.reading_friend_emptyshare_container, R.id.reading_public_comment_container)) {
+            val group = binding.root.findViewById<ViewGroup>(id) ?: continue
+            for (index in 0 until group.childCount) {
+                val child = group.getChildAt(index)
+                val identity = id to (child.tag ?: index)
+                val text = (child.findViewById<TextView>(R.id.comment_text)
+                    ?: child.findViewById<TextView>(R.id.story_cluster_title))?.text?.toString()
+                add(child, identity, text)
+            }
+        }
+        return controls
     }
 
     fun isNativeHeaderReady(storyHash: String): Boolean =
@@ -1931,6 +2092,7 @@ class ReadingItemFragment :
 
     /** The social UI has finished loading from the DB.  */
     fun onSocialLoadFinished() {
+        controlMotion?.invalidate()
         isSocialLoadFinished = true
         checkLoadStatus()
     }
@@ -2312,34 +2474,57 @@ class ReadingItemFragment :
         webview.setBackgroundColor(Color.TRANSPARENT)
         articleReveal.prepare(webview)
         syncStoryLoadingUi()
-        webview.setOnTouchListener(
-            com.newsblur.view.ReaderTapGestures(webview) { twoFingers ->
-                val action =
-                    if (twoFingers) {
-                        prefsRepo.getReaderGesture("reader_two_finger_double_tap", "text")
-                    } else {
-                        prefsRepo.getReaderGesture("reader_double_tap", "original")
-                    }
-                if (webview.hitTestResult?.type != HitTestResult.UNKNOWN_TYPE) {
-                    false
+        lateinit var gestures: com.newsblur.view.ReaderTapGestures
+        gestures = com.newsblur.view.ReaderTapGestures(webview, prepareSingleTap = { x, y ->
+            val generation = webview.documentGeneration
+            val touchSequence = gestures.touchSequence
+            var confirmed = false
+            var blank = false
+            fun revealIfConfirmed() {
+                if (confirmed && blank && gestures.touchSequence == touchSequence) onBlankStoryTap(webview, generation)
+            }
+            // ReadingItemFragment.kt captures the hit before a link or script can move the page during confirmation.
+            webview.evaluateJavascript("NB_is_blank_story_tap_at($x, $y, ${webview.width});") { result ->
+                blank = result == "true"
+                revealIfConfirmed()
+            }
+            Runnable {
+                confirmed = true
+                revealIfConfirmed()
+            }
+        }) { twoFingers ->
+            val action =
+                if (twoFingers) {
+                    prefsRepo.getReaderGesture("reader_two_finger_double_tap", "text")
                 } else {
-                    when (action) {
-                        "original" -> openBrowser()
-                        "text" -> switchSelectedViewMode()
-                        "unread" -> story?.let { feedUtils.markStoryUnread(it, requireContext()) }
-                        "save" -> story?.let { feedUtils.setStorySaved(it, true, requireContext(), emptyList(), emptyList()) }
-                        "listen" -> listenToStory()
-                    }
-                    action != "none"
+                    prefsRepo.getReaderGesture("reader_double_tap", "original")
                 }
-            },
-        )
+            if (webview.hitTestResult?.type != HitTestResult.UNKNOWN_TYPE) {
+                false
+            } else {
+                when (action) {
+                    "original" -> openBrowser()
+                    "text" -> switchSelectedViewMode()
+                    "unread" -> story?.let { feedUtils.markStoryUnread(it, requireContext()) }
+                    "save" -> story?.let { feedUtils.setStorySaved(it, true, requireContext(), emptyList(), emptyList()) }
+                    "listen" -> listenToStory()
+                }
+                action != "none"
+            }
+        }
+        webview.setOnTouchListener(gestures)
 
         webview.fragment = this
         webview.activity = readingActivity
         webview.setWebviewActionDelegate { action, selectedText ->
             handleWebviewAction(action, selectedText)
         }
+    }
+
+    private fun onBlankStoryTap(webview: NewsblurWebview, generation: Long) {
+        if (readingWebview !== webview || view == null || !isResumed || storyImageViewer != null ||
+            generation != webview.documentGeneration) return
+        (activity as? Reading)?.onStoryBlankTap(this)
     }
 
     fun openStoryImage(webview: NewsblurWebview, json: String) {
@@ -2511,6 +2696,11 @@ class ReadingItemFragment :
         private const val STORY_IMAGE_HOST_LAUNCH_GUARD_MS = 2_000L
 
         private const val LISTEN_TEXT_SOURCE_ORIGINAL = "original"
+
+        // storyMedia.js's card actions: the web's Play in Mini Media Player, Play Next and Play Last.
+        private const val MEDIA_ACTION_PLAY = "play"
+        private const val MEDIA_ACTION_NEXT = "next"
+        private const val MEDIA_ACTION_LAST = "last"
         private const val COMPACT_LISTEN_ROW_SIZE = 4
 
         // How long after the reader last touched the story Listen waits before scrolling it.

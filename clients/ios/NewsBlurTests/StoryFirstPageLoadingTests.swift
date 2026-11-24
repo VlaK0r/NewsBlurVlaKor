@@ -393,6 +393,101 @@ import XCTest
         }
     }
 
+    func test_widgetRowsOpenTheirConfiguredRiverAndSelectItsSidebarHeader() throws {
+        for (source, folder, storyFeed) in [("infrequent", "infrequent", "1"),
+                                             ("folder:Tech - Swift", "Tech ▸ Swift", "1"),
+                                             ("trending:good_reads", "trending:good_reads", "99"),
+                                             ("all", "everything", "1")] {
+            let fixture = makeFixture()
+            let sidebar = prepareWidgetSidebar(fixture)
+            let url = try widgetURL(source: source, feed: storyFeed, story: storyFeed + ":selected")
+            XCTAssertTrue(fixture.app.open(url))
+            XCTAssertTrue(fixture.stories.isRiverView)
+            XCTAssertEqual(fixture.stories.activeFolder, folder)
+            XCTAssertEqual(sidebar.currentSection, fixture.app.dictFoldersArray.index(of: folder))
+            XCTAssertNil(sidebar.currentRowAtIndexPath)
+            XCTAssertEqual(fixture.stories.notificationStoryHash, storyFeed + ":selected")
+            XCTAssertTrue(fixture.app.inFindingStoryMode)
+            XCTAssertEqual(fixture.app.tryFeedFeedId, storyFeed)
+        }
+    }
+
+    func test_widgetSiteAndLegacyStorySelectTheActualNestedFeedRow() throws {
+        for source in ["feed:1", nil] {
+            let fixture = makeFixture()
+            let sidebar = prepareWidgetSidebar(fixture)
+            sidebar.viewShowingAllFeeds = false
+            fixture.app.dictUnreadCounts = ["1": ["nt": 1, "ps": 0, "ng": 0]]
+            let url = try widgetURL(source: source, feed: "1", story: "1:selected")
+            XCTAssertTrue(fixture.app.open(url))
+            XCTAssertEqual(sidebar.currentRowAtIndexPath,
+                           IndexPath(row: 0, section: fixture.app.dictFoldersArray.index(of: "Tech ▸ Swift")))
+            XCTAssertEqual(sidebar.currentSection, -1)
+            XCTAssertEqual(fixture.stories.activeFolder, "Tech ▸ Swift")
+            XCTAssertEqual(fixture.stories.activeFeedIdStr, "1")
+            XCTAssertEqual(fixture.stories.notificationStoryHash, "1:selected")
+            // StoryFirstPageLoadingTests.swift completes the lookup and marks the site's last unread item read.
+            fixture.app.dictUnreadCounts = ["1": ["nt": 0, "ps": 0, "ng": 0]]
+            fixture.app.tryFeedFeedId = nil
+            XCTAssertTrue(sidebar.isFeedVisible("1"))
+        }
+    }
+
+    func test_widgetBackgroundSelectionWaitsForCatalogThenOpensOnlyTheChosenFolder() throws {
+        let fixture = makeFixture()
+        fixture.app.activeUsername = nil
+        let url = try widgetURL(source: "folder:Tech - Swift")
+        XCTAssertTrue(fixture.app.open(url))
+        fixture.app.activeUsername = "widget-fixture"
+        let sidebar = prepareWidgetSidebar(fixture)
+        fixture.app.backgroundLoadNotificationStory()
+        XCTAssertEqual(fixture.stories.activeFolder, "Tech ▸ Swift")
+        XCTAssertEqual(sidebar.currentSection, fixture.app.dictFoldersArray.index(of: "Tech ▸ Swift"))
+        XCTAssertFalse(fixture.app.inFindingStoryMode)
+        XCTAssertNil(fixture.app.tryFeedStoryId)
+    }
+
+    func test_emptySiteWidgetOpensItsFullyReadFeedInTheFilteredSidebar() throws {
+        let fixture = makeFixture()
+        let sidebar = prepareWidgetSidebar(fixture)
+        sidebar.viewShowingAllFeeds = false
+        fixture.app.selectedIntelligence = 1
+        fixture.app.dictUnreadCounts = ["1": ["nt": 0, "ps": 0, "ng": 0]]
+        XCTAssertFalse(sidebar.isFeedVisible("1"))
+
+        let url = try XCTUnwrap(URL(string: "newsblurwidget://open?source=feed%3A1&error=noStories"))
+        XCTAssertTrue(fixture.app.open(url))
+        XCTAssertEqual(fixture.stories.activeFeedIdStr, "1")
+        XCTAssertEqual(sidebar.currentRowAtIndexPath, IndexPath(row: 0, section: 6))
+        XCTAssertTrue(sidebar.isFeedVisible("1"))
+        XCTAssertEqual(sidebar.visibleFolders["Tech ▸ Swift"] as? Bool, true)
+        XCTAssertFalse(sidebar.viewShowingAllFeeds)
+        XCTAssertFalse(fixture.app.inFindingStoryMode)
+    }
+
+    private func prepareWidgetSidebar(_ fixture: FirstPageFixture) -> FeedsViewController {
+        fixture.app.storyPresented = {}
+        fixture.app.window = UIWindow()
+        let sidebar = FirstPageSelectionFeeds()
+        sidebar.appDelegate = fixture.app
+        fixture.app.feedsViewController = sidebar
+        fixture.app.dictFoldersArray = NSMutableArray(array: ["dashboard", "discover_sites", "daily_briefing",
+                                                            "infrequent", "everything", "Tech", "Tech ▸ Swift", "trending:good_reads"])
+        fixture.app.dictFolders = ["Tech": [1], "Tech ▸ Swift": [1], "everything": [], "trending:good_reads": []]
+        fixture.app.dictSubfolders = ["Tech": [1]]
+        fixture.app.riverFeeds = [1]
+        sidebar.currentSection = 4
+        return sidebar
+    }
+
+    private func widgetURL(source: String?, feed: String? = nil, story: String? = nil) throws -> URL {
+        var components = URLComponents(string: "newsblurwidget://open")!
+        components.queryItems = [("source", source), ("feedId", feed), ("storyHash", story)].compactMap { key, value in
+            value.map { URLQueryItem(name: key, value: $0) }
+        }
+        return try XCTUnwrap(components.url)
+    }
+
     func test_explicitReselectionClearsWarmRowsUntilFreshResponseAndRetainsOfflineFallback() async throws {
         for river in [false, true] {
             for fails in [false, true] {
@@ -1032,6 +1127,38 @@ import XCTest
         }
     }
 
+    func test_widgetRiverRetainsAnOlderTargetAlongsideStoriesFromOtherFeeds() async throws {
+        for targetFirst in [true, false] {
+            let fixture = makeFixture()
+            _ = prepareWidgetSidebar(fixture)
+            let presentation = try FirstPageNotificationPresentation(fixture: fixture)
+            defer { presentation.close() }
+            fixture.app.riverFeeds = [1, 2]
+            let hash = "first-page-100"
+            XCTAssertTrue(fixture.app.open(try widgetURL(source: "infrequent", feed: "2", story: hash)))
+            fixture.controller.finishedAnimatingIn = true
+            fixture.app.releaseReadFlush()
+            fixture.app.releaseSavedFlush()
+            await settle()
+            let exact = try exactNotificationRequest(hash, in: fixture)
+            let first = try XCTUnwrap(fixture.app.requests.firstIndex { query("page", in: $0.url) == "1" })
+            let selected = expectation(description: "The widget article opens inside its river")
+            fixture.app.storyPresented = { selected.fulfill() }
+            var target = makeStories(100..<101)[0]
+            target["story_feed_id"] = 2
+            target["read_status"] = 1
+            let targetResponse = response(stories: [target])
+            let riverResponse = ["stories": makeStories(0..<12)]
+            fixture.app.reply(to: targetFirst ? exact : first, with: targetFirst ? targetResponse : riverResponse)
+            await settle()
+            fixture.app.reply(to: targetFirst ? first : exact, with: targetFirst ? riverResponse : targetResponse)
+            await fulfillment(of: [selected], timeout: 4)
+            XCTAssertEqual(fixture.stories.activeFolder, "infrequent")
+            XCTAssertEqual(fixture.app.activeStory?["story_hash"] as? String, hash)
+            XCTAssertEqual(fixture.hashes, makeStories(0..<12).compactMap { $0["story_hash"] as? String } + [hash])
+        }
+    }
+
     func test_notificationExactHashOpensTheTargetAfterAnEmptyFirstFeedPage() async throws {
         let fixture = makeFixture()
         let presentation = try FirstPageNotificationPresentation(fixture: fixture)
@@ -1446,6 +1573,55 @@ import XCTest
         let second = try XCTUnwrap((fixture.stories.activeFeedStories as? [[AnyHashable: Any]])?.dropFirst().first)
         XCTAssertFalse(fixture.stories.isStoryUnread(first))
         XCTAssertTrue(fixture.stories.isStoryUnread(second))
+    }
+
+    func test_cachedUnreadTitlesAdoptServerReadArtworkWithoutMarkingStoriesRead() async throws {
+        try await assertCacheReadReconciliationWithoutReading(serverReadStatus: 1)
+    }
+
+    func test_cachedUnreadTitlesStayUnreadWhenServerStillReportsUnread() async throws {
+        try await assertCacheReadReconciliationWithoutReading(serverReadStatus: 0)
+    }
+
+    private func assertCacheReadReconciliationWithoutReading(serverReadStatus: Int) async throws {
+        let fixture = makeFixture()
+        let cachedStories = makeStories(0..<12)
+        try await prime(fixture, stories: cachedStories)
+        let cacheLoaded = expectation(description: "Warm feed publishes its provisional unread titles")
+        fixture.controller.cacheLookupFinished = { cacheLoaded.fulfill() }
+        fixture.open()
+        await fulfillment(of: [cacheLoaded], timeout: SimulatorTestTiming.realWorkTimeout)
+        fixture.controller.cacheLookupFinished = nil
+
+        let cached = try XCTUnwrap((fixture.stories.activeFeedStories as? [[AnyHashable: Any]])?.first)
+        XCTAssertEqual(cached["_nb_provisional_read_state"] as? Bool, true)
+        XCTAssertTrue(fixture.stories.isStoryUnread(cached))
+        let cachedPath = try XCTUnwrap(fixture.controller.indexPath(forStoryLocation: 0))
+        let cachedCell = try XCTUnwrap(fixture.controller.tableView(fixture.table, cellForRowAt: cachedPath) as? FeedDetailTableCell)
+        XCTAssertFalse(cachedCell.isRead)
+
+        fixture.app.releaseReadFlush()
+        fixture.app.releaseSavedFlush()
+        await settle()
+        var authoritativeStories = cachedStories
+        authoritativeStories[0]["read_status"] = serverReadStatus
+        fixture.app.reply(to: fixture.app.requests.count - 1, with: response(stories: authoritativeStories))
+        await settle()
+        fixture.table.layoutIfNeeded()
+        fixture.controller.checkScroll()
+
+        let refreshed = try XCTUnwrap((fixture.stories.activeFeedStories as? [[AnyHashable: Any]])?.first)
+        XCTAssertNil(refreshed["_nb_provisional_read_state"])
+        XCTAssertEqual(fixture.stories.isStoryUnread(refreshed), serverReadStatus == 0)
+        let refreshedPath = try XCTUnwrap(fixture.controller.indexPath(forStoryLocation: 0))
+        let refreshedCell = try XCTUnwrap(fixture.controller.tableView(fixture.table, cellForRowAt: refreshedPath) as? FeedDetailTableCell)
+        XCTAssertEqual(refreshedCell.isRead, serverReadStatus == 1,
+                       "StoryFirstPageLoadingTests.swift distinguishes authoritative read artwork from a new read action.")
+        XCTAssertTrue(fixture.controller.markReadAttempts.isEmpty, "Opening and reconciling a feed cannot attempt to mark a story read")
+        XCTAssertTrue(fixture.app.postURLs.filter { $0.contains("mark_story_hashes_as_read") }.isEmpty)
+        XCTAssertEqual(fixture.app.recentlyReadStories.count, 0)
+        XCTAssertNil(fixture.app.activeStory)
+        XCTAssertNil(fixture.table.indexPathForSelectedRow)
     }
 
     func test_authoritativeInsertionPreservesVisibleStoryPixelOffsetAndSelection() async throws {
@@ -1885,6 +2061,72 @@ import XCTest
         fixture.app.releaseSavedFlush()
         await settle()
         XCTAssertEqual(fixture.app.requests.first?.url, firstURL)
+    }
+
+    // NewStoriesNewestPage.swift: past the new stories pill's cap, a tap shows the newest stories and the river pages on
+    // below them. Widening the folder to every feed the pill took stories from changes the river's page URL, and the
+    // next page must still land rather than be dropped as the old first page's.
+    func test_riverKeepsPagingAfterATapPastTheNewStoriesCap() async throws {
+        let fixture = makeFixture()
+        fixture.app.dictFeeds = ["1": ["id": 1, "feed_title": "First feed", "active": 1],
+                                 "2": ["id": 2, "feed_title": "Second feed", "active": 1]]
+        fixture.app.riverFeeds = [1]
+        fixture.openRiver()
+        fixture.app.releaseReadFlush()
+        fixture.app.releaseSavedFlush()
+        await settle()
+        fixture.app.reply(to: 0, with: response())
+        await settle()
+        fixture.app.requests.removeAll()
+
+        var newest = makeStories(0..<1)[0]
+        newest["story_hash"] = "2:newest"
+        newest["story_feed_id"] = 2
+        newest["story_timestamp"] = 1_900_000_000
+        let list = RealtimeStoryList(key: "river:everything", feedIds: ["1", "2"], oldestFirst: false, unreadOnly: false,
+                                     intelligence: 0, showHiddenStories: false, loadedLastPage: false)
+        fixture.controller.showNewestStories(fetched: [newest], unfetchedHashes: [], profiles: [], list: list)
+        let firstPage = try XCTUnwrap(fixture.app.requests.last?.url)
+        XCTAssertTrue(firstPage.contains("f=2"), firstPage)
+        fixture.app.reply(to: fixture.app.requests.count - 1, with: response())
+        await settle()
+        XCTAssertEqual(fixture.hashes.count, 13)
+
+        fixture.controller.fetchRiverPage(2, withCallback: nil)
+        fixture.app.reply(to: fixture.app.requests.count - 1, with: response(stories: makeStories(12..<24)))
+        await settle()
+        XCTAssertEqual(fixture.hashes.count, 25, "the second page lands below the newest stories")
+        XCTAssertFalse(fixture.controller.pageFetching)
+    }
+
+    // The newest stories a tap past the pill's cap shows also sit in the list's next pages, which skip them. A page
+    // holding nothing but those must not end the list: a feed's six-story pages would otherwise stop at the twenty.
+    func test_pageOfOnlyTheNewestStoriesDoesNotEndTheList() async throws {
+        let fixture = makeFixture()
+        fixture.app.riverFeeds = [1]
+        fixture.openRiver()
+        fixture.app.releaseReadFlush()
+        fixture.app.releaseSavedFlush()
+        await settle()
+        fixture.app.reply(to: 0, with: response())
+        await settle()
+        fixture.app.requests.removeAll()
+
+        let list = RealtimeStoryList(key: "river:everything", feedIds: ["1"], oldestFirst: false, unreadOnly: false,
+                                     intelligence: 0, showHiddenStories: false, loadedLastPage: false)
+        fixture.controller.showNewestStories(fetched: makeStories(0..<8), unfetchedHashes: [], profiles: [], list: list)
+        fixture.app.reply(to: fixture.app.requests.count - 1, with: response(stories: makeStories(0..<4)))
+        await settle()
+        XCTAssertEqual(fixture.hashes.count, 8)
+
+        fixture.controller.fetchRiverPage(2, withCallback: nil)
+        fixture.app.reply(to: fixture.app.requests.count - 1, with: response(stories: makeStories(4..<8)))
+        await settle()
+        XCTAssertTrue(fixture.app.requests.last?.url.contains("page=3") == true, "the list asks for the page after")
+        fixture.app.reply(to: fixture.app.requests.count - 1, with: response(stories: makeStories(8..<12)))
+        await settle()
+        XCTAssertEqual(fixture.hashes, makeStories(0..<12).compactMap { $0["story_hash"] as? String })
+        XCTAssertFalse(fixture.controller.pageFinished)
     }
 
     func test_cancelledFirstPageRetriesPageOneWithoutLosingAnchorOrLocalEditsThenAllowsPageTwo() async throws {
@@ -2413,6 +2655,7 @@ private final class FirstPageLoadingStories: StoriesCollection {
     override var tryFeedRefreshTimeout: TimeInterval { testRefreshTimeout }
     var testRowHeight: CGFloat = 80
     var markedHashes: [String] = []
+    var markReadAttempts: [String] = []
     var holdCache = false
     var heldCache: [() -> Void] = []
     var cacheLookupFinished: (() -> Void)?
@@ -2451,6 +2694,7 @@ private final class FirstPageLoadingStories: StoriesCollection {
     override func showFetchingBanner(_ title: String!, isOffline: Bool) { fetchingTitle = title }
     override func hideFetchingBanner() { fetchingTitle = nil }
     override func markStoryReadIfNeeded(_ story: [AnyHashable: Any]!, isScrolling: Bool) -> Bool {
+        if let hash = story["story_hash"] as? String { markReadAttempts.append(hash) }
         if isScrolling, let hash = story["story_hash"] as? String { markedHashes.append(hash) }
         return false
     }
@@ -2576,7 +2820,9 @@ private final class FirstPageLoadingAppDelegate: NewsBlurAppDelegate {
     var requests: [CapturedRequest] = []
     var readFlushes: [() -> Void] = []
     var postResults: [(Bool) -> Void] = []
+    var postURLs: [String] = []
     override func post(_ urlString: String!, parameters: Any!, success: ((URLSessionDataTask?, Any?) -> Void)!, failure: ((URLSessionDataTask?, Error?) -> Void)!) {
+        postURLs.append(urlString)
         postResults.append { passed in
             if passed { success(nil, [:]) }
             else { failure(nil, NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)) }

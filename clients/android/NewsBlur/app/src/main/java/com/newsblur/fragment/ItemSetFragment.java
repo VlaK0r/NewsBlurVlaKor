@@ -41,6 +41,7 @@ import com.newsblur.domain.CustomIcon;
 import com.newsblur.domain.Feed;
 import com.newsblur.domain.Story;
 import com.newsblur.preference.PrefsRepo;
+import com.newsblur.realtime.RealtimeUpdates;
 import com.newsblur.service.SyncServiceState;
 import com.newsblur.util.AppConstants;
 import com.newsblur.util.CustomIconRenderer;
@@ -58,12 +59,18 @@ import com.newsblur.util.ThumbnailStyle;
 import com.newsblur.util.NetworkUtils;
 import com.newsblur.util.UIUtils;
 import com.newsblur.util.ViewUtils;
+import com.newsblur.view.NewStoriesEntrance;
+import com.newsblur.view.NewStoriesPill;
+import com.newsblur.view.StoryGridLayoutManager;
 import com.newsblur.viewModel.StoriesViewModel;
 
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import javax.inject.Inject;
 
@@ -96,6 +103,9 @@ public class ItemSetFragment extends NbFragment {
 
     @Inject
     SyncServiceState syncServiceState;
+
+    @Inject
+    RealtimeUpdates realtimeUpdates;
 
     private static final String BUNDLE_GRIDSTATE = "gridstate";
 
@@ -135,6 +145,20 @@ public class ItemSetFragment extends NbFragment {
     public boolean fullFlingComplete = false;
 
     private FragmentItemgridBinding binding;
+    @Nullable
+    private NewStoriesPill newStoriesPill;
+    // ItemSetFragment.java scrolls to stories NewStoriesPill.kt added once the adapter commits them.
+    @Nullable
+    private List<String> pendingNewStoryHashes;
+    // The stories already listed when the pill was tapped; anything else in the next commit arrived with it.
+    @NonNull
+    private Set<String> storyHashesBeforeNewStories = Collections.emptySet();
+    @Nullable
+    private RealtimeUpdates.NewStories.Placement pendingNewStoryPlacement;
+    @Nullable
+    private NewStoriesEntrance newStoriesEntrance;
+    @Nullable
+    private FeedSet realtimeOpenList;
     private RowFleuronBinding fleuronBinding;
     private StoriesViewModel storiesViewModel;
     private int bottomNextFeedRevealPx;
@@ -245,8 +269,9 @@ public class ItemSetFragment extends NbFragment {
         StoryListStyle listStyle = prefsRepo.getStoryListStyle(getFeedSet());
 
         calcColumnCount(listStyle);
-        layoutManager = new GridLayoutManager(getActivity(), columnCount);
+        layoutManager = new StoryGridLayoutManager(requireContext(), columnCount);
         binding.itemgridfragmentGrid.setLayoutManager(layoutManager);
+        binding.itemgridfragmentGrid.setItemAnimator(new com.newsblur.view.StoryEntranceItemAnimator());
         setupAnimSpeeds();
 
         calcGridSpacing(listStyle);
@@ -276,6 +301,7 @@ public class ItemSetFragment extends NbFragment {
             public int getSpanSize(int position) {
                 switch (adapter.getItemViewType(position)) {
                     case StoryViewAdapter.VIEW_TYPE_FOOTER:
+                    case StoryViewAdapter.VIEW_TYPE_NEW_STORIES_ROW:
                         return columnCount;
                     default:
                         return 1;
@@ -299,6 +325,27 @@ public class ItemSetFragment extends NbFragment {
             binding.itemgridfragmentGrid.setClipToPadding(false);
         }
         storiesViewModel.getActiveStories().observe(getViewLifecycleOwner(), this::setStories);
+        newStoriesPill = new NewStoriesPill(this, binding.newStoriesPill, binding.bottomNextFeedControl,
+                realtimeUpdates, dbHelper, this::getFeedSet, (hashes, placement) -> {
+                    showAddedNewStories(hashes, placement);
+                    return kotlin.Unit.INSTANCE;
+                }, hashes -> {
+                    showReplacedWithNewest();
+                    return kotlin.Unit.INSTANCE;
+                }, (count, placement) -> {
+                    // NewStoriesPill.kt stepped aside: the stories it still offers wait in a row at the list's edge.
+                    if (adapter != null) {
+                        // StoryViewAdapter.kt inserts it without moving what the reader sees (the list keeps its anchor).
+                        adapter.setNewStoriesRow(count > 0 ? new StoryViewAdapter.NewStoriesRowState(count,
+                                placement == RealtimeUpdates.NewStories.Placement.TOP) : null);
+                        if (binding != null) binding.itemgridfragmentGrid.post(this::updateNewStoriesRowOnScreen);
+                    }
+                    return kotlin.Unit.INSTANCE;
+                });
+        adapter.setOnNewStoriesRowClick(() -> {
+            if (newStoriesPill != null) newStoriesPill.tap();
+        });
+        newStoriesPill.start();
 
         FeedSet fs = getFeedSet();
         if (fs == null) {
@@ -313,6 +360,13 @@ public class ItemSetFragment extends NbFragment {
 
     @Override
     public void onDestroyView() {
+        if (realtimeOpenList != null) {
+            realtimeUpdates.clearOpenStoryList(realtimeOpenList);
+            realtimeOpenList = null;
+        }
+        if (newStoriesPill != null) newStoriesPill.stop();
+        newStoriesPill = null;
+        finishNewStoriesEntrance();
         if (floatingStoryHeader != null) {
             floatingStoryHeader.removeOnLayoutChangeListener(floatingStoryHeaderLayoutListener);
             floatingStoryHeader = null;
@@ -330,11 +384,17 @@ public class ItemSetFragment extends NbFragment {
 
         if (!dbHelper.isFeedSetReady(getFeedSet())) {
             com.newsblur.util.Log.i(this.getClass().getName(), "stale load");
-            updateAdapter(Collections.emptyList(), storyBatch.getLoadId(), -1);
+            updateAdapter(Collections.emptyList(), storyBatch.getLoadId(), -1, Collections.emptySet());
             triggerRefresh(1, null);
         } else {
             dataSeenYet = true;
-            updateAdapter(storyBatch.getStories(), storyBatch.getLoadId(), storyBatch.getIndexOfLastUnread());
+            // RealtimeUpdates.kt keeps this list's counts and offers its new stories in the pill.
+            if (!currentFeedSet.equals(realtimeOpenList)) {
+                realtimeOpenList = currentFeedSet;
+                realtimeUpdates.setOpenStoryList(currentFeedSet);
+            }
+            updateAdapter(storyBatch.getStories(), storyBatch.getLoadId(), storyBatch.getIndexOfLastUnread(),
+                    storyBatch.getPinnedStoryHashes());
             if (storyBatch.getStories().isEmpty()) {
                 triggerRefresh(1, 0);
             }
@@ -368,8 +428,97 @@ public class ItemSetFragment extends NbFragment {
         gridState = null;
         dataSeenYet = false;
         skipBackFillingStories = false;
+        pendingNewStoryHashes = null;
+        finishNewStoriesEntrance();
+        // Restarting with new filters can change which buffered stories would show.
+        FeedSet fs = getFeedSet();
+        if (fs != null) realtimeUpdates.resetNewStories(fs);
         updateLoadingIndicators();
         hideBottomNextFeedControl();
+    }
+
+    /**
+     * NewStoriesPill.kt added these stories to the reading session. The adapter normally holds back
+     * stories newer than the ones on screen after a resume (skipBackFillingStories), so let them in,
+     * then bring them into view.
+     */
+    private void showAddedNewStories(@NonNull List<String> hashes, @NonNull RealtimeUpdates.NewStories.Placement placement) {
+        if (!isAdded() || binding == null || hashes.isEmpty()) return;
+        finishNewStoriesEntrance();
+        skipBackFillingStories = false;
+        storyHashesBeforeNewStories = new HashSet<>();
+        if (adapter != null) {
+            for (Story story : adapter.storiesSnapshot()) storyHashesBeforeNewStories.add(story.storyHash);
+        }
+        pendingNewStoryHashes = new ArrayList<>(hashes);
+        pendingNewStoryPlacement = placement;
+        hasUpdated();
+    }
+
+    private void scrollToAddedNewStory() {
+        List<String> hashes = pendingNewStoryHashes;
+        if (hashes == null || adapter == null || layoutManager == null) return;
+        // ItemSetFragment.java waits for the commit that holds the added stories; an earlier batch may land first.
+        Set<String> added = new HashSet<>(hashes);
+        List<Story> stories = adapter.storiesSnapshot();
+        int firstIndex = -1;
+        for (int i = 0; i < stories.size(); i++) {
+            if (added.contains(stories.get(i).storyHash)) {
+                firstIndex = i;
+                break;
+            }
+        }
+        if (firstIndex < 0) return;
+        pendingNewStoryHashes = null;
+        boolean atTop = pendingNewStoryPlacement == RealtimeUpdates.NewStories.Placement.TOP;
+        if (atTop) {
+            // A newest-first list also lets in the stories it held back above the ones on screen
+            // (skipBackFillingStories), and they arrive at the top alongside the pill's.
+            for (Story story : stories) {
+                if (!storyHashesBeforeNewStories.contains(story.storyHash)) added.add(story.storyHash);
+            }
+        }
+        storyHashesBeforeNewStories = Collections.emptySet();
+        adapter.markStoriesPresented(added);
+        // Moving the list here counts as scrolling it: the rows it uncovers don't run the opening cascade.
+        adapter.finishOpeningEntrances(binding.itemgridfragmentGrid);
+        if (atTop) {
+            // A newest-first list lists the pill's stories at its top whatever their dates
+            // (BlurDatabaseHelper.java pins them), with any it held back since the last resume just below.
+            scrollToTop();
+        } else {
+            binding.itemgridfragmentGrid.smoothScrollToPosition(adapter.getDisplayPositionForStoryIndex(firstIndex));
+        }
+        // NewStoriesEntrance.kt slides them in during the frame that first lays them out.
+        newStoriesEntrance = NewStoriesEntrance.start(binding.itemgridfragmentGrid, adapter, added, atTop);
+    }
+
+    /**
+     * NewStoriesPill.kt held more stories than it shows: RealtimeUpdates.kt restarted the reading session with just
+     * the newest of them and reset paging. The list starts over from the top as if it had just opened, and scrolling
+     * down pages the rest of it again, skipping the stories already shown.
+     */
+    private void showReplacedWithNewest() {
+        if (!isAdded() || binding == null || adapter == null) return;
+        resetEmptyState();
+        adapter.restartOpeningCascade();
+        hasUpdated();
+    }
+
+    /** Tells NewStoriesPill.kt whether any part of the "N new stories" row is on screen, so the two never double up. */
+    private void updateNewStoriesRowOnScreen() {
+        if (newStoriesPill == null || adapter == null || layoutManager == null) return;
+        int row = adapter.getNewStoriesRowPosition();
+        boolean onScreen = row >= 0 && row >= layoutManager.findFirstVisibleItemPosition() &&
+                row <= layoutManager.findLastVisibleItemPosition();
+        newStoriesPill.setInlineRowOnScreen(onScreen);
+    }
+
+    private void finishNewStoriesEntrance() {
+        if (newStoriesEntrance != null) {
+            newStoriesEntrance.finish();
+            newStoriesEntrance = null;
+        }
     }
 
     /**
@@ -461,7 +610,15 @@ public class ItemSetFragment extends NbFragment {
         return (adapter != null) && (adapter.getRawStoryCount() > 0);
     }
 
-    private void updateAdapter(@NonNull List<Story> stories, Long loadId, int lastUnreadIndex) {
+    private boolean themeContentCommitted = false;
+
+    public boolean isThemeContentReady() {
+        return themeContentCommitted && binding != null &&
+                (!hasStories() || binding.itemgridfragmentGrid.getChildCount() > 0);
+    }
+
+    private void updateAdapter(@NonNull List<Story> stories, Long loadId, int lastUnreadIndex,
+                               @NonNull Set<String> pinnedStoryHashes) {
         FeedSet submittedFeed = FeedSet.fromCompactSerial(getFeedSet().toCompactSerial());
         RecyclerView submittedGrid = binding.itemgridfragmentGrid;
         adapter.updateFeedSet(submittedFeed);
@@ -472,15 +629,18 @@ public class ItemSetFragment extends NbFragment {
             // ItemSetFragment.java must use committed rows: a pre-diff zero count makes
             // SyncServiceState.kt restart pagination, producing another batch that cancels the initial diff.
             boolean empty = adapter.getRawStoryCount() == 0;
+            themeContentCommitted = true;
             submittedGrid.setVisibility(empty ? View.INVISIBLE : View.VISIBLE);
-            binding.emptyView.setVisibility(empty ? View.VISIBLE : View.INVISIBLE);
+            com.newsblur.view.ReaderMotion.visibility(binding.emptyView, empty ? View.VISIBLE : View.INVISIBLE);
             storyThawCompleted(lastUnreadIndex);
+            scrollToAddedNewStory();
+            submittedGrid.post(this::updateNewStoriesRowOnScreen);
             ensureSufficientStories();
             updateLoadingIndicators();
             updateBottomNextFeedControl();
             ItemsList activity = (ItemsList) getActivity();
             if (activity != null) activity.refreshStoryStatusIndicators();
-        });
+        }, pinnedStoryHashes);
         gridState = null;
     }
 
@@ -493,32 +653,32 @@ public class ItemSetFragment extends NbFragment {
                 hasStories, dataSeenYet, syncServiceState.isFeedSetSyncing(getFeedSet()),
                 syncServiceState.isFeedSetExhausted(getFeedSet()), !isOffline);
         boolean loadingNextPage = loading == com.newsblur.util.StoryLoadingState.NEXT_PAGE;
-        fleuronBinding.bottomLoadingIndicator.setVisibility(loadingNextPage ? View.VISIBLE : View.GONE);
-        fleuronBinding.fleuron.setVisibility(loadingNextPage ? View.GONE : View.VISIBLE);
-        binding.emptyViewText.setVisibility(View.VISIBLE);
+        com.newsblur.view.ReaderMotion.visibility(fleuronBinding.bottomLoadingIndicator, loadingNextPage ? View.VISIBLE : View.GONE);
+        com.newsblur.view.ReaderMotion.visibility(fleuronBinding.fleuron, loadingNextPage ? View.GONE : View.VISIBLE);
         com.newsblur.service.TryFeedRefreshStatus tryFeedStatus = syncServiceState.getTryFeedRefreshStatus(getFeedSet());
         boolean canRetryTryFeed = !hasStories && (tryFeedStatus == com.newsblur.service.TryFeedRefreshStatus.EMPTY || tryFeedStatus == com.newsblur.service.TryFeedRefreshStatus.FAILED);
         binding.emptyViewText.setClickable(canRetryTryFeed);
         binding.emptyViewText.setFocusable(canRetryTryFeed);
         if (canRetryTryFeed) {
+            com.newsblur.view.ReaderMotion.visibility(binding.emptyViewText, View.VISIBLE);
             binding.emptyViewText.setText(tryFeedStatus == com.newsblur.service.TryFeedRefreshStatus.FAILED ? R.string.try_feed_fetch_failed : R.string.try_feed_empty);
             binding.emptyViewText.setTypeface(binding.emptyViewText.getTypeface(), Typeface.NORMAL);
             binding.emptyViewText.setAlpha(1.0f);
-            binding.emptyViewImage.setVisibility(View.VISIBLE);
-            binding.topLoadingIndicator.setVisibility(View.INVISIBLE);
-            fleuronBinding.containerSubscribe.setVisibility(View.GONE);
-            fleuronBinding.getRoot().setVisibility(View.INVISIBLE);
+            com.newsblur.view.ReaderMotion.visibility(binding.emptyViewImage, View.VISIBLE);
+            com.newsblur.view.ReaderMotion.visibility(binding.topLoadingIndicator, View.INVISIBLE);
+            com.newsblur.view.ReaderMotion.visibility(fleuronBinding.containerSubscribe, View.GONE);
+            com.newsblur.view.ReaderMotion.visibility(fleuronBinding.getRoot(), View.INVISIBLE);
             updateBottomNextFeedControl();
             return;
         }
 
         if (dataSeenYet && adapter.getRawStoryCount() > 0 && UIUtils.needsSubscriptionAccess(getFeedSet(), prefsRepo)) {
-            fleuronBinding.getRoot().setVisibility(View.VISIBLE);
-            fleuronBinding.containerSubscribe.setVisibility(View.VISIBLE);
+            com.newsblur.view.ReaderMotion.visibility(fleuronBinding.getRoot(), View.VISIBLE);
+            com.newsblur.view.ReaderMotion.visibility(fleuronBinding.containerSubscribe, View.VISIBLE);
             updateUpgradeBannerText();
-            binding.topLoadingIndicator.setVisibility(View.INVISIBLE);
-            fleuronBinding.bottomLoadingIndicator.setVisibility(View.GONE);
-            fleuronBinding.fleuron.setVisibility(View.VISIBLE);
+            com.newsblur.view.ReaderMotion.visibility(binding.topLoadingIndicator, View.INVISIBLE);
+            com.newsblur.view.ReaderMotion.visibility(fleuronBinding.bottomLoadingIndicator, View.GONE);
+            com.newsblur.view.ReaderMotion.visibility(fleuronBinding.fleuron, View.VISIBLE);
             fleuronResized = false;
             hideBottomNextFeedControl();
             return;
@@ -526,16 +686,17 @@ public class ItemSetFragment extends NbFragment {
 
         if ((!dataSeenYet) || syncServiceState.isFeedSetSyncing(getFeedSet()) || waitingForApiResult) {
             binding.emptyViewText.setText(isOffline ? R.string.sync_status_offline : R.string.empty_list_view_no_stories);
-            binding.emptyViewText.setVisibility(isOffline ? View.VISIBLE : View.GONE);
+            com.newsblur.view.ReaderMotion.visibility(binding.emptyViewText, isOffline ? View.VISIBLE : View.GONE);
             binding.emptyViewText.setTypeface(binding.emptyViewText.getTypeface(), Typeface.NORMAL);
             binding.emptyViewText.setAlpha(1.0f);
-            binding.emptyViewImage.setVisibility(View.INVISIBLE);
+            com.newsblur.view.ReaderMotion.visibility(binding.emptyViewImage, View.INVISIBLE);
 
-            binding.topLoadingIndicator.setVisibility(loading == com.newsblur.util.StoryLoadingState.INITIAL ? View.VISIBLE : View.INVISIBLE);
-            fleuronBinding.containerSubscribe.setVisibility(View.GONE);
-            fleuronBinding.getRoot().setVisibility(loadingNextPage ? View.VISIBLE : View.INVISIBLE);
+            com.newsblur.view.ReaderMotion.visibility(binding.topLoadingIndicator, loading == com.newsblur.util.StoryLoadingState.INITIAL ? View.VISIBLE : View.INVISIBLE);
+            com.newsblur.view.ReaderMotion.visibility(fleuronBinding.containerSubscribe, View.GONE);
+            com.newsblur.view.ReaderMotion.visibility(fleuronBinding.getRoot(), loadingNextPage ? View.VISIBLE : View.INVISIBLE);
         } else {
             ReadFilter readFilter = prefsRepo.getReadFilter(getFeedSet());
+            com.newsblur.view.ReaderMotion.visibility(binding.emptyViewText, View.VISIBLE);
             if (readFilter == ReadFilter.UNREAD) {
                 binding.emptyViewText.setText(R.string.empty_list_view_no_stories_unread);
             } else {
@@ -543,13 +704,13 @@ public class ItemSetFragment extends NbFragment {
             }
             binding.emptyViewText.setTypeface(binding.emptyViewText.getTypeface(), Typeface.NORMAL);
             binding.emptyViewText.setAlpha(1.0f);
-            binding.emptyViewImage.setVisibility(View.VISIBLE);
+            com.newsblur.view.ReaderMotion.visibility(binding.emptyViewImage, View.VISIBLE);
 
-            binding.topLoadingIndicator.setVisibility(View.INVISIBLE);
-            fleuronBinding.getRoot().setVisibility(View.INVISIBLE);
+            com.newsblur.view.ReaderMotion.visibility(binding.topLoadingIndicator, View.INVISIBLE);
+            com.newsblur.view.ReaderMotion.visibility(fleuronBinding.getRoot(), View.INVISIBLE);
             if (dataSeenYet && syncServiceState.isFeedSetExhausted(getFeedSet()) && (adapter.getRawStoryCount() > 0)) {
-                fleuronBinding.containerSubscribe.setVisibility(View.GONE);
-                fleuronBinding.getRoot().setVisibility(View.VISIBLE);
+                com.newsblur.view.ReaderMotion.visibility(fleuronBinding.containerSubscribe, View.GONE);
+                com.newsblur.view.ReaderMotion.visibility(fleuronBinding.getRoot(), View.VISIBLE);
             }
         }
         updateBottomNextFeedControl();
@@ -601,9 +762,11 @@ public class ItemSetFragment extends NbFragment {
                 grid.setPaddingRelative(grid.getPaddingStart(), grid.getPaddingTop(), grid.getPaddingEnd(), bottomPadding);
             }
         }
-        if (marginParams.bottomMargin == targetBottomMargin) return;
-        marginParams.bottomMargin = targetBottomMargin;
-        binding.bottomNextFeedControl.setLayoutParams(marginParams);
+        if (marginParams.bottomMargin != targetBottomMargin) {
+            marginParams.bottomMargin = targetBottomMargin;
+            binding.bottomNextFeedControl.setLayoutParams(marginParams);
+        }
+        if (newStoriesPill != null) newStoriesPill.refreshPosition();
     }
 
     /** ItemsList.java reports how much of the list Listen's mini player covers, or 0 while it is hidden. */
@@ -666,6 +829,7 @@ public class ItemSetFragment extends NbFragment {
         configureBottomNextFeedTarget(target, ready);
         binding.bottomNextFeedControl.setVisibility(View.VISIBLE);
         binding.bottomNextFeedControl.setAlpha(visibilityProgress);
+        if (newStoriesPill != null) newStoriesPill.refreshPosition();
     }
 
     private void hideBottomNextFeedControl() {
@@ -678,6 +842,7 @@ public class ItemSetFragment extends NbFragment {
         binding.bottomNextFeedControl.configure("site", null, false);
         binding.bottomNextFeedControl.setAlpha(0f);
         binding.bottomNextFeedControl.setVisibility(View.GONE);
+        if (newStoriesPill != null) newStoriesPill.refreshPosition();
     }
 
     private void resetBottomNextFeedDragState() {
@@ -959,25 +1124,22 @@ public class ItemSetFragment extends NbFragment {
     }
 
     private void setupAnimSpeeds() {
-        // to mitigate taps missed because of list pushdowns, RVs animate them. however, the speed
-        // is device and settings dependent.  to keep the UI consistent across installs, take the
-        // system default speed and tweak it towards a speed that looked and functioned well in
-        // testing while still somewhat respecting the system's requested adjustments to speed.
-        long targetAddDuration = 250L;
+        // ItemSetFragment.java keeps rearrangements consistent; ReaderMotion owns new-row entrances.
         // moves are especially jarring, and very rare
         long targetMovDuration = 500L;
         // if there are no stories in the list at all, let the first insert happen very quickly
         if ((adapter == null) || (adapter.getRawStoryCount() < 1)) {
-            targetAddDuration = 0L;
             targetMovDuration = 0L;
         }
 
         RecyclerView.ItemAnimator anim = binding.itemgridfragmentGrid.getItemAnimator();
-        anim.setAddDuration((anim.getAddDuration() + targetAddDuration) / 2L);
         anim.setMoveDuration((anim.getMoveDuration() + targetMovDuration) / 2L);
     }
 
     private void onScrolled(int dy) {
+        // NewStoriesPill.kt makes way for the "N new stories" row, and steps aside once the reader scrolls away.
+        updateNewStoriesRowOnScreen();
+        if (newStoriesPill != null) newStoriesPill.onListScrolled(dy);
         // the framework likes to trigger this on init before we even known counts, so disregard those
         if (!dataSeenYet) return;
 

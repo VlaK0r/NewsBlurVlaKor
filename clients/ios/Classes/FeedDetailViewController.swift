@@ -240,12 +240,22 @@ class FeedDetailViewController: FeedDetailObjCViewController {
     }
 
     override func resetFeedDetail() {
+        cancelNewestStories()
+        if isViewLoaded { ReaderMotion.leave(storyTitlesTable) }
+        ReaderMotion.session(self).reset()
+        storyCache.motionSession.reset()
+        if viewIfLoaded?.window == nil {
+            ReaderMotion.session(self).prepareForAppearance()
+            storyCache.motionSession.prepareForAppearance()
+        }
         cancelTryFeedRefresh()
+        lastShownStoryLocation = nil
         super.resetFeedDetail()
     }
 
     override func reloadStories() {
         cancelTryFeedRefresh()
+        lastShownStoryLocation = nil
         super.reloadStories()
     }
 
@@ -365,12 +375,34 @@ class FeedDetailViewController: FeedDetailObjCViewController {
     }
 
     private var gridViewController: UIHostingController<FeedDetailGridView>?
+
+    /// The grid or card layout's scroll view, which NewStoriesPill.swift scrolls and watches: the outermost scroll
+    /// view that fills the layout, so a story's web view or a card's own scroller is never taken for the list.
+    var gridScrollView: UIScrollView? {
+        guard let root = gridViewController?.view else { return nil }
+        var pending: [UIView] = [root]
+        var firstFound: UIScrollView?
+        while !pending.isEmpty {
+            let candidate = pending.removeFirst()
+            if let scrollView = candidate as? UIScrollView {
+                if scrollView.bounds.width >= root.bounds.width * 0.8 &&
+                    scrollView.bounds.height >= root.bounds.height * 0.5 { return scrollView }
+                if firstFound == nil { firstFound = scrollView }
+                continue
+            }
+            pending.append(contentsOf: candidate.subviews)
+        }
+        return firstFound
+    }
     
     private var dashboardViewController: UIHostingController<FeedDetailDashboardView>?
 
     private var dailyBriefingViewController: UIHostingController<DailyBriefingRootView>?
     
     lazy var storyCache = StoryCache()
+
+    /// The location of the story list row that last came on screen, which StoryScoreRefresher.swift refreshes around.
+    private(set) var lastShownStoryLocation: Int?
 
     private lazy var dailyBriefingStore = DailyBriefingStore(controller: self)
 
@@ -541,6 +573,8 @@ class FeedDetailViewController: FeedDetailObjCViewController {
     }
     
     override func viewWillAppear(_ animated: Bool) {
+        ReaderMotion.session(self).prepareForAppearance()
+        storyCache.motionSession.prepareForAppearance()
         super.viewWillAppear(animated)
 
         correctReturnFrameIfNeeded()
@@ -550,6 +584,9 @@ class FeedDetailViewController: FeedDetailObjCViewController {
         super.viewDidAppear(animated)
 
         correctReturnFrameIfNeeded()
+        // FeedDetailViewController.swift starts cached rows after the push and its selection reload have completed.
+        ReaderMotion.presentRows(storyTitlesTable, owner: self)
+        storyCache.motionSession.didAppear()
     }
     
     @objc override func loadingFeed() {
@@ -623,6 +660,8 @@ class FeedDetailViewController: FeedDetailObjCViewController {
         if let headerContainer = storyTitlesHeaderBar?.headerContainer {
             view.bringSubviewToFront(headerContainer)
         }
+        // NewStoriesPill.swift's pill floats over whichever layout is showing, including one added just now.
+        bringNewStoriesPillToFront()
     }
     
     var reloadWorkItem: DispatchWorkItem?
@@ -965,6 +1004,8 @@ extension FeedDetailViewController: FeedDetailInteraction {
         guard storiesCollection.activeFeedStories != nil, !isDashboard else {
             return
         }
+
+        lastShownStoryLocation = story.index
 
         let cacheCount = storyCache.before.count + storyCache.after.count
 

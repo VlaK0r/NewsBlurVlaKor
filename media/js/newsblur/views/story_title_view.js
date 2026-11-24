@@ -23,7 +23,9 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
         this.model.bind('change:starred', this.toggle_starred, this);
         this.model.bind('change:intelligence', this.toggle_intelligence, this);
         this.collection.bind('render:intelligence', this.render_intelligence, this);
-        this.model.story_title_view = this;
+        // story_title_view.js: an open story's cluster section (story_detail_view.js) draws stories the list
+        // already shows, and their rows in the list stay the ones the reader and the new stories pill act on.
+        if (!(this.options.is_cluster_detail && this.model.story_title_view)) this.model.story_title_view = this;
 
         // Listen for feed title changes to update grid/list/magazine views in real time
         this.story_feed = NEWSBLUR.assets.get_feed(this.model.get('story_feed_id'));
@@ -48,8 +50,11 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
         if (this.options.is_grid) template_name = "grid_template";
         if (this.options.is_magazine) template_name = "magazine_template";
         if (this.options.is_list || this.options.is_grid || this.options.is_magazine) {
-            if (this.model.get('selected')) template_name = "list_template";
+            if (this.model.get('selected') && !this.opens_mobile_story_page()) template_name = "list_template";
         }
+        // story_title_view.js: a phone list uses the compact rows of the desktop titles pane,
+        // and still expands each story inline below its row.
+        if (this.options.is_list && this.is_mobile_layout()) template_name = "template";
 
         // console.log(['render story title', template_name, this.$el[0], this.options.is_grid, this.show_image_preview(), this.options.override_layout, NEWSBLUR.assets.get_feed(this.model.get('story_feed_id'))]);
         this.$el.html(this[template_name]({
@@ -294,8 +299,26 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
         <div class="NB-story-detail"></div>\
     '),
 
+    // story_title_view.js: a grid card in the phone layout (views/mobile_layout_view.js). Embedded
+    // story lists like the dashboard pass override_layout and keep their own behavior.
+    is_mobile_layout: function () {
+        return !!(!this.options.override_layout && NEWSBLUR.app.mobile && NEWSBLUR.app.mobile.is_active());
+    },
+
+    // story_title_view.js: phone grids and full-screen lists show a story on its own screen
+    // (views/mobile_story_pager_view.js) instead of expanding it in the list.
+    opens_mobile_story_page: function () {
+        return this.is_mobile_layout() && (!!this.options.is_grid || NEWSBLUR.app.mobile.layout() === 'page');
+    },
+
     render_inline_story_detail: function (temporary_text) {
         // console.log(['render_inline_story_detail', this.model.get('story_title')]);
+        // story_title_view.js: a story can be drawn again while it's open (a feed saved to another story view
+        // redraws it from switch_story_view before toggle_selected does). The new drawing replaces the old one, and
+        // goes only into this row's own holder, never the holders of the cluster rows (story_detail_view.js) inside
+        // the story being replaced.
+        this.destroy_inline_story_detail();
+        var $holder = this.$el.children(".NB-story-detail");
         if (NEWSBLUR.reader.story_view == 'text' || temporary_text) {
             this.text_view = new NEWSBLUR.Views.TextTabView({
                 el: null,
@@ -303,7 +326,7 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
                 temporary: !!temporary_text
             });
             this.text_view.fetch_and_render(this.model, temporary_text);
-            this.$(".NB-story-detail").html(this.text_view.$el);
+            $holder.html(this.text_view.$el);
             this.text_view.story_detail.attach_handlers();
             this.text_view.setElement(this.text_view.$el);
             this.text_view.story_detail.setElement(this.text_view.story_detail.$el);
@@ -314,7 +337,7 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
                 tagName: 'div',
                 inline_story_title: true
             }).render();
-            this.$(".NB-story-detail").html(this.story_detail.$el);
+            $holder.html(this.story_detail.$el);
             this.story_detail.attach_handlers();
             this.story_detail.setElement(this.story_detail.$el);
         }
@@ -338,11 +361,15 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
     },
 
     destroy_inline_story_detail: function () {
+        // story_title_view.js: each drawing is torn down once, so an old one can't unregister the open story's
+        // inline_story_detail_view (story_detail_view.js destroy) after a redraw.
         if (this.story_detail) {
             this.story_detail.destroy();
+            this.story_detail = null;
         }
         if (this.text_view) {
             this.text_view.destroy();
+            this.text_view = null;
         }
         // this.$(".NB-story-detail").empty();
     },
@@ -418,6 +445,8 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
         var story_layout = this.options.override_layout ||
             NEWSBLUR.assets.view_setting(NEWSBLUR.reader.active_feed, 'layout');
         var pane_anchor = this.options.override_layout ? "west" : NEWSBLUR.assets.preference('story_pane_anchor');
+        // story_title_view.js: phone list rows only make room for a thumbnail when there is one.
+        if (this.options.is_list && this.is_mobile_layout()) return !!this.model.image_url();
         if (_.contains(['list', 'grid', 'magazine'], story_layout)) return true;
         if (story_layout == 'split' && _.contains(['north', 'south'], pane_anchor)) return true;
 
@@ -587,7 +616,11 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
         this.$el.toggleClass('NB-selected', !!this.model.get('selected'));
 
         if (!!this.model.get('selected')) {
-            if (_.contains(['list', 'grid'], story_layout)) {
+            if (this.opens_mobile_story_page()) {
+                // story_title_view.js: the story is on its own screen, so the row or card stays
+                // as it is.
+                this.destroy_inline_story_detail();
+            } else if (_.contains(['list', 'grid'], story_layout)) {
                 this.render_inline_story_detail();
             } else if (_.contains(['magazine'], story_layout)) {
                 this.render_magazine_story_detail();
@@ -778,6 +811,11 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
             return;
         }
 
+        if (this.opens_mobile_story_page()) {
+            NEWSBLUR.app.mobile.open_story(this.model);
+            return;
+        }
+
         if (_.contains(['list', 'grid', 'magazine'], this.options.override_layout ||
             NEWSBLUR.assets.view_setting(NEWSBLUR.reader.active_feed, 'layout')) &&
             this.model.get('selected')) {
@@ -794,6 +832,13 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
     select_story_shared: function (e) {
         e.preventDefault();
         e.stopPropagation();
+
+        // story_title_view.js: a phone grid or full-screen list opens the story on its own
+        // screen (views/mobile_layout_view.js), so it opens there at the comments.
+        if (this.opens_mobile_story_page()) {
+            NEWSBLUR.app.mobile.open_story(this.model, { scroll_to_comments: true });
+            return;
+        }
 
         this.model.set('selected', true, { 'click_on_story_title': true });
         if (NEWSBLUR.reader.story_view == 'page') {
@@ -991,7 +1036,7 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
     },
 
     show_manage_menu_rightclick: function (e) {
-        if (!NEWSBLUR.assets.preference('show_contextmenus')) return;
+        if (!e.mobile_long_press && !NEWSBLUR.assets.preference('show_contextmenus')) return;
 
         return this.show_manage_menu(e);
     },
@@ -1002,6 +1047,10 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
         if (this.options.on_dashboard || this.options.on_discover_feed || this.options.on_discover_story) {
             return this.select_story(e);
         }
+        // story_title_view.js: another site's version of a story, listed inside the open story,
+        // is not one of the list's own stories, which reader.js make_manage_menu builds a menu
+        // from. It threw there, after a phone had already dimmed the screen for the menu.
+        if (!NEWSBLUR.assets.get_story(this.model.id)) return;
 
         // NEWSBLUR.log(["showing manage menu", this.model.is_social() ? 'socialfeed' : 'feed', $(this.el), this]);
         NEWSBLUR.reader.show_manage_menu('story', this.$st, {
@@ -1031,7 +1080,8 @@ NEWSBLUR.Views.StoryTitleView = Backbone.View.extend({
             return this.select_story(e);
         }
 
-        NEWSBLUR.app.story_tab_view.prepare_story(this.model, true);
+        // story_title_view.js: this click opens the story in Story view by hand, so the story pane slides.
+        NEWSBLUR.app.story_tab_view.prepare_story(this.model, true, { slide: true });
         NEWSBLUR.app.story_tab_view.open_story(this.model);
         return false;
     },

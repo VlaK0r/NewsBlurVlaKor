@@ -52,6 +52,7 @@
 @class WKWebView;
 @class BGAppRefreshTask;
 @class FeedIconPreparationRequest;
+@class StoryScoreRefresher;
 
 @interface NewsBlurAppDelegate : BaseViewController
 <UIApplicationDelegate, UINavigationControllerDelegate, UIPopoverPresentationControllerDelegate,
@@ -203,6 +204,8 @@ SFSafariViewControllerDelegate, UIGestureRecognizerDelegate>  {
 
 @property (nonatomic) AFHTTPSessionManager *networkManager;
 @property (nonatomic, readwrite) StoriesCollection *storiesCollection;
+/// NewsBlurAppDelegate.m asks StoryScoreRefresher.swift for the loaded stories' scores after each classifier save.
+@property (nonatomic, readonly) StoryScoreRefresher *storyScoreRefresher;
 @property (nonatomic, readwrite) PINCache *cachedFavicons;
 @property (nonatomic, readwrite) PINCache *cachedStoryImages;
 @property (nonatomic, readwrite) PINCache *cachedUserAvatars;
@@ -286,6 +289,7 @@ SFSafariViewControllerDelegate, UIGestureRecognizerDelegate>  {
 @property (nonatomic, strong) NSString *pendingFolder;
 @property (nonatomic, strong) NSString *pendingDailyBriefingStoryHash;
 @property (nonatomic, copy, readonly) NSDictionary<NSString *, NSString *> *pendingNotificationStory;
+@property (nonatomic, copy, readonly) NSDictionary<NSString *, NSString *> *pendingWidgetNavigation;
 
 @property (nonatomic) NSArray *categories;
 @property (nonatomic) NSDictionary *categoryFeeds;
@@ -338,6 +342,7 @@ SFSafariViewControllerDelegate, UIGestureRecognizerDelegate>  {
 - (void)showPremiumDialog;
 - (void)showPremiumDialogForArchive;
 - (void)showPremiumDialogForPro;
+- (void)showUsageBillingDialog;
 - (void)updateSplitBehavior:(BOOL)refresh;
 - (void)addSplitControlToMenuController:(MenuViewController *)menuViewController;
 - (void)showPreferences;
@@ -388,8 +393,12 @@ SFSafariViewControllerDelegate, UIGestureRecognizerDelegate>  {
 - (void)adjustStoryDetailWebView;
 - (void)calibrateStoryTitles;
 - (void)recalculateIntelligenceScores:(id)feedId;
+- (void)showRescoredStories:(NSArray *)stories;
 
 - (void)cancelRequests;
+// Returns the server origin login and the API use for urlString, or nil when it names no host.
++ (NSString *)normalizedServerURLString:(NSString *)urlString;
+- (void)setCustomDomainPreference:(NSString *)urlString;
 - (void)resetNetworkManagerForTesting;
 - (void)setCustomDomainForTesting:(NSString *)urlString;
 - (void)setNetworkProtocolClassesForTesting:(NSArray<Class> *)protocolClasses;
@@ -479,6 +488,7 @@ SFSafariViewControllerDelegate, UIGestureRecognizerDelegate>  {
 - (void)failedMarkAsUnsaved:(NSDictionary *)params;
 - (NSInteger)adjustSavedStoryCount:(NSString *)tagName direction:(NSInteger)direction;
 - (NSArray *)updateStarredStoryCounts:(NSDictionary *)results;
+- (void)refreshVisibleInteractions;
 - (NSArray *)updateSavedSearches:(NSDictionary *)results;
 - (void)renameFeed:(NSString *)newTitle;
 - (void)renameFolder:(NSString *)newTitle;
@@ -564,6 +574,7 @@ SFSafariViewControllerDelegate, UIGestureRecognizerDelegate>  {
 - (void)toggleUrlRegexClassifier:(NSString *)pattern feedId:(NSString *)feedId scope:(NSString *)scope folderName:(NSString *)folderName;
 - (void)toggleUrlRegexClassifier:(NSString *)pattern feedId:(NSString *)feedId score:(NSInteger)score scope:(NSString *)scope folderName:(NSString *)folderName;
 - (void)toggleFeedClassifier:(NSString *)feedId;
+- (void)savePromptClassifier:(NSString *)prompt feedId:(NSString *)feedId score:(NSInteger)score includeImages:(BOOL)includeImages scope:(NSString *)scope folderName:(NSString *)folderName;
 - (void)changeClassifierScope:(NSString *)classifierType value:(NSString *)value
                        feedId:(NSString *)feedId score:(NSInteger)score
                      oldScope:(NSString *)oldScope oldFolderName:(NSString *)oldFolderName

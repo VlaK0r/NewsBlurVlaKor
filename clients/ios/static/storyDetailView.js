@@ -36,6 +36,19 @@ var linkAt = function(x, y, attribute) {
     return el && el[attribute];
 };
 
+// StoryDetailObjCViewController.m supplies native coordinates, including the WebView's content inset.
+function newsblur_is_blank_story_tap_at(x, y, offset_x, offset_y, view_width) {
+    if (view_width <= 0) return false;
+    var selection = window.getSelection();
+    if (selection && !selection.isCollapsed) return false;
+    var scale = window.innerWidth / view_width;
+    var target = document.elementFromPoint((x + offset_x) * scale - window.scrollX,
+                                           (y + offset_y) * scale - window.scrollY);
+    return !!(target && target.closest('.NB-story') &&
+        !target.closest('a,button,input,textarea,select,label,summary,img,video,audio,iframe,' +
+                        '[contenteditable],[role="button"],[role="link"],.NB-media-card'));
+}
+
 // StoryImageViewerController.swift converts document coordinates through the native scroll offset.
 var newsblur_image_sequence = 0;
 function newsblurImageRect(token, load_id) {
@@ -110,6 +123,14 @@ $('.NB-read-button a').live('click', function () {
 $('.NB-train-button a').live('click', function () {
     var offset = $(this).offset();
     console.log(offset);
+    var url = $(this).attr('href') + "/" + offset.left + "/" + (offset.top - window.pageYOffset) + "/" + offset.width + "/" + offset.height;
+    window.location = url;
+    return false;
+});
+
+// storyDetailView.js sends a tapped AI classifier header pill's position so StoryDetailObjCViewController.m anchors the trainer to it.
+$('a.NB-story-ai-classifier').live('click', function () {
+    var offset = $(this).offset();
     var url = $(this).attr('href') + "/" + offset.left + "/" + (offset.top - window.pageYOffset) + "/" + offset.width + "/" + offset.height;
     window.location = url;
     return false;
@@ -299,6 +320,10 @@ function attachFastClick() {
     var tags = document.getElementsByClassName("NB-story-tag");
     Array.prototype.slice.call(tags, 0).forEach(function(tag) {
                                                 new NoClickDelay(tag);
+                                                });
+    var aiClassifiers = document.getElementsByClassName("NB-story-ai-classifier");
+    Array.prototype.slice.call(aiClassifiers, 0).forEach(function(pill) {
+                                                new NoClickDelay(pill);
                                                 });
     var userTags = document.getElementsByClassName("NB-user-tag");
     Array.prototype.slice.call(userTags, 0).forEach(function(tag) {
@@ -653,9 +678,238 @@ if (document.readyState === 'loading') {
     newsblurListenWatchPill();
 }
 
+// storyDetailView.js: Podcast episodes and other story audio play in the app's own player
+// (Listen/ListenMediaPlayer.swift), with lock screen controls, skips and a place shared with the web, so each
+// <audio> becomes a card. Its buttons go to Listen/ListenMediaStoryBridge.swift, which also sends the card states.
+var NEWSBLUR_MEDIA_ICONS = {
+    play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.6-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4.5" width="4.2" height="15" rx="1.2"/><rect x="13.8" y="4.5" width="4.2" height="15" rx="1.2"/></svg>'
+};
+
+function newsblurMediaBridge() {
+    return window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.newsblurStoryMedia;
+}
+
+// storyDetailView.js reads the src the way media_player_view.js detect_media_in_story does, so every platform
+// names the episode with the same media_url.
+function newsblurMediaSource(audio) {
+    var source = audio.querySelector('source[src]');
+    return (source && source.getAttribute('src')) || audio.getAttribute('src') || '';
+}
+
+function newsblurMediaButton(className, action, label) {
+    // storyDetailView.js: no href, so a long press doesn't preview a link; StoryDetailObjCViewController.m still
+    // ignores taps on an A for the reader's chrome.
+    var button = document.createElement('a');
+    button.className = className;
+    button.setAttribute('tabindex', '0');
+    button.setAttribute('role', 'button');
+    button.setAttribute('data-nb-media-action', action);
+    if (label) button.textContent = label;
+    return button;
+}
+
+function newsblurPrepareMedia() {
+    var config = window.newsblurMediaConfig;
+    if (!config || !newsblurMediaBridge()) return;
+    var labels = config.labels || {};
+    var audios = document.querySelectorAll('#NB-story audio');
+    Array.prototype.forEach.call(audios, function (audio) {
+        var url = newsblurMediaSource(audio);
+        if (!url || audio.getAttribute('data-nb-media-card')) return;
+        audio.setAttribute('data-nb-media-card', 'true');
+        audio.removeAttribute('autoplay');
+        audio.setAttribute('preload', 'none');
+        try { audio.pause(); } catch (e) { }
+
+        var card = document.createElement('div');
+        card.className = 'NB-media-card';
+        card.setAttribute('data-nb-media-url', url);
+        var play = newsblurMediaButton('NB-media-card-play', 'toggle');
+        var icon = document.createElement('span');
+        icon.className = 'NB-media-card-icon';
+        var label = document.createElement('span');
+        label.className = 'NB-media-card-label';
+        play.appendChild(icon);
+        play.appendChild(label);
+        var actions = document.createElement('div');
+        actions.className = 'NB-media-card-actions';
+        actions.appendChild(newsblurMediaButton('NB-media-card-next', 'next', labels.play_next));
+        actions.appendChild(newsblurMediaButton('NB-media-card-last', 'last', labels.play_last));
+        var queued = newsblurMediaButton('NB-media-card-queued', 'unqueue', labels.queued);
+        queued.setAttribute('aria-label', labels.remove_queued || labels.queued || '');
+        actions.appendChild(queued);
+        card.appendChild(play);
+        card.appendChild(actions);
+        card.addEventListener('click', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            var button = event.target.closest('[data-nb-media-action]');
+            if (!button) return;
+            var bridge = newsblurMediaBridge();
+            try {
+                bridge.postMessage({action: button.getAttribute('data-nb-media-action'), url: url});
+            } catch (e) {
+                newsblurMediaFallback(url);
+            }
+        });
+        audio.parentNode.insertBefore(card, audio);
+        audio.style.display = 'none';
+    });
+    newsblurMediaSetState(config.state);
+}
+
+// storyDetailView.js puts the story's own player back when the app's player can't take the audio
+// (Listen/ListenMediaStoryBridge.swift calls this too), so the episode still plays inline.
+function newsblurMediaFallback(url) {
+    var cards = document.querySelectorAll('.NB-media-card');
+    Array.prototype.forEach.call(cards, function (card) {
+        if (card.getAttribute('data-nb-media-url') !== url) return;
+        var audio = card.nextElementSibling;
+        if (audio && audio.tagName === 'AUDIO') audio.style.display = '';
+        card.parentNode.removeChild(card);
+    });
+}
+
+// Listen/ListenMediaStoryBridge.swift cardState: {current, status: playing|loading|paused, queued: [urls], loaded}.
+function newsblurMediaSetState(state) {
+    state = state || {};
+    var labels = (window.newsblurMediaConfig && window.newsblurMediaConfig.labels) || {};
+    var queued = state.queued || [];
+    var cards = document.querySelectorAll('.NB-media-card');
+    Array.prototype.forEach.call(cards, function (card) {
+        var url = card.getAttribute('data-nb-media-url');
+        var status = state.current && url === state.current ? state.status : '';
+        var playing = status === 'playing' || status === 'loading';
+        var is_queued = !status && queued.indexOf(url) !== -1;
+        card.classList.toggle('NB-media-playing', playing);
+        card.classList.toggle('NB-media-loading', status === 'loading');
+        card.classList.toggle('NB-media-paused', status === 'paused');
+        card.classList.toggle('NB-media-queued', is_queued);
+        card.classList.toggle('NB-media-can-queue', !!state.loaded && !status && !is_queued);
+        var icon = card.querySelector('.NB-media-card-icon');
+        var label = card.querySelector('.NB-media-card-label');
+        if (icon) icon.innerHTML = playing ? NEWSBLUR_MEDIA_ICONS.pause : NEWSBLUR_MEDIA_ICONS.play;
+        if (label) label.textContent = playing ? labels.pause : (status === 'paused' ? labels.resume : labels.play);
+    });
+}
+
+try {
+    newsblurPrepareMedia();
+} catch (e) {
+    console.log(['Media cards failed', e]);
+}
+
 loadImages();
 fitVideos();
 
 Zepto(function($) {
       attachFastClick();
+});
+
+// storyDetailView.js starts motion only after the native paint/readiness gate opens.
+var newsblurMotionSeen = new WeakSet();
+var newsblurMotionStates = new Map();
+var newsblurMotionRecords = new WeakMap();
+var newsblurMotionObserver;
+var newsblurMotionMutationObserver;
+var newsblurMotionReady = false;
+var newsblurReduceMotion = false;
+function newsblurRefreshStoryMotion() {
+    if (newsblurMotionReady) newsblurAnimateStoryEntrance();
+}
+function newsblurAnimateStoryEntrance(reduceMotion) {
+    if (typeof reduceMotion === 'boolean') newsblurReduceMotion = reduceMotion;
+    newsblurMotionReady = true;
+    function animate(element, index) {
+        var record = newsblurMotionRecords.get(element);
+        if (!record || record.element !== element || element.isConnected === false) return;
+        record.presented = true;
+        if (!element.animate) return;
+        var frames = [
+            { opacity: record.changed ? .6 : 0, transform: record.changed ? 'translateY(3px)' : 'translateY(10px)' },
+            { opacity: 1, transform: 'translateY(-.5px)', offset: .8 },
+            { opacity: 1, transform: 'translateY(0)' }
+        ];
+        if (newsblurReduceMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            frames.forEach(function(frame) { delete frame.transform; });
+        }
+        element.animate(frames, { duration: record.changed ? 220 : 320, delay: record.changed ? 0 : Math.min(index * 25, 150),
+            easing: 'cubic-bezier(.2,.75,.3,1)', fill: 'backwards' });
+    }
+    if (!newsblurMotionObserver && window.IntersectionObserver) {
+        newsblurMotionObserver = new IntersectionObserver(function(entries) {
+            var index = 0;
+            entries.sort(function(a, b) {
+                return a.boundingClientRect.top - b.boundingClientRect.top || a.boundingClientRect.left - b.boundingClientRect.left;
+            }).forEach(function(entry) {
+                if (!entry.isIntersecting) return;
+                newsblurMotionObserver.unobserve(entry.target);
+                animate(entry.target, index++);
+            });
+        });
+    }
+    if (!newsblurMotionMutationObserver && window.MutationObserver) {
+        var scheduled = false;
+        newsblurMotionMutationObserver = new MutationObserver(function() {
+            if (scheduled) return;
+            scheduled = true;
+            requestAnimationFrame(function() { scheduled = false; newsblurRefreshStoryMotion(); });
+        });
+        newsblurMotionMutationObserver.observe(document.body, { childList: true, subtree: true,
+            attributes: true, attributeFilter: ['class', 'style'] });
+    }
+    var elements = document.querySelectorAll('.NB-story-title, .NB-story-date, #NB-story-author, #NB-story, ' +
+        '.NB-share-button, .NB-story-shares, .NB-story-comment, .NB-story-comment-reply, ' +
+        '.NB-story-comments-friends-header, .NB-story-comments-public-header, ' +
+        '.NB-story-cluster-detail-header, .NB-story-cluster-detail-item');
+    var positions = new Map();
+    var pending = Array.prototype.filter.call(elements, function(element) {
+        // storyDetailView.js preserves identity when native refreshSideOptions/refreshComments replaces innerHTML.
+        var classes = (element.className || '').split(/\s+/);
+        var action = classes.find(function(name) { return /^NB-(train|share-share|save|ask-ai|listen)-button$/.test(name); });
+        var scope = [];
+        for (var parent = element.parentElement; parent; parent = parent.parentElement) {
+            if (parent.id && scope[scope.length - 1] !== parent.id) scope.push(parent.id);
+        }
+        var base = scope.reverse().join('/') + '/' + (element.id || action || classes[0]) + '/' + (element.getAttribute('href') || '');
+        var position = positions.get(base) || 0;
+        positions.set(base, position + 1);
+        if (newsblurMotionSeen.has(element) || !element.getClientRects().length) return false;
+        newsblurMotionSeen.add(element);
+        var key = base + '/' + position;
+        var signature = element.className + '|' + element.innerHTML;
+        var previous = newsblurMotionStates.get(key);
+        if (previous && previous.signature === signature && previous.presented) return false;
+        if (previous && newsblurMotionObserver) newsblurMotionObserver.unobserve(previous.element);
+        var record = { signature: signature, element: element, presented: false, changed: !!(previous && previous.presented) };
+        newsblurMotionStates.set(key, record);
+        newsblurMotionRecords.set(element, record);
+        return true;
+    });
+    var groups = new Map();
+    pending.forEach(function(element) {
+        // storyDetailView.js lets a newly inserted comment carry its replies, avoiding nested double motion.
+        for (var parent = element.parentElement; parent; parent = parent.parentElement) {
+            if (pending.indexOf(parent) !== -1) {
+                newsblurMotionRecords.get(element).presented = true;
+                return;
+            }
+        }
+        var bounds = element.getBoundingClientRect();
+        if (newsblurMotionObserver && (bounds.top >= window.innerHeight || bounds.bottom <= 0)) {
+            newsblurMotionObserver.observe(element);
+            return;
+        }
+        var index = groups.get(element.parentElement) || 0;
+        groups.set(element.parentElement, index + 1);
+        animate(element, index);
+    });
+}
+
+// storyDetailView.js adds feedback to existing actions without delaying their native bridge.
+$('.NB-save-button, .NB-button').live('click', function () {
+    if (!this.animate || newsblurReduceMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    this.animate([{ transform: 'scale(.86)' }, { transform: 'scale(1.12)', offset: .65 }, { transform: 'scale(1)' }],
+        { duration: 320, easing: 'ease-out' });
 });

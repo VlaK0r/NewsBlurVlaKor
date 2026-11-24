@@ -21,6 +21,7 @@ import com.newsblur.domain.UserDetails
 import com.newsblur.listen.ListenManager
 import com.newsblur.network.APIConstants
 import com.newsblur.service.SubscriptionSyncService
+import com.newsblur.realtime.RealtimeUpdates
 import com.newsblur.service.SyncService
 import com.newsblur.service.SyncServiceState
 import com.newsblur.util.AppConstants
@@ -46,7 +47,10 @@ import com.newsblur.util.StoryButton
 import com.newsblur.util.StoryContentPreviewStyle
 import com.newsblur.util.StoryListStyle
 import com.newsblur.util.StoryOrder
+import com.newsblur.util.ThemeAppearance
+import com.newsblur.util.ThemeMode
 import com.newsblur.util.ThumbnailStyle
+import com.newsblur.util.UsageBillingState
 import com.newsblur.util.VolumeKeyNavigation
 import com.newsblur.util.WidgetBackground
 import com.newsblur.widget.WidgetUtils.disableWidgetUpdate
@@ -119,6 +123,7 @@ class PrefsRepo(
             putString(AppConstants.LAST_APP_VERSION, appVersion)
             // also make sure we auto-trigger an update, since all data are now gone
             putLong(AppConstants.LAST_SYNC_TIME, 0L)
+            putLong(AppConstants.LAST_UNREAD_SYNC_TIME, 0L)
         }
     }
 
@@ -209,6 +214,7 @@ class PrefsRepo(
     ) {
         // PrefsRepo.kt stops Listen first so the signed-out account's story stops playing and its notification goes.
         ListenManager.from(context).stopForAccountChange()
+        RealtimeUpdates.from(context).stopForAccountChange()
         SyncService.stop(context)
         syncServiceState.clearState()
 
@@ -230,6 +236,8 @@ class PrefsRepo(
 
         // wipe the local DB
         dbHelper.dropAndRecreateTables()
+        // Only now may realtime subscribe again: nothing of the previous account is left to subscribe with.
+        RealtimeUpdates.from(context).accountChangeComplete()
 
         // disable widget
         disableWidgetUpdate(context)
@@ -249,6 +257,7 @@ class PrefsRepo(
     ) {
         // The previous account's story mustn't keep playing, or report its listening, as the new one.
         ListenManager.from(context).stopForAccountChange()
+        RealtimeUpdates.from(context).stopForAccountChange()
         // wipe the prefs store except for the cookie and login keys since we need to
         // authenticate further API calls
         val keys: MutableSet<String> = HashSet(prefs.all.keys)
@@ -263,6 +272,7 @@ class PrefsRepo(
 
         // wipe the local DB
         dbHelper.dropAndRecreateTables()
+        RealtimeUpdates.from(context).accountChangeComplete()
     }
 
     /**
@@ -350,16 +360,33 @@ class PrefsRepo(
      * data to justify automatically syncing again.
      */
     fun isTimeToAutoSync(): Boolean {
-        val lastTime = prefs.getLong(AppConstants.LAST_SYNC_TIME, 1L)
+        val lastTime = getLastSyncTime()
         return ((lastTime + AppConstants.AUTO_SYNC_TIME_MILLIS) < (Date()).time)
     }
+
+    /** When SyncService.kt last loaded the feed list with counts. */
+    fun getLastSyncTime(): Long = prefs.getLong(AppConstants.LAST_SYNC_TIME, 1L)
 
     /**
      * Make note that a sync of the feed/folder list has been completed, so we can track
      * how long it has been until another is needed.
      */
     fun updateLastSyncTime() {
-        prefs.edit { putLong(AppConstants.LAST_SYNC_TIME, (Date()).time) }
+        prefs.edit {
+            putLong(AppConstants.LAST_SYNC_TIME, (Date()).time)
+            // A feed/folder list sync also starts the unread story download.
+            putLong(AppConstants.LAST_UNREAD_SYNC_TIME, (Date()).time)
+        }
+    }
+
+    /** Whether the unread story download for offline reading is due, on the same schedule as the feed list sync. */
+    fun isTimeToSyncUnreads(): Boolean {
+        val lastTime = prefs.getLong(AppConstants.LAST_UNREAD_SYNC_TIME, 1L)
+        return lastTime + AppConstants.AUTO_SYNC_TIME_MILLIS < Date().time
+    }
+
+    fun updateLastUnreadSyncTime() {
+        prefs.edit { putLong(AppConstants.LAST_UNREAD_SYNC_TIME, (Date()).time) }
     }
 
     private fun getLastVacuumTime(): Long = prefs.getLong(PrefConstants.LAST_VACUUM_TIME, 1L)
@@ -818,6 +845,9 @@ class PrefsRepo(
 
     fun isKeepOldStories() = prefs.getBoolean(PrefConstants.KEEP_OLD_STORIES, false)
 
+    /** Whether the open list offers stories that arrive while it's open, in NewStoriesPill.kt. On for every device by default. */
+    fun isNewStoriesPillEnabled() = prefs.getBoolean(PrefConstants.SHOW_NEW_STORIES, true)
+
     fun getMaxCachedAgeMillis(): Long {
         val `val` = prefs.getString(PrefConstants.CACHE_AGE_SELECT, PrefConstants.CACHE_AGE_SELECT_30D)!!
         if (`val` == PrefConstants.CACHE_AGE_SELECT_2D) return PrefConstants.CACHE_AGE_VALUE_2D
@@ -847,15 +877,58 @@ class PrefsRepo(
     }
 
     fun setSelectedTheme(value: ThemeValue) {
-        prefs.edit { putString(PrefConstants.THEME, value.name) }
-        // Track the most recently used light/dark variant for Auto mode
-        when (value) {
-            ThemeValue.LIGHT, ThemeValue.SEPIA ->
-                prefs.edit { putString(PrefConstants.THEME_LIGHT_VARIANT, value.name) }
-            ThemeValue.DARK, ThemeValue.BLACK ->
-                prefs.edit { putString(PrefConstants.THEME_DARK_VARIANT, value.name) }
-            ThemeValue.AUTO -> {} // no variant to track
+        // PrefsRepo.kt saves the theme and its remembered variant in one edit, so a theme listener never
+        // sees the new theme beside the old variant.
+        prefs.edit {
+            putString(PrefConstants.THEME, value.name)
+            // Track the most recently used light/dark variant for Auto mode
+            when (value) {
+                ThemeValue.LIGHT, ThemeValue.SEPIA -> putString(PrefConstants.THEME_LIGHT_VARIANT, value.name)
+                ThemeValue.DARK, ThemeValue.BLACK -> putString(PrefConstants.THEME_DARK_VARIANT, value.name)
+                ThemeValue.AUTO -> {} // no variant to track
+            }
         }
+    }
+
+    /** PrefsRepo.kt reads the Light appearance row's choice: LIGHT (Normal) unless the reader picked SEPIA (Warm). */
+    fun getThemeLightVariant(): ThemeValue =
+        if (prefs.getString(PrefConstants.THEME_LIGHT_VARIANT, null) == ThemeValue.SEPIA.name) ThemeValue.SEPIA else ThemeValue.LIGHT
+
+    /** PrefsRepo.kt reads the Dark appearance row's choice: DARK (Gray), Android's default, unless the reader picked BLACK. */
+    fun getThemeDarkVariant(): ThemeValue =
+        if (prefs.getString(PrefConstants.THEME_DARK_VARIANT, null) == ThemeValue.BLACK.name) ThemeValue.BLACK else ThemeValue.DARK
+
+    /** PrefsRepo.kt applies Settings' Theme row: Light and Dark return to the variant last used on that side. */
+    fun setThemeMode(mode: ThemeMode) {
+        setSelectedTheme(ThemeAppearance.themeFor(mode, getThemeLightVariant(), getThemeDarkVariant()))
+    }
+
+    /**
+     * PrefsRepo.kt applies Settings' Light and Dark appearance rows. A variant for the side on screen switches to it; one for the
+     * other side, or chosen in Auto, is only remembered for when that side shows.
+     */
+    fun setThemeVariant(variant: ThemeValue) {
+        val selected = getSelectedTheme()
+        if (selected != ThemeValue.AUTO && ThemeAppearance.mode(selected) == ThemeAppearance.mode(variant)) {
+            setSelectedTheme(variant)
+            return
+        }
+        when (ThemeAppearance.mode(variant)) {
+            ThemeMode.LIGHT -> prefs.edit { putString(PrefConstants.THEME_LIGHT_VARIANT, variant.name) }
+            ThemeMode.DARK -> prefs.edit { putString(PrefConstants.THEME_DARK_VARIANT, variant.name) }
+            ThemeMode.AUTO -> {}
+        }
+    }
+
+    fun isThemeGestureEnabled() = prefs.getBoolean(PrefConstants.THEME_GESTURE, true)
+
+    /** PrefsRepo.kt picks the theme a two-finger swipe (ThemeSwipeGesture.kt) switches to, or null when Settings turned it off. */
+    fun themeAfterSwipe(
+        showing: ThemeValue,
+        fingersMovedDown: Boolean,
+    ): ThemeValue? {
+        if (!isThemeGestureEnabled()) return null
+        return ThemeAppearance.afterSwipe(getSelectedTheme(), showing, getThemeLightVariant(), getThemeDarkVariant(), fingersMovedDown)
     }
 
     /**
@@ -867,13 +940,7 @@ class PrefsRepo(
         val selected = getSelectedTheme()
         if (selected != ThemeValue.AUTO) return selected
         val nightFlags = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
-        return if (nightFlags == Configuration.UI_MODE_NIGHT_YES) {
-            val darkVariant = prefs.getString(PrefConstants.THEME_DARK_VARIANT, ThemeValue.DARK.name)!!
-            ThemeValue.valueOf(darkVariant)
-        } else {
-            val lightVariant = prefs.getString(PrefConstants.THEME_LIGHT_VARIANT, ThemeValue.LIGHT.name)!!
-            ThemeValue.valueOf(lightVariant)
-        }
+        return if (nightFlags == Configuration.UI_MODE_NIGHT_YES) getThemeDarkVariant() else getThemeLightVariant()
     }
 
     fun getStateFilter(): StateFilter =
@@ -1039,6 +1106,24 @@ class PrefsRepo(
     }
 
     fun getIsPro() = prefs.getBoolean(PrefConstants.IS_PRO, false)
+
+    fun setUsageBillingState(state: UsageBillingState) {
+        prefs.edit {
+            putBoolean(PrefConstants.IS_USAGE_BILLING, state.isUsageBilling)
+            putBoolean(PrefConstants.IS_SELF_HOSTED_AI, state.isSelfHostedAi)
+            putBoolean(PrefConstants.CAN_USE_AI_CLASSIFIERS, state.canUseAiClassifiers)
+            // PrefsRepo.kt stores the limit as a string so a cleared limit stays distinct from $0.
+            putString(PrefConstants.USAGE_BILLING_LIMIT, state.usageBillingLimit?.toString())
+        }
+    }
+
+    fun getUsageBillingState(): UsageBillingState =
+        UsageBillingState(
+            isUsageBilling = prefs.getBoolean(PrefConstants.IS_USAGE_BILLING, false),
+            isSelfHostedAi = prefs.getBoolean(PrefConstants.IS_SELF_HOSTED_AI, false),
+            canUseAiClassifiers = prefs.getBoolean(PrefConstants.CAN_USE_AI_CLASSIFIERS, false),
+            usageBillingLimit = prefs.getString(PrefConstants.USAGE_BILLING_LIMIT, null)?.toDoubleOrNull(),
+        )
 
     fun setIsStaff(isStaff: Boolean) {
         prefs.edit {

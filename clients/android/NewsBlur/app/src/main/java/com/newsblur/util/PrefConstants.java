@@ -30,6 +30,11 @@ public class PrefConstants {
 	public static final String IS_ARCHIVE = "is_archive";
     public static final String IS_PRO = "is_pro";
     public static final String IS_STAFF = "is_staff";
+    // Natural language classifier billing from /reader/feeds user_profile, see UsageBilling.kt.
+    public static final String IS_USAGE_BILLING = "is_usage_billing";
+    public static final String IS_SELF_HOSTED_AI = "is_self_hosted_ai";
+    public static final String CAN_USE_AI_CLASSIFIERS = "can_use_ai_classifiers";
+    public static final String USAGE_BILLING_LIMIT = "usage_billing_limit";
     // don't update key value for backward compat
 	public static final String SUBSCRIPTION_EXPIRE = "premium_expire";
 
@@ -120,8 +125,12 @@ public class PrefConstants {
     public static final String LANGUAGE_DIALOG_DEBUG = "language_dialog_debug";
 
     public static final String THEME = "theme";
+    public static final String REDUCE_MOTION = "reduce_motion";
+    // PrefConstants.java: whether RealtimeUpdates.kt offers stories that arrive in the open list (NewStoriesPill.kt).
+    public static final String SHOW_NEW_STORIES = "show_new_stories_pill";
     public static final String THEME_LIGHT_VARIANT = "theme_light_variant";
     public static final String THEME_DARK_VARIANT = "theme_dark_variant";
+    public static final String THEME_GESTURE = "theme_gesture";
     public enum ThemeValue {
         AUTO,
         LIGHT,

@@ -132,6 +132,7 @@ static BOOL NBBoolPreferenceValue(id value) {
 @property (nonatomic, strong) UIView *scrollingFeedHeaderView;
 @property (nonatomic) CGFloat horizontalFeedTopMargin;
 @property (nonatomic) BOOL hidNavigationBarForFeedHeader;
+@property (nonatomic) BOOL feedMotionPresentationScheduled;
 @property (nonatomic, strong) UIBarButtonItem *sidebarBarButton;
 @property (nonatomic, strong) NSLayoutConstraint *intelligenceControlWidthConstraint;
 @property (nonatomic, strong) NSOperationQueue *faviconPrefetchQueue;
@@ -289,6 +290,7 @@ static BOOL NBBoolPreferenceValue(id value) {
     searchContainerView.tag = 100; // Tag for theme updates
 
 #if TARGET_OS_MACCATALYST
+    searchContainerView.backgroundColor = UIColor.clearColor;
     CGFloat searchHorizontalInset = kMacFeedHeaderHorizontalInset;
 #else
     CGFloat searchHorizontalInset = 8;
@@ -377,11 +379,9 @@ static BOOL NBBoolPreferenceValue(id value) {
 #if TARGET_OS_MACCATALYST
     self.innerView.backgroundColor = UIColor.clearColor;
     
-    if (ThemeManager.themeManager.isLikeSystem) {
-        self.view.backgroundColor = UIColor.clearColor;
-    } else {
-        self.view.backgroundColor = UIColorFromRGB(0xf4f4f4);
-    }
+    self.view.backgroundColor = UIColor.clearColor;
+    self.view.opaque = NO;
+    self.navigationController.view.backgroundColor = UIColor.clearColor;
 #else
     self.view.backgroundColor = UIColorFromRGB(0xf4f4f4);
 #endif
@@ -406,16 +406,21 @@ static BOOL NBBoolPreferenceValue(id value) {
     [self updateTheme];
     [self layoutHeaderCounts:0];
 
+#if TARGET_OS_MACCATALYST
+    self.feedTitlesTable.backgroundColor = UIColor.clearColor;
+    self.feedTitlesTable.opaque = NO;
+#else
     self.feedTitlesTable.backgroundColor = UIColorFromRGB(0xf4f4f4);
+#endif
     self.feedTitlesTable.separatorColor = [UIColor clearColor];
     self.feedTitlesTable.translatesAutoresizingMaskIntoConstraints = NO;
     self.feedTitlesTable.estimatedRowHeight = 0;
     self.feedTitlesTable.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
     
 #if TARGET_OS_MACCATALYST
-    // Workaround for Catalyst bug.
-    self.feedTitlesLeadingConstraint.constant = -10;
-    self.feedTitlesTrailingConstraint.constant = -10;
+    // FeedsObjCViewController.m uses the full sidebar width now that SplitViewController.swift removes the system background inset.
+    self.feedTitlesLeadingConstraint.constant = 0;
+    self.feedTitlesTrailingConstraint.constant = 0;
 #endif
     
     if (@available(iOS 15.0, *)) {
@@ -696,6 +701,7 @@ static BOOL NBBoolPreferenceValue(id value) {
 //    }
 //    NSLog(@"Feed List timing 0: %f", [NSDate timeIntervalSinceReferenceDate] - start);
     [super viewWillAppear:animated];
+    [[ReaderMotion session:self] prepareForAppearance];
     [self updateFeedNavigationBarForHeader];
     
 #if TARGET_OS_MACCATALYST
@@ -768,12 +774,16 @@ static BOOL NBBoolPreferenceValue(id value) {
 //    NSLog(@"Feed List timing 2: %f", [NSDate timeIntervalSinceReferenceDate] - start);
 }
 
+- (void)viewIsAppearing:(BOOL)animated {
+    [super viewIsAppearing:animated];
+    [ReaderMotion presentFeedRows:self.feedTitlesTable owner:self];
+}
+
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
 #if TARGET_OS_MACCATALYST
     if (self.feedSearchContainerView) {
-        // FeedsObjCViewController.m extends the table 10 points past each sidebar edge for Catalyst rows.
-        // Measure search against the visible sidebar so that workaround does not consume its margins.
+        // FeedsObjCViewController.m measures search against the visible sidebar bounds to preserve its margins.
         CGRect sidebarBounds = [self.feedSearchContainerView convertRect:self.innerView.bounds fromView:self.innerView];
         CGRect searchFrame = self.searchField.frame;
         searchFrame.origin.x = CGRectGetMinX(sidebarBounds) + kMacFeedHeaderHorizontalInset;
@@ -853,6 +863,7 @@ static BOOL NBBoolPreferenceValue(id value) {
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
+    [ReaderMotion presentFeedRows:self.feedTitlesTable owner:self];
 //    self.navigationController.navigationBar.backItem.title = @"All Sites";
     [self layoutHeaderCounts:0];
     [self refreshHeaderCounts];
@@ -1068,13 +1079,14 @@ static BOOL NBBoolPreferenceValue(id value) {
     CGFloat availableWidth = MAX(0, toolbarWidth - 128);
     CGFloat contentWidth = allTextWidth + selectedContentWidth + iconOnlyCount * 14;
     // FeedsObjCViewController.m reduces text only after all segment padding is exhausted for a longer translation.
-    while (contentWidth > availableWidth && font.pointSize > 6) {
+    while (contentWidth > availableWidth && font.pointSize > 5.5) {
         font = [UIFont systemFontOfSize:font.pointSize - 0.5];
         allTextWidth = ceil([titles[0] sizeWithAttributes:@{NSFontAttributeName: font}].width);
         selectedContentWidth = selected == 0 ? 0 : ceil([titles[selected] sizeWithAttributes:@{NSFontAttributeName: font}].width) + 18;
         contentWidth = allTextWidth + selectedContentWidth + iconOnlyCount * 14;
     }
-    CGFloat controlWidth = MIN(availableWidth, contentWidth + 4 * 12);
+    // FeedsObjCViewController.m gives each segment 12pt on either side when space permits, reducing padding for narrow sidebars.
+    CGFloat controlWidth = MIN(availableWidth, contentWidth + 4 * 24);
     CGFloat segmentPadding = MAX(0, (controlWidth - contentWidth) / 4);
     CGFloat allWidth = allTextWidth + segmentPadding;
     CGFloat selectedWidth = selectedContentWidth + segmentPadding;
@@ -1305,6 +1317,9 @@ static BOOL NBBoolPreferenceValue(id value) {
 - (void)returnToApp {
     NSDate *decayDate = [[NSDate alloc] initWithTimeIntervalSinceNow:(-1 * BACKGROUND_REFRESH_SECONDS)];
     NSLog(@"Left app: %@ - %f", self.leftAppDate, [self.leftAppDate timeIntervalSinceDate:decayDate]);
+    // FeedsObjCViewController.m skips the reload when the realtime socket stayed connected the whole time
+    // (the Mac app keeps it open while hidden), since RealtimeUpdates.swift already applied every change.
+    if ([RealtimeUpdates.shared hasStayedConnectedSince:self.leftAppDate]) return;
     if ([self.leftAppDate timeIntervalSinceDate:decayDate] < 0) {
         [appDelegate reloadFeedsView:YES];
     }
@@ -1354,6 +1369,8 @@ static BOOL NBBoolPreferenceValue(id value) {
     NSString *urlFeedList;
     NSLog(@"Fetching feed list");
     [appDelegate cancelOfflineQueue];
+    // A feed list load ends in a full count refresh, which covers RealtimeUpdates.swift's catch-up.
+    [RealtimeUpdates.shared noteFullCountRefresh];
     
     if (self.inPullToRefresh_) {
         urlFeedList = [NSString stringWithFormat:@"%@/reader/feeds?flat=true&update_counts=true&include_inactive=true",
@@ -1451,6 +1468,7 @@ static BOOL NBBoolPreferenceValue(id value) {
     [defaults setObject:appDelegate.dictSavedStoryTags forKey:@"share:tags"];
     [defaults setObject:appDelegate.dictFoldersArray forKey:@"share:folders"];
     [defaults setObject:preview forKey:@"widget:preview_images_size"];
+    [defaults setObject:[userPreferences objectForKey:@"infrequent_stories_per_month"] forKey:@"widget:infrequent_stories_per_month"];
     [self validateWidgetFeedsForGroupDefaults:defaults usingResults:results];
     // FeedsObjCViewController.m publishes the complete catalog for per-widget folder/site selection.
     NSDictionary *widgetCatalog = @{@"feeds": results[@"feeds"] ?: @{},
@@ -1812,7 +1830,10 @@ static BOOL NBBoolPreferenceValue(id value) {
         [self loadNotificationStory];
     }
     
-    if (finished && !self.isOffline) [appDelegate feedSubscriptionsDidLoad];
+    if (finished && !self.isOffline) {
+        [appDelegate feedSubscriptionsDidLoad];
+        [RealtimeUpdates.shared feedListDidLoad];
+    }
     [[NSNotificationCenter defaultCenter] postNotificationName:@"FinishedLoadingFeedsNotification" object:nil];
 }
 
@@ -2031,6 +2052,14 @@ static BOOL NBBoolPreferenceValue(id value) {
             [self.appDelegate showPremiumDialog];
         }];
     }
+
+    // FeedsObjCViewController.m offers natural language classifier billing beside the subscription (UsageBillingView.swift),
+    // unless UsageBillingFeature.swift holds it out of this release.
+    if (UsageBillingFeature.isEnabled) {
+        [viewController addFeedListTitle:[NBLocalization text:@"Usage Billing"] iconName:@"icons8-prompt-100" selectionShouldDismiss:YES handler:^{
+            [self.appDelegate showUsageBillingDialog];
+        }];
+    }
     
     [viewController addFeedListTitle:[NBLocalization text:@"Support Forum"] iconName:@"feed-menu-feedback" selectionShouldDismiss:YES handler:^{
         NSURL *url = [NSURL URLWithString:@"https://forum.newsblur.com"];
@@ -2245,11 +2274,9 @@ static BOOL NBBoolPreferenceValue(id value) {
     [super systemAppearanceDidChange:isDark];
     
 #if TARGET_OS_MACCATALYST
-    if (ThemeManager.themeManager.isLikeSystem) {
-        self.view.backgroundColor = UIColor.clearColor;
-    } else {
-        self.view.backgroundColor = UIColorFromRGB(0xf4f4f4);
-    }
+    self.view.backgroundColor = UIColor.clearColor;
+    self.view.opaque = NO;
+    self.navigationController.view.backgroundColor = UIColor.clearColor;
 #endif
 }
 
@@ -2265,6 +2292,12 @@ static BOOL NBBoolPreferenceValue(id value) {
     UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] initWithIdiom:[[UIDevice currentDevice] userInterfaceIdiom]];
     appearance.backgroundColor = [UINavigationBar appearance].barTintColor;
     appearance.titleTextAttributes = [UINavigationBar appearance].titleTextAttributes;
+#if TARGET_OS_MACCATALYST
+    // FeedsObjCViewController.m shares the native window material with SceneDelegate.swift's toolbar.
+    [appearance configureWithTransparentBackground];
+    self.navigationController.navigationBar.backgroundColor = UIColor.clearColor;
+    self.navigationController.navigationBar.translucent = YES;
+#endif
     if (@available(iOS 13.0, *)) {
         UIBarButtonItemAppearance *buttonAppearance = [[UIBarButtonItemAppearance alloc] init];
         NSDictionary *textAttributes = @{NSForegroundColorAttributeName: tintColor};
@@ -2316,11 +2349,9 @@ static BOOL NBBoolPreferenceValue(id value) {
         self.sidebarBarButton.tintColor = tintColor;
     }
 #if TARGET_OS_MACCATALYST
-    if (ThemeManager.themeManager.isLikeSystem) {
-        self.view.backgroundColor = UIColor.clearColor;
-    } else {
-        self.view.backgroundColor = UIColorFromRGB(0xf4f4f4);
-    }
+    self.view.backgroundColor = UIColor.clearColor;
+    self.view.opaque = NO;
+    self.navigationController.view.backgroundColor = UIColor.clearColor;
 #else
     self.refreshControl.tintColor = UIColorFromLightDarkRGB(0x0, 0xffffff);
     self.refreshControl.backgroundColor = UIColorFromRGB(0xE3E6E0);
@@ -2361,6 +2392,9 @@ static BOOL NBBoolPreferenceValue(id value) {
     
     // Update search field colors for theme
     self.feedTitlesTable.tableHeaderView.backgroundColor = UIColorFromLightSepiaMediumDarkRGB(0xf4f4f4, 0xF3E2CB, 0x333333, 0x222222);
+#if TARGET_OS_MACCATALYST
+    self.feedTitlesTable.tableHeaderView.backgroundColor = UIColor.clearColor;
+#endif
     self.feedSearchContainerView.backgroundColor = self.feedTitlesTable.tableHeaderView.backgroundColor;
     self.searchField.backgroundColor = UIColorFromLightSepiaMediumDarkRGB(0xFFFFFF, 0xFAF5ED, 0x444444, 0x333333);
     self.searchField.textColor = UIColorFromLightSepiaMediumDarkRGB(0x333333, 0x333333, 0xd0d0d0, 0xd0d0d0);
@@ -2378,7 +2412,12 @@ static BOOL NBBoolPreferenceValue(id value) {
         self.searchField.keyboardAppearance = UIKeyboardAppearanceDefault;
     }
     
+#if TARGET_OS_MACCATALYST
+    self.feedTitlesTable.backgroundColor = UIColor.clearColor;
+    self.feedTitlesTable.opaque = NO;
+#else
     self.feedTitlesTable.backgroundColor = UIColorFromRGB(0xf4f4f4);
+#endif
     
     [self reloadFeedTitlesTable];
     
@@ -2453,6 +2492,16 @@ static BOOL NBBoolPreferenceValue(id value) {
     
     if (![identifier isKindOfClass:[NSString class]]) {
         identifier = notification.userInfo.allKeys.firstObject;
+    }
+
+    // MenuViewController.m also changes this preference directly, producing a defaults notification without a key.
+    if (!identifier || [identifier isEqual:@"infrequent_stories_per_month"]) {
+        NSNumber *limit = [[NSUserDefaults standardUserDefaults] objectForKey:@"infrequent_stories_per_month"];
+        NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:@"group.com.newsblur.NewsBlur-Group"];
+        if (limit && ![limit isEqual:[defaults objectForKey:@"widget:infrequent_stories_per_month"]]) {
+            [defaults setObject:limit forKey:@"widget:infrequent_stories_per_month"];
+            [self.appDelegate.storyPagesViewController reloadWidget];
+        }
     }
     
     // Listen/ListenPreferences.swift sends Listen and story button preferences to the server.
@@ -2998,6 +3047,38 @@ static BOOL NBBoolPreferenceValue(id value) {
     [self prepareVisibleFeedFavicons];
 }
 
+// FeedsObjCViewController.m keys entrances by feed identity so count refreshes never replay them.
+- (void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath {
+    NSString *key = cell.accessibilityIdentifier;
+    if (key.length == 0) key = [NSString stringWithFormat:@"feed-section-%ld-row-%ld", (long)indexPath.section, (long)indexPath.row];
+    [ReaderMotion registerFeedView:cell key:key owner:self];
+    [self scheduleFeedMotionPresentation];
+}
+
+- (void)tableView:(UITableView *)tableView willDisplayHeaderView:(UIView *)view forSection:(NSInteger)section {
+    NSString *key = [NSString stringWithFormat:@"folder-%@", section < appDelegate.dictFoldersArray.count ? appDelegate.dictFoldersArray[section] : @(section)];
+    [ReaderMotion registerFeedView:view key:key owner:self];
+    [self scheduleFeedMotionPresentation];
+}
+
+- (void)tableView:(UITableView *)tableView didEndDisplayingCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath {
+    [ReaderMotion removeFeedView:cell owner:self];
+}
+
+- (void)tableView:(UITableView *)tableView didEndDisplayingHeaderView:(UIView *)view forSection:(NSInteger)section {
+    [ReaderMotion removeFeedView:view owner:self];
+}
+
+- (void)scheduleFeedMotionPresentation {
+    if (self.feedMotionPresentationScheduled) return;
+    self.feedMotionPresentationScheduled = YES;
+    // FeedsObjCViewController.m presents one settled batch after UIKit attaches and positions all visible headers and cells.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [ReaderMotion presentFeedRows:self.feedTitlesTable owner:self];
+        self.feedMotionPresentationScheduled = NO;
+    });
+}
+
 - (void)refreshFolderCounts {
     [appDelegate.folderCountCache removeAllObjects];
 
@@ -3085,6 +3166,10 @@ static BOOL NBBoolPreferenceValue(id value) {
     
     CGRect rect = CGRectMake(0.0, 0.0, tableView.frame.size.width, height + font.pointSize*2);
     FolderTitleView *folderTitle = [[FolderTitleView alloc] initWithFrame:rect];
+#if TARGET_OS_MACCATALYST
+    folderTitle.opaque = NO;
+    folderTitle.backgroundColor = UIColor.clearColor;
+#endif
     folderTitle.section = (int)section;
     [(FeedsViewController *)self installFolderContextMenu:folderTitle];
     
@@ -3980,6 +4065,7 @@ heightForHeaderInSection:(NSInteger)section {
 #pragma mark - Table Actions
 
 - (void)didCollapseFolder:(UIButton *)button {
+    [ReaderMotion pop:button];
     NSUserDefaults *userPreferences = [NSUserDefaults standardUserDefaults];
 
     NSString *folderName = appDelegate.dictFoldersArray[button.tag];
@@ -4002,6 +4088,15 @@ heightForHeaderInSection:(NSInteger)section {
                         withRowAnimation:UITableViewRowAnimationFade];
     [self.feedTitlesTable endUpdates];
 
+    if (isFolderCollapsed) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSMutableArray *rows = [NSMutableArray array];
+            for (UITableViewCell *cell in self.feedTitlesTable.visibleCells) {
+                if ([self.feedTitlesTable indexPathForCell:cell].section == button.tag) [rows addObject:cell.contentView];
+            }
+            [ReaderMotion cascade:rows];
+        });
+    }
     [self updateAllStoriesCollapseButton];
 }
 
@@ -4158,83 +4253,64 @@ heightForHeaderInSection:(NSInteger)section {
 }
 
 - (IBAction)selectIntelligence {
+    NSInteger selectedSegmentIndex = self.intelligenceControl.selectedSegmentIndex;
+    NSInteger previousSegmentIndex = self.viewShowingAllFeeds ? 0 : appDelegate.selectedIntelligence + 1;
+    if (selectedSegmentIndex == previousSegmentIndex) return;
     [self updateVerticalFeedToolbarSelection];
 #if TARGET_OS_MACCATALYST
     [self updateIntelligenceControlForOrientation:UIInterfaceOrientationUnknown];
 #endif
-    [MBProgressHUD hideHUDForView:self.feedTitlesTable animated:NO];
-    MBProgressHUD *hud = [MBProgressHUD showHUDAddedTo:self.view animated:YES];
-	hud.mode = MBProgressHUDModeText;
-	hud.removeFromSuperViewOnHide = YES;
-    
-    if (!self.appDelegate.detailViewController.isPhoneOrCompact) {
-        hud.xOffset = 50;
-    }
-    
-    NSIndexPath *topRow;
-    if ([[self.feedTitlesTable indexPathsForVisibleRows] count]) {
-        topRow = [[self.feedTitlesTable indexPathsForVisibleRows] objectAtIndex:0];
-    }
-    NSInteger selectedSegmentIndex = [self.intelligenceControl selectedSegmentIndex];
+    NSIndexPath *topRow = self.feedTitlesTable.indexPathsForVisibleRows.firstObject;
     self.stillVisibleFeeds = [NSMutableDictionary dictionary];
     
     NSUserDefaults *userPreferences = [NSUserDefaults standardUserDefaults];
-    int direction;
     if (selectedSegmentIndex == 0) {
-        hud.labelText = [NBLocalization text:@"All Site Stories"];
         [userPreferences setInteger:-1 forKey:@"selectedIntelligence"];
         [userPreferences synchronize];
         
-        direction = -1;
         self.viewShowingAllFeeds = YES;
         [appDelegate setSelectedIntelligence:0];
     } else if (selectedSegmentIndex == 1) {
-        hud.labelText = [NBLocalization text:@"Unread Stories"];
         [userPreferences setInteger:0 forKey:@"selectedIntelligence"];
         [userPreferences synchronize];
         
-        direction = self.viewShowingAllFeeds ? 1 : -1;
         self.viewShowingAllFeeds = NO;
         [appDelegate setSelectedIntelligence:0];
     } else if (selectedSegmentIndex == 2) {
-        hud.labelText = [NBLocalization text:@"Focus Stories"];
         [userPreferences setInteger:1 forKey:@"selectedIntelligence"];
         [userPreferences synchronize];
         
-        direction = 1;
         self.viewShowingAllFeeds = NO;
         [appDelegate setSelectedIntelligence:1];
     } else {
-        hud.labelText = [NBLocalization text:@"Saved Stories"];
         [userPreferences setInteger:2 forKey:@"selectedIntelligence"];
         [userPreferences synchronize];
         
-        direction = 1;
         self.viewShowingAllFeeds = NO;
         [appDelegate setSelectedIntelligence:2];
     }
     
+    [[ReaderMotion session:self] reset];
     [self calculateFeedLocations];
     [self reloadFeedTitlesTable];
 
-    NSIndexPath *newMiddleRow;
-    if (topRow && [self.feedTitlesTable numberOfRowsInSection:topRow.section] == 0) {
-        newMiddleRow = [[self.feedTitlesTable indexPathsForVisibleRows] objectAtIndex:0];
-    } else if (topRow) {
-        newMiddleRow = [NSIndexPath indexPathForRow:0 inSection:topRow.section];
+    NSIndexPath *newMiddleRow = nil;
+    if (topRow && topRow.section < self.feedTitlesTable.numberOfSections) {
+        if ([self.feedTitlesTable numberOfRowsInSection:topRow.section] == 0) {
+            newMiddleRow = self.feedTitlesTable.indexPathsForVisibleRows.firstObject;
+        } else {
+            newMiddleRow = [NSIndexPath indexPathForRow:0 inSection:topRow.section];
+        }
     }
     if (newMiddleRow) {
         [self.feedTitlesTable scrollToRowAtIndexPath:newMiddleRow
                                     atScrollPosition:UITableViewScrollPositionTop
                                             animated:NO];
     }
-    [self.feedTitlesTable
-     reloadRowsAtIndexPaths:[self.feedTitlesTable indexPathsForVisibleRows]
-     withRowAnimation:direction == 1 ? UITableViewRowAnimationLeft : UITableViewRowAnimationRight];
     for (UITableViewCell *cell in self.feedTitlesTable.visibleCells) {
         [cell setNeedsDisplay];
     }
-	[hud hide:YES afterDelay:0.5];
+    [ReaderMotion presentFeedRows:self.feedTitlesTable owner:self];
     [self showExplainerOnEmptyFeedlist];
     
 //    if (!self.isPhone) {
@@ -4479,7 +4555,7 @@ heightForHeaderInSection:(NSInteger)section {
 - (void)finishRefresh {
     self.inPullToRefresh_ = NO;
 #if !TARGET_OS_MACCATALYST
-    [self.refreshControl endRefreshing];
+    [ReaderMotion finishRefresh:self.refreshControl];
 #endif
     dispatch_async(dispatch_get_main_queue(), ^{
         [self.syncNotifier updateFrameInSuperview];
@@ -4505,6 +4581,7 @@ heightForHeaderInSection:(NSInteger)section {
     
     if (!feedId) {
         [self.appDelegate cancelOfflineQueue];
+        [RealtimeUpdates.shared noteFullCountRefresh];
     }
     
     [appDelegate GET:urlString parameters:nil success:^(NSURLSessionDataTask * _Nonnull task, id  _Nullable responseObject) {
@@ -4542,6 +4619,29 @@ heightForHeaderInSection:(NSInteger)section {
 }
 
 - (void)finishRefreshingFeedList:(NSDictionary *)results feedId:(NSString *)feedId {
+    [self finishRefreshingFeedList:results feedId:feedId loadFavicons:YES];
+}
+
+// FeedsObjCViewController.m applies the counts RealtimeUpdates.swift fetched for the feeds the socket named. It
+// skips the favicon download a full refresh does, and updates blurblog rows, which read dictSocialFeeds.
+- (void)applyRealtimeUnreadCounts:(NSDictionary *)results {
+    NSDictionary *socialCounts = [results[@"social_feeds"] isKindOfClass:[NSDictionary class]] ? results[@"social_feeds"] : nil;
+    if (socialCounts.count) {
+        NSMutableDictionary *socialFeeds = [self.appDelegate.dictSocialFeeds mutableCopy] ?: [NSMutableDictionary dictionary];
+        for (NSString *socialId in socialCounts) {
+            NSDictionary *counts = socialCounts[socialId];
+            NSString *key = [NSString stringWithFormat:@"%@", socialId];
+            if (![counts isKindOfClass:[NSDictionary class]] || ![socialFeeds[key] isKindOfClass:[NSDictionary class]]) continue;
+            NSMutableDictionary *socialFeed = [socialFeeds[key] mutableCopy];
+            [socialFeed addEntriesFromDictionary:[counts dictionaryWithValuesForKeys:@[@"ps", @"nt", @"ng"]]];
+            socialFeeds[key] = socialFeed;
+        }
+        self.appDelegate.dictSocialFeeds = socialFeeds;
+    }
+    [self finishRefreshingFeedList:results feedId:@"realtime" loadFavicons:NO];
+}
+
+- (void)finishRefreshingFeedList:(NSDictionary *)results feedId:(NSString *)feedId loadFavicons:(BOOL)loadFavicons {
     NSUInteger accountGeneration = self.feedListAccountGeneration;
     NSInteger intelligenceLevel = self.appDelegate.selectedIntelligence;
     // FeedsObjCViewController.m computes visibility on snapshots, then publishes on main
@@ -4628,7 +4728,7 @@ heightForHeaderInSection:(NSInteger)section {
             if (!feedId) {
                 [self.appDelegate startOfflineQueue];
             }
-            [self loadFavicons];
+            if (loadFavicons) [self loadFavicons];
 //            if (!self.searchFeedIds && self.feedTitlesTable.contentOffset.y == 0) {
 //                [UIView animateWithDuration:0.2 animations:^{
 //                    self.feedTitlesTable.contentOffset = CGPointMake(0, CGRectGetHeight(self.searchField.frame));
@@ -4663,7 +4763,7 @@ heightForHeaderInSection:(NSInteger)section {
     // FeedsObjCViewController.m shares these margins with SyncNotifierView.swift and the search field.
     self.userInfoView.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(0, kMacFeedHeaderHorizontalInset,
                                                                              0, kMacFeedHeaderHorizontalInset);
-    self.userInfoView.backgroundColor = UIColorFromLightSepiaMediumDarkRGB(0xE0E0E0, 0xE8DED0, 0x4F4F4F, 0x292B2C);
+    self.userInfoView.backgroundColor = UIColor.clearColor;
 #else
     if (!orientation) {
         orientation = self.view.window.windowScene.interfaceOrientation;

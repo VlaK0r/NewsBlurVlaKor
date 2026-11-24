@@ -111,6 +111,7 @@ import tweepy
 
 from apps.categories.models import MCategory
 from apps.reader.tasks import MarkStoriesAsUnread
+from apps.rss_feeds.page_importer import PageImporter
 from apps.rss_feeds.tasks import ScheduleImmediateFetches
 from apps.social.models import (
     MActivity,
@@ -164,14 +165,6 @@ ALLOWED_SUBDOMAINS = [
 ]
 # Deprecated: lazy merge is now always used for all river loads (no ZUNIONSTORE)
 RIVER_SLOWDOWN_USERS = []
-
-
-def get_subdomain(request):
-    host = request.META.get("HTTP_HOST")
-    if host and host.count(".") >= 2:
-        return host.split(".")[0]
-    else:
-        return None
 
 
 def int_or_default(value, default):
@@ -300,6 +293,8 @@ CLASSIFIER_FILTER_TYPES = ("tag", "author", "title", "url", "text")
 # raw stories to actually find every match. Some pages may still return
 # fewer than `limit` — deliberately dumb, pagination can keep going.
 CLASSIFIER_FILTER_SCAN_MULTIPLIER = 20
+# Story views 404 past this page.
+MAX_STORY_PAGE = 400
 
 
 def normalize_classifier_filter_params(type_value, raw_value, scope_value):
@@ -341,9 +336,9 @@ def filter_stories_by_classifier(stories, classifier_type, classifier_value):
 @ensure_csrf_cookie
 @render_to("reader/dashboard.xhtml")
 def index(request, **kwargs):
-    subdomain = get_subdomain(request)
+    subdomain = request.subdomain
     if request.method == "GET" and subdomain and subdomain not in ALLOWED_SUBDOMAINS:
-        username = request.subdomain or subdomain
+        username = subdomain
         if "." in username:
             username = username.split(".")[0]
         user = User.objects.filter(username=username)
@@ -1072,12 +1067,18 @@ def refresh_feed(request, feed_id):
     return load_single_feed(request, feed_id)
 
 
-def get_prompt_scores_or_queue(user, stories, feed_ids):
+def get_prompt_scores_or_queue(user, stories, feed_ids, folder_feed_ids=None):
     """Read cached AI prompt classifier scores (cache-read-only).
 
     Classification happens at FeedFetch time, not at read time.
     This function only reads from Redis cache and returns whatever
     scores are available. Uncached stories get no score.
+
+    A prompt's score is only read for feeds the prompt covers (its own feed, every
+    feed for a global prompt, the sites in its folder for a folder prompt), matching
+    MClassifierPrompt.classify_stories in apps/analyzer/models.py. Pass the view's
+    folder_feed_ids map when it has one; otherwise it's loaded only if a folder prompt
+    needs it.
 
     Returns dict with:
       "scores": {story_hash: prompt_score} - aggregate score per story
@@ -1095,16 +1096,19 @@ def get_prompt_scores_or_queue(user, stories, feed_ids):
     if not prompt_count:
         return empty_result
 
-    # Get applicable prompts
-    prompts = MClassifierPrompt.get_prompts_for_user(user.pk, feed_ids=feed_ids)
-    feed_prompts = prompts["feed_prompts"]
-    if not feed_prompts:
-        return empty_result
-
     # Group stories by feed
     stories_by_feed = defaultdict(list)
     for story in stories:
         stories_by_feed[story["story_feed_id"]].append(story)
+
+    # Get the prompts that apply to each story's feed (feed-specific, global, and folder
+    # prompts whose folder holds the feed). Keyed by the stories' own feed ids, which the
+    # fetcher caches scores under, even when the request named a duplicate feed id.
+    prompts_by_feed = MClassifierPrompt.get_prompts_by_feed(
+        user.pk, list(stories_by_feed.keys()), folder_feed_ids=folder_feed_ids
+    )
+    if not prompts_by_feed:
+        return empty_result
 
     # Check cache for all prompts
     prompt_scores = {}  # {story_hash: aggregated_score}
@@ -1113,14 +1117,7 @@ def get_prompt_scores_or_queue(user, stories, feed_ids):
     for feed_id, feed_stories in stories_by_feed.items():
         story_hashes = [s["story_hash"] for s in feed_stories]
 
-        # Collect prompts that apply to this feed (feed-specific + global)
-        applicable_prompts = []
-        if 0 in feed_prompts:
-            applicable_prompts.extend(feed_prompts[0])
-        if feed_id in feed_prompts:
-            applicable_prompts.extend(feed_prompts[feed_id])
-
-        for prompt in applicable_prompts:
+        for prompt in prompts_by_feed.get(feed_id, []):
             prompt_id = str(prompt.id)
             cached = MClassifierPrompt.get_cached_scores(user.pk, prompt_id, feed_id, story_hashes)
 
@@ -1137,7 +1134,10 @@ def get_prompt_scores_or_queue(user, stories, feed_ids):
                     elif prompt.classifier_type == "hidden" and score == -1:
                         effective_score = -1
                     if effective_score != 0:
-                        prompt_scores[sh] = effective_score
+                        # views.py: Several prompts can match one story. A focus match is a
+                        # like and a hidden match is a dislike, and as with any other pair of
+                        # classifiers the like wins, so the story keeps the strongest score.
+                        prompt_scores[sh] = max(prompt_scores.get(sh, effective_score), effective_score)
                         prompt_details[sh].append(
                             {
                                 "prompt": prompt.prompt,
@@ -1154,9 +1154,7 @@ def get_prompt_scores_or_queue(user, stories, feed_ids):
 def load_single_feed(request, feed_id):
     start = time.time()
     user = get_user(request)
-    # offset                  = int(request.GET.get('offset', 0))
-    # limit                   = int(request.GET.get('limit', 6))
-    limit = 300
+    limit = min(max(int_or_default(request.GET.get("limit", 100), 100), 1), 100)
     page = int_or_default(request.GET.get("page", 1), 1)
     delay = int_or_default(request.GET.get("delay", 0), 0)
     (
@@ -1221,7 +1219,7 @@ def load_single_feed(request, feed_id):
         # This feed could be private so user must be subscribed in order to read it
         raise Http404
 
-    if page > 400:
+    if page > MAX_STORY_PAGE:
         logging.user(request, "~BR~FK~SBOver page 400 on single feed: %s" % page)
         raise Http404
 
@@ -1250,11 +1248,13 @@ def load_single_feed(request, feed_id):
                 feed.feed_title = pf.title
                 feed.save(update_fields=["feed_title"])
 
+    has_more = False
     if query:
         if user.profile.is_premium:
             user_search = MUserSearch.get_user(user.pk)
             user_search.touch_search_date()
             stories = feed.find_stories(query, order=order, offset=offset, limit=limit)
+            has_more = len(stories) >= limit
         else:
             stories = []
             message = "You must be a premium subscriber to search."
@@ -1286,6 +1286,7 @@ def load_single_feed(request, feed_id):
                 "%sstarred_date" % ("-" if order == "newest" else "")
             )[offset : offset + effective_limit]
             stories = Feed.format_stories(mstories)
+            has_more = len(stories) >= effective_limit
         elif usersub and read_filter == "unread":
             stories = usersub.get_stories(
                 order=order,
@@ -1297,6 +1298,7 @@ def load_single_feed(request, feed_id):
                 date_filter_end=date_filter_end_utc,
                 metrics_source="feed_request",
             )
+            has_more = len(stories) >= effective_limit
         else:
             stories = feed.get_stories(
                 offset,
@@ -1305,8 +1307,11 @@ def load_single_feed(request, feed_id):
                 date_filter_start=date_filter_start_utc,
                 date_filter_end=date_filter_end_utc,
             )
+            has_more = len(stories) >= effective_limit
 
+    has_more = has_more and page < MAX_STORY_PAGE
     if classifier_filter_type and classifier_filter_value:
+        # has_more counts the stories before this filter, so a short or empty page can still say true.
         stories = filter_stories_by_classifier(stories, classifier_filter_type, classifier_filter_value)
 
     checkpoint1 = time.time()
@@ -1421,13 +1426,20 @@ def load_single_feed(request, feed_id):
     user_is_pro = user.profile.is_pro
 
     # AI prompt classifiers (cached in Redis, async classification for uncached)
-    prompt_data = get_prompt_scores_or_queue(user, stories, feed_ids=[feed_id])
+    prompt_data = get_prompt_scores_or_queue(
+        user, stories, feed_ids=[feed_id], folder_feed_ids=folder_feed_ids
+    )
 
     for story in stories:
         # Calculate intelligence BEFORE deleting story content (text classifier needs it)
         story["intelligence"] = {
             "feed": apply_classifier_feeds(classifier_feeds, feed),
             "author": apply_classifier_authors(classifier_authors, story, folder_feed_ids=folder_feed_ids),
+            "author_regex": (
+                apply_classifier_author_regex(classifier_authors, story, folder_feed_ids=folder_feed_ids)
+                if user_is_pro
+                else 0
+            ),
             "tags": apply_classifier_tags(classifier_tags, story, folder_feed_ids=folder_feed_ids),
             "title": apply_classifier_titles(classifier_titles, story, folder_feed_ids=folder_feed_ids),
             "title_regex": (
@@ -1642,6 +1654,7 @@ def load_single_feed(request, feed_id):
         feed_id=feed.pk,
         elapsed_time=round(float(timediff), 2),
         message=message,
+        has_more=has_more,
     )
 
     if include_feeds:
@@ -1695,6 +1708,10 @@ def load_feed_page(request, feed_id):
         raise Http404
 
     feed = Feed.get_by_id(feed_id)
+    if feed:
+        # The fetcher only keeps a page fresh while it is being opened, see
+        # Feed.is_original_page_in_use in apps/rss_feeds/models.py.
+        feed.mark_original_page_read()
     if feed and feed.has_page and not feed.has_page_exception:
         if settings.BACKED_BY_AWS.get("pages_on_node"):
             domain = Site.objects.get_current().domain
@@ -1736,7 +1753,23 @@ def load_feed_page(request, feed_id):
                 logging.user(request, "~FYLoading original page, non-proxied")
                 return HttpResponseRedirect("//%s/%s" % (settings.S3_PAGES_BUCKET_NAME, feed.s3_pages_key))
 
-    data = MFeedPage.get_data(feed_id=feed_id)
+    # Mongo is only where pages are stored when they aren't on the page server. When they
+    # are, its feed_pages collection holds copies from before that move, which are a last
+    # resort behind a live fetch.
+    pages_in_mongo = not settings.BACKED_BY_AWS.get("pages_on_node")
+    data = MFeedPage.get_data(feed_id=feed_id) if pages_in_mongo else None
+
+    if not data and feed and feed.has_page and not feed.has_page_exception:
+        # Nothing stored: the page was never opened before, or it went unopened long enough
+        # to be deleted. Fetch it now, which also stores it for the next open.
+        data = PageImporter(feed, request=request).fetch_page()
+        if data:
+            logging.user(request, "~FYLoading original page (%s), ~SBfetched live" % feed_id)
+            return HttpResponse(data, content_type="text/html; charset=utf-8")
+        feed = Feed.get_by_id(feed_id)
+
+    if not data and not pages_in_mongo:
+        data = MFeedPage.get_data(feed_id=feed_id)
 
     if not data or not feed or not feed.has_page or feed.has_page_exception:
         logging.user(request, "~FYLoading original page, ~FRmissing")
@@ -2177,6 +2210,11 @@ def folder_rss_feed(request, user_id, secret_token, unread_filter, folder_slug):
         story["intelligence"] = {
             "feed": apply_classifier_feeds(classifier_feeds, story["story_feed_id"]),
             "author": apply_classifier_authors(classifier_authors, story, folder_feed_ids=folder_feed_ids),
+            "author_regex": (
+                apply_classifier_author_regex(classifier_authors, story, folder_feed_ids=folder_feed_ids)
+                if user_is_pro
+                else 0
+            ),
             "tags": apply_classifier_tags(classifier_tags, story, folder_feed_ids=folder_feed_ids),
             "title": apply_classifier_titles(classifier_titles, story, folder_feed_ids=folder_feed_ids),
             "title_regex": (
@@ -2302,7 +2340,7 @@ def folder_rss_feed(request, user_id, secret_token, unread_filter, folder_slug):
 def load_read_stories(request):
     user = get_user(request)
     offset = int(request.GET.get("offset", 0))
-    limit = int(request.GET.get("limit", 10))
+    limit = max(int(request.GET.get("limit", 10)), 1)
     page = int(request.GET.get("page", 0))
     order = request.GET.get("order", "newest")
     date_filter_start = request.GET.get("date_filter_start")
@@ -2354,8 +2392,10 @@ def load_read_stories(request):
             )
             stories = [s for s in search_stories if s["story_hash"] in read_story_hashes_set]
             stories = stories[offset : offset + limit]
+            has_more = len(stories) >= limit
         else:
             stories = []
+            has_more = False
             message = "You must be a premium subscriber to search."
     else:
         story_hashes = RUserStory.get_read_stories(
@@ -2366,6 +2406,7 @@ def load_read_stories(request):
             date_filter_start=date_filter_start_utc,
             date_filter_end=date_filter_end_utc,
         )
+        has_more = len(story_hashes) >= limit
         mstories = MStory.objects(story_hash__in=story_hashes).order_by()
         stories = Feed.format_stories(mstories)
         stories = sorted(
@@ -2442,6 +2483,7 @@ def load_read_stories(request):
         "user_profiles": user_profiles,
         "feeds": unsub_feeds,
         "message": message,
+        "has_more": has_more,
     }
 
 
@@ -2520,7 +2562,7 @@ def load_river_stories__redis(request):
     # GET or POST requests, since the parameters for this endpoint can be
     # very long, at which point the max size of a GET url request is exceeded.
     get_post = getattr(request, request.method)
-    limit = int_or_default(get_post.get("limit", 12), 12)
+    limit = max(int_or_default(get_post.get("limit", 12), 12), 1)
     start = time.time()
     user = get_user(request)
     message = None
@@ -2536,7 +2578,7 @@ def load_river_stories__redis(request):
     page = int_or_default(get_post.get("page", 1), 1)
     order = get_post.get("order", "newest")
     read_filter = get_post.get("read_filter", "unread")
-    if page > 400 and not story_hashes:
+    if page > MAX_STORY_PAGE and not story_hashes:
         logging.user(request, "~BR~FK~SBOver page 400 on river stories: %s" % page)
         raise Http404
     date_filter_start = get_post.get("date_filter_start")
@@ -2568,6 +2610,10 @@ def load_river_stories__redis(request):
         classifier_filter_scope = "feed"
     include_hidden = is_true(get_post.get("include_hidden", False))
     include_feeds = is_true(get_post.get("include_feeds", False))
+    # views.py: include_story_content=false returns stories without their content, like
+    # load_single_feed's flag. The iOS score refresh after a classifier save
+    # (clients/ios StoryScoreRefresher.swift) only needs each story's scores.
+    include_story_content = is_true(get_post.get("include_story_content", True))
     on_dashboard = is_true(get_post.get("dashboard", False)) or is_true(get_post.get("on_dashboard", False))
     infrequent = is_true(get_post.get("infrequent", False))
     if infrequent:
@@ -2617,6 +2663,7 @@ def load_river_stories__redis(request):
                 elapsed_time=round(float(time.time() - start), 2),
                 user_search=None,
                 user_profiles=[],
+                has_more=False,
             )
             if include_feeds:
                 data["feeds"] = []
@@ -2663,6 +2710,7 @@ def load_river_stories__redis(request):
     )
     offset = (page - 1) * effective_limit
     story_date_order = "%sstory_date" % ("" if order == "oldest" else "-")
+    has_more = False
 
     # Android app duplicate request deduplication - only kicks in when concurrent requests detected
     # The Android app has a bug where it fires multiple identical requests simultaneously
@@ -2673,6 +2721,7 @@ def load_river_stories__redis(request):
         feeds_hash = hashlib.md5(",".join(str(f) for f in sorted(feed_ids)).encode()).hexdigest()[:12]
         cache_key = (
             f"river:{user.pk}:{feeds_hash}:{page}:{order}:{read_filter}:{date_filter_start}:{date_filter_end}"
+            f":{int(include_story_content)}"
         )
         deduper = RequestDeduplicator(request, cache_key)
         cached = deduper.check_for_duplicate()
@@ -2697,6 +2746,7 @@ def load_river_stories__redis(request):
             if infrequent:
                 feed_ids = Feed.low_volume_feeds(feed_ids, stories_per_month=infrequent)
             stories = Feed.find_feed_stories(feed_ids, query, order=order, offset=offset, limit=limit)
+            has_more = len(stories) >= limit
             mstories = stories
             unread_feed_story_hashes = UserSubscription.story_hashes(
                 user.pk,
@@ -2753,10 +2803,12 @@ def load_river_stories__redis(request):
                 if date_filter_end_utc:
                     mstories = mstories.filter(story_date__lt=date_filter_end_utc)
                 mstories = mstories.order_by(story_date_order)
+                has_more = len(indexed_tag_story_hashes) >= limit
             else:
                 mstories = MStarredStory.objects(user_id=user.pk, story_feed_id__in=feed_ids).order_by(
                     "%sstarred_date" % ("-" if order == "newest" else "")
                 )[offset : offset + effective_limit]
+                has_more = len(mstories) >= effective_limit
             stories = Feed.format_stories(mstories)
             unread_feed_story_hashes = None
         else:
@@ -2789,6 +2841,8 @@ def load_river_stories__redis(request):
                 )
 
             if indexed_tag_story_hashes is not None:
+                # Counted before the unread filter below, which can empty a full page.
+                has_more = len(indexed_tag_story_hashes) >= limit
                 story_hashes = include_indexed_tag_source_story(indexed_tag_story_hashes, feed_ids)
                 unread_feed_story_hashes = UserSubscription.unread_story_hashes_for_story_hashes(
                     user.pk,
@@ -2827,6 +2881,7 @@ def load_river_stories__redis(request):
                     "metrics_source": "river_request",
                 }
                 story_hashes, unread_feed_story_hashes = UserSubscription.feed_stories(**params)
+                has_more = len(story_hashes) >= effective_limit
 
                 def fetch_more_story_hashes(fetch_limit):
                     refill_params = dict(params)
@@ -2848,7 +2903,11 @@ def load_river_stories__redis(request):
 
             stories = Feed.format_stories(mstories)
 
+    # Free users cannot open page 2, and page 401 is a 404.
+    if is_free_river_user or page >= MAX_STORY_PAGE:
+        has_more = False
     if classifier_filter_type and classifier_filter_value:
+        # has_more counts the stories before this filter, so a short or empty page can still say true.
         stories = filter_stories_by_classifier(stories, classifier_filter_type, classifier_filter_value)
 
     checkpoint1 = time.time()
@@ -2964,7 +3023,9 @@ def load_river_stories__redis(request):
     user_is_pro = user.profile.is_pro
 
     # AI prompt classifiers (cached in Redis, async classification for uncached)
-    prompt_data = get_prompt_scores_or_queue(user, stories, feed_ids=found_feed_ids)
+    prompt_data = get_prompt_scores_or_queue(
+        user, stories, feed_ids=found_feed_ids, folder_feed_ids=folder_feed_ids
+    )
 
     # Look up actual read status for starred stories from Redis
     if read_filter == "starred":
@@ -3004,6 +3065,11 @@ def load_river_stories__redis(request):
         story["intelligence"] = {
             "feed": apply_classifier_feeds(classifier_feeds, story["story_feed_id"]),
             "author": apply_classifier_authors(classifier_authors, story, folder_feed_ids=folder_feed_ids),
+            "author_regex": (
+                apply_classifier_author_regex(classifier_authors, story, folder_feed_ids=folder_feed_ids)
+                if user_is_pro
+                else 0
+            ),
             "tags": apply_classifier_tags(classifier_tags, story, folder_feed_ids=folder_feed_ids),
             "title": apply_classifier_titles(classifier_titles, story, folder_feed_ids=folder_feed_ids),
             "title_regex": (
@@ -3168,6 +3234,13 @@ def load_river_stories__redis(request):
             seconds = time.time() - request.start_time
             RStats.add("page_load", duration=seconds)
 
+    if not include_story_content:
+        # views.py drops content only now, after clustering has read it for member previews.
+        for story in stories:
+            story.pop("story_content", None)
+            for member in story.get("cluster_stories", []):
+                member.pop("story_content", None)
+
     data = dict(
         code=code,
         message=message,
@@ -3176,6 +3249,7 @@ def load_river_stories__redis(request):
         elapsed_time=timediff,
         user_search=user_search,
         user_profiles=user_profiles,
+        has_more=has_more,
     )
 
     if include_feeds:
@@ -3194,6 +3268,11 @@ def load_river_stories__redis(request):
 def load_river_stories_widget(request):
     logging.user(request, "Widget load")
     river_stories_data = json.decode(load_river_stories__redis(request).content)
+    add_widget_thumbnails(request, river_stories_data["stories"])
+    return river_stories_data
+
+
+def add_widget_thumbnails(request, stories):
     timeout = 3
     start = time.time()
 
@@ -3267,7 +3346,7 @@ def load_river_stories_widget(request):
 
     # Find the image thumbnails and download in parallel
     thumbnail_urls = []
-    for story in river_stories_data["stories"]:
+    for story in stories:
         thumbnail_values = list(story["secure_image_thumbnails"].values())
         for thumbnail_value in thumbnail_values:
             if "data:" in thumbnail_value:
@@ -3284,15 +3363,13 @@ def load_river_stories_widget(request):
         if not page:
             continue
         thumbnail_data[page["url"]] = page["data"]
-    for story in river_stories_data["stories"]:
+    for story in stories:
         thumbnail_values = list(story["secure_image_thumbnails"].values())
         if thumbnail_values and thumbnail_values[0] in thumbnail_data:
             page_url = thumbnail_values[0]
             story["select_thumbnail_data"] = thumbnail_data[page_url]
 
     logging.user(request, ("Elapsed Time: %ss" % (time.time() - start)))
-
-    return river_stories_data
 
 
 @json.json_view
@@ -5901,6 +5978,9 @@ def load_trending_stories(request):
     limit = min(int(request.GET.get("limit", 12)), 100)
     order = request.GET.get("order", "newest")
     read_filter = request.GET.get("read_filter", "all")
+    widget = is_true(request.GET.get("widget", False))
+    if widget:
+        limit = min(limit, 6)
     offset = (page - 1) * limit
     now = localtime_for_timezone(datetime.datetime.now(), user.profile.timezone)
     nowtz = now
@@ -6019,7 +6099,9 @@ def load_trending_stories(request):
     )
 
     user_is_pro = user.profile.is_pro
-    prompt_data = get_prompt_scores_or_queue(user, stories, feed_ids=story_feed_ids)
+    prompt_data = get_prompt_scores_or_queue(
+        user, stories, feed_ids=story_feed_ids, folder_feed_ids=folder_feed_ids
+    )
 
     # Look up starred stories
     story_hash_list = [s["story_hash"] for s in stories]
@@ -6107,6 +6189,15 @@ def load_trending_stories(request):
     }
     type_label = type_labels[trending_type]
     logging.user(request, "~FCLoading ~SB%s~SN %s stories (p. %s)" % (len(stories), type_label, page))
+
+    if widget:
+        visible = [story for story in stories if story["score"] >= 0]
+        add_widget_thumbnails(request, visible)
+        return {
+            "stories": visible,
+            "feeds": unsub_feeds,
+            "hidden_stories_removed": len(stories) - len(visible),
+        }
 
     return {
         "stories": stories,
