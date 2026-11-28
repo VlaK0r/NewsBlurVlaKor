@@ -601,6 +601,11 @@ msgid "%(topic)s Subreddits"
 msgstr "Subreddit %(topic)s"
 
 #, python-format
+msgid "%(turned_on)s of %(total)s site turned on"
+msgid_plural "%(turned_on)s of %(total)s sites turned on"
+msgstr[0] "Đã bật %(turned_on)s trên tổng số %(total)s trang web"
+
+#, python-format
 msgid "%(value_1)s Back"
 msgstr "%(value_1)s Quay lại"
 
@@ -1714,10 +1719,12 @@ msgstr "Tiện ích mở rộng trình duyệt"
 msgid "Browser menu"
 msgstr "Menu trình duyệt"
 
-msgid "Building a public RSS reader that anyone can use? You may qualify for a free NewsBlur Premium Pro account."
+msgid ""
+"Building a public RSS reader that anyone can use? Your application may qualify to run without NewsBlur "
+"Premium Pro."
 msgstr ""
-"Bạn đang xây dựng một trình đọc RSS công khai mà ai cũng có thể sử dụng? Bạn có thể đủ điều kiện nhận tài "
-"khoản NewsBlur Premium Pro miễn phí."
+"Bạn đang xây dựng một trình đọc RSS công khai mà bất kỳ ai cũng có thể sử dụng? Ứng dụng của bạn có thể đủ "
+"điều kiện hoạt động mà không cần Premium Pro NewsBlur."
 
 msgid "Built-in story lists in the sidebar"
 msgstr "Danh sách bài viết tích hợp ở thanh bên"

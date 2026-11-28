@@ -930,6 +930,16 @@ msgid "%(topic)s Subreddits"
 msgstr "مجتمعات فرعية على Reddit: %(topic)s"
 
 #, python-format
+msgid "%(turned_on)s of %(total)s site turned on"
+msgid_plural "%(turned_on)s of %(total)s sites turned on"
+msgstr[0] "تم تفعيل %(turned_on)s من أصل %(total)s موقعًا"
+msgstr[1] "تم تفعيل %(turned_on)s من أصل %(total)s موقع"
+msgstr[2] "تم تفعيل %(turned_on)s من أصل %(total)s موقعين"
+msgstr[3] "تم تفعيل %(turned_on)s من أصل %(total)s مواقع"
+msgstr[4] "تم تفعيل %(turned_on)s من أصل %(total)s موقعًا"
+msgstr[5] "تم تفعيل %(turned_on)s من أصل %(total)s موقع"
+
+#, python-format
 msgid "%(value_1)s Back"
 msgstr "%(value_1)s رجوع"
 
@@ -2109,8 +2119,10 @@ msgstr "إضافات المتصفح"
 msgid "Browser menu"
 msgstr "قائمة المتصفح"
 
-msgid "Building a public RSS reader that anyone can use? You may qualify for a free NewsBlur Premium Pro account."
-msgstr "هل تطوّر قارئ RSS عامًا يمكن لأي شخص استخدامه؟ قد تكون مؤهلًا للحصول على حساب NewsBlur Premium Pro مجاني."
+msgid ""
+"Building a public RSS reader that anyone can use? Your application may qualify to run without NewsBlur "
+"Premium Pro."
+msgstr "هل تنشئ قارئ RSS عامًا يمكن لأي شخص استخدامه؟ قد يكون تطبيقك مؤهلًا للعمل دون NewsBlur Premium Pro."
 
 msgid "Built-in story lists in the sidebar"
 msgstr "قوائم القصص المضمّنة في الشريط الجانبي"

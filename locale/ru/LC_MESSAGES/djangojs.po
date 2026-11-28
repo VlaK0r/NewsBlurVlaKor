@@ -738,6 +738,13 @@ msgid "%(topic)s Subreddits"
 msgstr "Сабреддиты: %(topic)s"
 
 #, python-format
+msgid "%(turned_on)s of %(total)s site turned on"
+msgid_plural "%(turned_on)s of %(total)s sites turned on"
+msgstr[0] "Включён %(turned_on)s из %(total)s сайта"
+msgstr[1] "Включено %(turned_on)s из %(total)s сайтов"
+msgstr[2] "Включено %(turned_on)s из %(total)s сайтов"
+
+#, python-format
 msgid "%(value_1)s Back"
 msgstr "%(value_1)s Назад"
 
@@ -1887,10 +1894,12 @@ msgstr "Расширения браузера"
 msgid "Browser menu"
 msgstr "Меню браузера"
 
-msgid "Building a public RSS reader that anyone can use? You may qualify for a free NewsBlur Premium Pro account."
+msgid ""
+"Building a public RSS reader that anyone can use? Your application may qualify to run without NewsBlur "
+"Premium Pro."
 msgstr ""
-"Разрабатываете общедоступную RSS-читалку, которой может пользоваться каждый? Возможно, вы сможете получить "
-"бесплатный аккаунт NewsBlur Premium Pro."
+"Создаёте общедоступную RSS-читалку, которой сможет пользоваться каждый? Ваше приложение может получить "
+"право работать без Premium Pro NewsBlur."
 
 msgid "Built-in story lists in the sidebar"
 msgstr "Встроенные списки статей на боковой панели"

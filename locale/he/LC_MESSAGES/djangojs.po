@@ -665,6 +665,12 @@ msgid "%(topic)s Subreddits"
 msgstr "תת־פורומים של Reddit בנושא %(topic)s"
 
 #, python-format
+msgid "%(turned_on)s of %(total)s site turned on"
+msgid_plural "%(turned_on)s of %(total)s sites turned on"
+msgstr[0] "%(turned_on)s מתוך %(total)s אתר הופעל"
+msgstr[1] "%(turned_on)s מתוך %(total)s אתרים הופעלו"
+
+#, python-format
 msgid "%(value_1)s Back"
 msgstr "%(value_1)s חזרה"
 
@@ -1790,8 +1796,10 @@ msgstr "תוספי דפדפן"
 msgid "Browser menu"
 msgstr "תפריט הדפדפן"
 
-msgid "Building a public RSS reader that anyone can use? You may qualify for a free NewsBlur Premium Pro account."
-msgstr "בונים קורא RSS ציבורי שפתוח לכולם? ייתכן שתוכלו לקבל חשבון NewsBlur Premium Pro בחינם."
+msgid ""
+"Building a public RSS reader that anyone can use? Your application may qualify to run without NewsBlur "
+"Premium Pro."
+msgstr "מפתחים קורא RSS ציבורי שכולם יכולים להשתמש בו? ייתכן שהיישום שלך זכאי לפעול ללא Premium Pro של NewsBlur."
 
 msgid "Built-in story lists in the sidebar"
 msgstr "רשימות כתבות מובנות בסרגל הצד"

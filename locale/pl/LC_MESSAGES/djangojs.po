@@ -733,6 +733,13 @@ msgid "%(topic)s Subreddits"
 msgstr "Subreddity: %(topic)s"
 
 #, python-format
+msgid "%(turned_on)s of %(total)s site turned on"
+msgid_plural "%(turned_on)s of %(total)s sites turned on"
+msgstr[0] "Włączono %(turned_on)s z %(total)s witryny"
+msgstr[1] "Włączono %(turned_on)s z %(total)s witryn"
+msgstr[2] "Włączono %(turned_on)s z %(total)s witryn"
+
+#, python-format
 msgid "%(value_1)s Back"
 msgstr "%(value_1)s Wstecz"
 
@@ -1878,10 +1885,12 @@ msgstr "Rozszerzenia przeglądarki"
 msgid "Browser menu"
 msgstr "Menu przeglądarki"
 
-msgid "Building a public RSS reader that anyone can use? You may qualify for a free NewsBlur Premium Pro account."
-msgstr ""
-"Tworzysz publiczny czytnik RSS, z którego może korzystać każdy? Możesz otrzymać bezpłatne konto NewsBlur "
+msgid ""
+"Building a public RSS reader that anyone can use? Your application may qualify to run without NewsBlur "
 "Premium Pro."
+msgstr ""
+"Tworzysz publiczny czytnik RSS, z którego każdy może korzystać? Twoja aplikacja może kwalifikować się do "
+"działania bez NewsBlur Premium Pro."
 
 msgid "Built-in story lists in the sidebar"
 msgstr "Wbudowane listy artykułów na pasku bocznym"
